@@ -1,0 +1,172 @@
+datasource db {
+  provider = "postgresql"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  ADMIN
+  USER
+  MANAGER
+}
+
+enum LogType {
+  IMPORT
+  EXPORT
+}
+
+enum LogFormat {
+  CSV
+  XLSX
+  JSON
+}
+
+enum NoteType {
+  MEETING
+  EMAIL
+  CALL
+  NOTE
+}
+
+enum ProjectStatus {
+  EN_COURS   @map("En cours")
+  PLANIFIE   @map("Planifié")
+  TERMINE    @map("Terminé")
+}
+
+model User {
+  id               String            @id @default(uuid())
+  email            String            @unique
+  name             String
+  passwordHash     String?
+  twoFactorEnabled Boolean           @default(false)
+  twoFactorSecret  String?
+  googleId         String?           @unique
+  avatarUrl        String?
+  role             Role              @default(USER)
+  logs             ImportExportLog[]
+  savedSegments    SavedSegment[]
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+}
+
+model TypeActeur {
+  id          String    @id @default(uuid())
+  name        String    @unique
+  code        String    @unique
+  description String?
+  contacts    Contact[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model Tag {
+  id          String         @id @default(uuid())
+  name        String         @unique
+  color       String         @default("#35B8B2")
+  category    String?
+  description String?
+  contacts    TagOnContact[]
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+}
+
+model Contact {
+  id                String             @id @default(uuid())
+  name              String
+  initials          String
+  title             String             @default("Membre Réseau")
+  organization      String
+  email             String             @unique
+  phone             String             @default("")
+  linkedin          String?
+  country           String             @default("Tunisie")
+  flagEmoji         String?
+  interventionZones String[]
+  actorTypeId       String?
+  typeActeur        TypeActeur?        @relation(fields: [actorTypeId], references: [id])
+  actorType         String             @default("PME")
+  expertise         String[]
+  tags              TagOnContact[]
+  avatarUrl         String?
+  projects          ProjectOnContact[]
+  exchangeNotes     ExchangeNote[]
+  isVerified        Boolean            @default(true)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+}
+
+model TagOnContact {
+  contactId String
+  tagId     String
+  contact   Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  tag       Tag     @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([contactId, tagId])
+}
+
+model Project {
+  id          String             @id @default(uuid())
+  title       String
+  code        String             @unique
+  description String?
+  period      String?
+  sector      String?
+  imageUrl    String?
+  status      ProjectStatus      @default(EN_COURS)
+  contacts    ProjectOnContact[]
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+}
+
+model ProjectOnContact {
+  projectId String
+  contactId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  contact   Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@id([projectId, contactId])
+}
+
+model ExchangeNote {
+  id             String   @id @default(uuid())
+  contactId      String
+  contact        Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  date           String
+  relativeTime   String?
+  title          String
+  content        String
+  author         String?
+  authorInitials String?
+  projectName    String?
+  type           NoteType @default(NOTE)
+  createdAt      DateTime @default(now())
+}
+
+model SavedSegment {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  icon        String?  @default("Filter")
+  filters     Json     // FilterState JSON object
+  userId      String?
+  user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model ImportExportLog {
+  id           String    @id @default(uuid())
+  type         LogType
+  format       LogFormat
+  fileName     String
+  recordCount  Int       @default(0)
+  status       String    @default("SUCCESS") // SUCCESS, PARTIAL, FAILED
+  errorMessage String?
+  performedBy  String?
+  userId       String?
+  user         User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  createdAt    DateTime  @default(now())
+}

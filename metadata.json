@@ -1,0 +1,6 @@
+{
+  "name": "ARSII Research & Innovation Network",
+  "description": "Tableau de bord et gestion du réseau de contacts R&I Europe-Afrique ARSII",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
