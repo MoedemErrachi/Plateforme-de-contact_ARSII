@@ -1,6 +1,6 @@
 import React, { useState, useRef, useMemo } from 'react';
 import Papa from 'papaparse';
-import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 import { ViewPage, Contact, ActorType } from '../types';
 import { 
   Check, 
@@ -211,26 +211,40 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
   };
 
   // Parse Excel file (.xlsx, .xls)
-  const parseExcelFile = (fileObj: File) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const data = new Uint8Array(e.target?.result as ArrayBuffer);
-        const workbook = XLSX.read(data, { type: 'array' });
-        if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
-          throw new Error('No sheets');
-        }
-        const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-        const matrix: any[][] = XLSX.utils.sheet_to_json(firstSheet, { header: 1 });
-        processParsedData(matrix, fileObj.name);
-      } catch (err) {
-        setFileError("Impossible de lire ce fichier. Veuillez vérifier le format (.csv ou .xlsx) et vous assurer qu'il contient des données.");
+  const parseExcelFile = async (fileObj: File) => {
+    try {
+      const arrayBuffer = await fileObj.arrayBuffer();
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.load(arrayBuffer);
+
+      const worksheet = workbook.worksheets[0];
+      if (!worksheet) {
+        throw new Error('Aucune feuille de calcul trouvée.');
       }
-    };
-    reader.onerror = () => {
+
+      const matrix: any[][] = [];
+      worksheet.eachRow({ includeEmpty: false }, (row) => {
+        const rowValues = Array.isArray(row.values) ? row.values.slice(1) : [];
+        const cleanedValues = rowValues.map(cell => {
+          if (cell === null || cell === undefined) return '';
+          if (typeof cell === 'object' && !(cell instanceof Date)) {
+            const cellObj = cell as any;
+            if ('result' in cellObj) return cellObj.result ?? '';
+            if ('text' in cellObj) return cellObj.text ?? '';
+            if ('richText' in cellObj && Array.isArray(cellObj.richText)) {
+              return cellObj.richText.map((rt: any) => rt.text || '').join('');
+            }
+            if ('hyperlink' in cellObj) return cellObj.text || cellObj.hyperlink || '';
+          }
+          return String(cell);
+        });
+        matrix.push(cleanedValues);
+      });
+
+      processParsedData(matrix, fileObj.name);
+    } catch (err) {
       setFileError("Impossible de lire ce fichier. Veuillez vérifier le format (.csv ou .xlsx) et vous assurer qu'il contient des données.");
-    };
-    reader.readAsArrayBuffer(fileObj);
+    }
   };
 
   // Parse CSV file (.csv)

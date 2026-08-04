@@ -45,12 +45,17 @@ export default function App() {
     fetch('/api/contacts')
       .then(res => res.ok ? res.json() : null)
       .then(data => {
-        if (isMounted && data && Array.isArray(data.contacts)) {
-          setContacts(data.contacts);
+        if (isMounted && data && data.data && Array.isArray(data.data.contacts)) {
+          const mapped = data.data.contacts.map((c: any) => ({
+            ...c,
+            tags: Array.isArray(c.tags) ? c.tags.map((t: any) => t.tag?.name || t.name || t) : [],
+            projects: Array.isArray(c.projects) ? c.projects.map((p: any) => p.project || p) : []
+          }));
+          setContacts(mapped);
         }
       })
-      .catch(() => {
-        // Fallback to local data seamlessly
+      .catch((err) => {
+        console.error('Error fetching contacts from backend API:', err);
       })
       .finally(() => {
         if (isMounted) {

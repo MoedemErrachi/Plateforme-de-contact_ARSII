@@ -1,33 +1,11 @@
 import { Router, Response } from 'express';
 import bcrypt from 'bcryptjs';
-import { getPrismaClient } from '../models/dataStore';
+import { prisma } from '../db/prisma';
 import { authenticateJWT, setAuthCookie, clearAuthCookie, AuthenticatedRequest } from '../middleware/authenticateJWT';
-import { encrypt, decrypt } from '../utils/crypto';
+import { decrypt } from '../utils/crypto';
 import crypto from 'crypto';
 
 const router = Router();
-
-// Fallback user accounts with real bcrypt hashes (admin: arsii2026, demo: demo1234)
-const FALLBACK_USERS = [
-  {
-    id: 'usr_admin',
-    email: 'admin@arsii.org',
-    passwordHash: bcrypt.hashSync('arsii2026', 10),
-    name: 'Dr. Chokri Ben Amar',
-    role: 'admin',
-    twoFactorEnabled: false,
-    twoFactorSecret: null
-  },
-  {
-    id: 'usr_demo',
-    email: 'demo@arsii.org',
-    passwordHash: bcrypt.hashSync('demo1234', 10),
-    name: 'Membre ARSII',
-    role: 'user',
-    twoFactorEnabled: true,
-    twoFactorSecret: encrypt('JBSWY3DPEHPK3PXP') // Encrypted with AES-256-GCM
-  }
-];
 
 // GET /api/auth/csrf-token (Retrieve or issue CSRF Token)
 router.get('/csrf-token', (req, res) => {
@@ -44,7 +22,7 @@ router.get('/csrf-token', (req, res) => {
   return res.json({ csrfToken: token });
 });
 
-// POST /api/auth/login (Strict Password Matching via bcrypt)
+// POST /api/auth/login (Strict Password Matching via bcrypt using PostgreSQL via Prisma)
 router.post('/login', async (req, res) => {
   const { email, password, totpCode } = req.body;
 
@@ -52,21 +30,14 @@ router.post('/login', async (req, res) => {
     return res.status(400).json({ error: 'Email et mot de passe requis.' });
   }
 
-  let user: any = null;
-  const prisma = getPrismaClient();
-
-  if (prisma) {
-    try {
-      user = await prisma.user.findUnique({
-        where: { email: email.toLowerCase() }
-      });
-    } catch (err) {
-      console.warn('Prisma auth query error, falling back to secure local store:', err);
-    }
-  }
-
-  if (!user) {
-    user = FALLBACK_USERS.find(u => u.email.toLowerCase() === email.toLowerCase());
+  let user = null;
+  try {
+    user = await prisma.user.findUnique({
+      where: { email: email.toLowerCase().trim() }
+    });
+  } catch (err) {
+    console.error('Error querying user in login:', err);
+    return res.status(500).json({ error: 'Erreur lors de l\'authentification base de données.' });
   }
 
   if (!user || !user.passwordHash) {
@@ -127,14 +98,37 @@ router.post('/login', async (req, res) => {
 router.post('/google', async (req, res) => {
   const { credential, googleId, email, name } = req.body;
 
-  const userEmail = email || 'google.user@arsii.org';
+  const userEmail = (email || 'google.user@arsii.org').toLowerCase().trim();
   const userName = name || 'Utilisateur Google';
 
+  let user = null;
+  try {
+    user = await prisma.user.findUnique({
+      where: { email: userEmail }
+    });
+
+    if (!user) {
+      user = await prisma.user.create({
+        data: {
+          email: userEmail,
+          name: userName,
+          googleId: googleId || `google_${Date.now()}`,
+          role: 'USER'
+        }
+      });
+    }
+  } catch (err) {
+    console.error('Error during Google authentication with database:', err);
+    return res.status(500).json({ error: 'Erreur d\'authentification Google en base de données.' });
+  }
+
+  const userRole = String(user.role).toLowerCase() === 'admin' ? 'admin' : 'user';
+
   const userPayload = {
-    id: `google_${googleId || '12345'}`,
-    email: userEmail,
-    name: userName,
-    role: 'user' // Default to 'user' role
+    id: user.id,
+    email: user.email,
+    name: user.name,
+    role: userRole
   };
 
   setAuthCookie(res, userPayload);

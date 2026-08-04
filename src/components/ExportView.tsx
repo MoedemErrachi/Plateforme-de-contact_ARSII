@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import ExcelJS from 'exceljs';
 import { ViewPage, Contact } from '../types';
 import { 
   ChevronRight, 
@@ -68,8 +69,54 @@ export const ExportView: React.FC<ExportViewProps> = ({
     });
   };
 
-  // Build export string (CSV or JSON or PDF Text) and generate Blob download URL
-  const generateExportData = () => {
+  // Build export data (CSV, XLSX via ExcelJS, JSON or PDF Text) and generate Blob download URL
+  const generateExportData = async (): Promise<string> => {
+    if (selectedFormat === 'xlsx') {
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet('Contacts ARSII');
+
+      const headerCols: string[] = [];
+      if (fields.name) headerCols.push('Nom complet');
+      if (fields.email) headerCols.push('Email');
+      if (fields.organization) headerCols.push('Organisation');
+      if (fields.role) headerCols.push('Fonction / Rôle');
+      if (fields.zone) headerCols.push('Pays');
+      if (fields.phone) headerCols.push('Téléphone');
+      if (fields.expertise) headerCols.push('Expertise');
+      if (includeMetadata) headerCols.push('Type Acteur', 'Tags');
+
+      const headerRow = worksheet.addRow(headerCols);
+      headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+      headerRow.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FF006A66' }
+      };
+
+      targetContacts.forEach(c => {
+        const rowCols: string[] = [];
+        if (fields.name) rowCols.push(c.name || '');
+        if (fields.email) rowCols.push(c.email || '');
+        if (fields.organization) rowCols.push(c.organization || '');
+        if (fields.role) rowCols.push(c.title || '');
+        if (fields.zone) rowCols.push(c.country || '');
+        if (fields.phone) rowCols.push(c.phone || '');
+        if (fields.expertise) rowCols.push(c.expertise?.join('; ') || '');
+        if (includeMetadata) {
+          rowCols.push(c.actorType || '', c.tags?.join('; ') || '');
+        }
+        worksheet.addRow(rowCols);
+      });
+
+      worksheet.columns.forEach(col => {
+        col.width = 22;
+      });
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      return URL.createObjectURL(blob);
+    }
+
     if (selectedFormat === 'json') {
       const dataToExport = targetContacts.map(c => {
         const item: Record<string, any> = {};
@@ -97,7 +144,7 @@ export const ExportView: React.FC<ExportViewProps> = ({
       return URL.createObjectURL(blob);
     } 
     
-    // CSV or Excel (TSV/CSV format)
+    // CSV format
     const headerCols: string[] = [];
     if (fields.name) headerCols.push('Nom complet');
     if (fields.email) headerCols.push('Email');
@@ -130,14 +177,17 @@ export const ExportView: React.FC<ExportViewProps> = ({
     return URL.createObjectURL(blob);
   };
 
-  const handleStartExport = () => {
+  const handleStartExport = async () => {
     setIsExporting(true);
-    setTimeout(() => {
-      const url = generateExportData();
+    try {
+      const url = await generateExportData();
       setDownloadUrl(url);
-      setIsExporting(false);
       setExportDone(true);
-    }, 1200);
+    } catch (err) {
+      console.error('Failed to export data:', err);
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   return (

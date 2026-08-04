@@ -1,20 +1,12 @@
 import path from 'path';
 import express from 'express';
-import { createServer as createViteServer } from 'vite';
 import { createApp } from './server/app';
 
 async function startServer() {
   const app = createApp();
-  const PORT = 3000;
+  const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 5000;
 
-  // Vite middleware for development mode or static fallback
-  if (process.env.NODE_ENV !== 'production') {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: 'spa',
-    });
-    app.use(vite.middlewares);
-  } else {
+  if (process.env.NODE_ENV === 'production') {
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
     app.get('*', (req, res) => {
@@ -23,10 +15,10 @@ async function startServer() {
   }
 
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server running on http://0.0.0.0:${PORT}`);
+    console.log(`Backend server running on http://localhost:${PORT}`);
   });
 }
 
 startServer().catch((err) => {
-  console.error('Failed to start dev server:', err);
+  console.error('Failed to start backend server:', err);
 });

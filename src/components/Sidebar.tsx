@@ -57,8 +57,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   return (
     <aside 
       className={`
-        w-[280px] sm:w-80 h-[calc(100vh-64px)] overflow-hidden bg-[#e4fffe] border-r border-[#bcc9c7] 
-        p-4 sm:p-5 flex flex-col justify-between shrink-0 z-30 transition-all duration-300 shadow-sm
+        w-[280px] sm:w-80 h-[calc(100vh-64px)] overflow-y-auto bg-[#e4fffe] border-r border-[#bcc9c7] 
+        p-4 sm:p-5 flex flex-col gap-4 shrink-0 z-30 transition-all duration-300 shadow-sm
         ${positionMode === 'sticky' ? 'sticky top-16' : 'fixed top-16 left-0'}
         ${isOpenOnMobile ? 'translate-x-0 z-50' : '-translate-x-full min-[1600px]:translate-x-0'}
       `}
@@ -86,8 +86,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
         )}
       </div>
 
-      {/* Middle Non-Scrollable Lock Area - Flex Column Distributed */}
-      <div className="flex-1 my-3 flex flex-col justify-between gap-3 overflow-hidden text-xs">
+      {/* Middle Scrollable Lock Area */}
+      <div className="flex-1 flex flex-col gap-4 text-xs">
         
         {/* Type d'Acteur */}
         <div className="space-y-1.5 shrink-0">
@@ -173,11 +173,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       </div>
 
-      {/* Bottom Footer Info Box - Non-scrollable Lock */}
+      {/* Bottom Footer Info Box */}
       <div className="shrink-0 p-3 bg-[#35B8B2]/10 border border-[#35B8B2]/30 rounded-xl flex items-center gap-2 text-xs text-[#006a66]">
         <Sparkles className="w-4 h-4 shrink-0 text-[#006a66]" />
         <span className="font-semibold text-[11px]">
-          Verrouillage d'affichage optimal (Sans défilement interne)
+          Filtres interactifs
         </span>
       </div>
     </aside>

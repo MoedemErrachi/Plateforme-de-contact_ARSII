@@ -1,48 +1,50 @@
-import { DataStore } from '../models/dataStore';
+import { prisma } from '../db/prisma';
 
 export class DashboardService {
-  private db = DataStore.getInstance();
-
   public async getDashboardStats() {
-    const contacts = this.db.contacts;
-    const totalContacts = contacts.length;
+    const [totalContacts, activeProjects, totalExchangeNotes, countryGroup, actorTypeGroup, typeActeurs] = await Promise.all([
+      prisma.contact.count(),
+      prisma.project.count(),
+      prisma.exchangeNote.count(),
+      prisma.contact.groupBy({
+        by: ['country'],
+        _count: { id: true }
+      }),
+      prisma.contact.groupBy({
+        by: ['actorType', 'actorTypeId'],
+        _count: { id: true }
+      }),
+      prisma.typeActeur.findMany()
+    ]);
 
-    // Unique countries count & breakdown
-    const countryCounts: Record<string, number> = {};
-    contacts.forEach(c => {
-      const country = c.country || 'Inconnu';
-      countryCounts[country] = (countryCounts[country] || 0) + 1;
+    const totalCountries = countryGroup.length;
+    const distributionByCountry = countryGroup.map(item => {
+      const count = item._count.id;
+      return {
+        country: item.country || 'Inconnu',
+        count,
+        percentage: totalContacts > 0 ? Math.round((count / totalContacts) * 100) : 0
+      };
     });
 
-    const totalCountries = Object.keys(countryCounts).length;
-    const distributionByCountry = Object.entries(countryCounts).map(([country, count]) => ({
-      country,
-      count,
-      percentage: Math.round((count / totalContacts) * 100)
-    }));
+    const typeActeurMap = new Map(typeActeurs.map(t => [t.id, t.name]));
 
-    // TypeActeur breakdown
-    const typeActeurCounts: Record<string, number> = {};
-    contacts.forEach(c => {
-      const typeObj = this.db.typeActeurs.find(t => t.id === c.typeActeurId);
-      const label = typeObj ? typeObj.label : 'Autre';
-      typeActeurCounts[label] = (typeActeurCounts[label] || 0) + 1;
+    const distributionByTypeActeur = actorTypeGroup.map(item => {
+      const count = item._count.id;
+      const label = (item.actorTypeId && typeActeurMap.get(item.actorTypeId)) || item.actorType || 'Autre';
+      return {
+        typeActeur: label,
+        count,
+        percentage: totalContacts > 0 ? Math.round((count / totalContacts) * 100) : 0
+      };
     });
-
-    const distributionByTypeActeur = Object.entries(typeActeurCounts).map(([type, count]) => ({
-      typeActeur: type,
-      count,
-      percentage: Math.round((count / totalContacts) * 100)
-    }));
-
-    const activeProjects = this.db.projects.length;
 
     return {
       kpis: {
         totalContacts,
         totalCountries,
         activeProjects,
-        totalExchangeNotes: this.db.exchangeNotes.length
+        totalExchangeNotes
       },
       distributionByCountry,
       distributionByTypeActeur
