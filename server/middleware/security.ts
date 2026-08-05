@@ -6,7 +6,7 @@ import crypto from 'crypto';
 // 1. RATE LIMITERS
 export const authRateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5, // Limit each IP to 5 auth attempts per windowMs
+  max: 20,
   standardHeaders: true,
   legacyHeaders: false,
   validate: { trustProxy: false },
@@ -17,8 +17,8 @@ export const authRateLimiter = rateLimit({
 });
 
 export const globalApiRateLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // Limit each IP to 100 requests per 15 minutes
+  windowMs: 15 * 60 * 1000,
+  max: process.env.NODE_ENV === 'production' ? 500 : 5000,
   standardHeaders: true,
   legacyHeaders: false,
   validate: { trustProxy: false },
@@ -48,28 +48,31 @@ export const helmetMiddleware = helmet({
 });
 
 // 3. CSRF TOKEN DEFENSE (Double-Submit Cookie Pattern)
+// In development mode CSRF validation is skipped to allow frontend fetch calls without token management.
 export const csrfProtection = (req: Request, res: Response, next: NextFunction) => {
-  // Ensure a CSRF token cookie exists
+  // Always issue a CSRF cookie so frontend can use it if needed
   let csrfToken = req.cookies?.['XSRF-TOKEN'];
-  
   if (!csrfToken) {
     csrfToken = crypto.randomBytes(24).toString('hex');
     res.cookie('XSRF-TOKEN', csrfToken, {
-      httpOnly: false, // Readable by frontend JS to echo in X-CSRF-Token header
+      httpOnly: false,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'strict',
-      maxAge: 24 * 60 * 60 * 1000 // 24 hours
+      maxAge: 24 * 60 * 60 * 1000
     });
   }
 
-  // Validate CSRF token for state-changing HTTP methods
+  // Skip CSRF enforcement in development
+  if (process.env.NODE_ENV !== 'production') {
+    return next();
+  }
+
+  // In production: validate CSRF for state-changing methods
   const stateChangingMethods = ['POST', 'PUT', 'DELETE', 'PATCH'];
   if (stateChangingMethods.includes(req.method)) {
-    // Exempt initial login or public auth endpoints if needed, but validate if present
-    const isLogin = req.path === '/login' || req.path === '/api/auth/login';
+    const isAuthPath = req.path === '/login' || req.path === '/google';
     const clientHeaderToken = req.headers['x-csrf-token'] || req.headers['x-xsrf-token'] || req.body?._csrf;
-
-    if (!isLogin && (!clientHeaderToken || clientHeaderToken !== csrfToken)) {
+    if (!isAuthPath && (!clientHeaderToken || clientHeaderToken !== csrfToken)) {
       return res.status(403).json({
         error: 'Validation CSRF échouée. En-tête X-CSRF-Token manquant ou invalide.',
         code: 'CSRF_VALIDATION_FAILED'

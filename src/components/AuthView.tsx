@@ -24,10 +24,10 @@ export const AuthView: React.FC<AuthViewProps> = ({ onLoginSuccess }) => {
   const [requestForm, setRequestForm] = useState({ name: '', email: '', org: '', reason: '' });
   const [requestSubmitted, setRequestSubmitted] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage('');
-    
+
     if (!email.trim() || !password.trim()) {
       setErrorMessage('Veuillez remplir votre identifiant et votre mot de passe.');
       return;
@@ -35,30 +35,75 @@ export const AuthView: React.FC<AuthViewProps> = ({ onLoginSuccess }) => {
 
     setIsLoading(true);
 
-    // Simulate authenticating against ARSII LDAP/SSO
-    setTimeout(() => {
-      setIsLoading(false);
-      onLoginSuccess({
-        name: email.includes('@') ? email.split('@')[0].replace('.', ' ').toUpperCase() : 'MEMBRE ARSII',
-        email: email,
-        role: 'Responsable R&I Europe-Afrique'
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ email: email.trim().toLowerCase(), password })
       });
-    }, 600);
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setErrorMessage(data.error || 'Identifiants invalides. Veuillez réessayer.');
+        setIsLoading(false);
+        return;
+      }
+
+      onLoginSuccess({
+        name: data.data?.user?.name || email.split('@')[0].toUpperCase(),
+        email: data.data?.user?.email || email,
+        role: data.data?.user?.role || 'Membre ARSII'
+      });
+    } catch (err) {
+      setErrorMessage('Erreur réseau. Vérifiez que le serveur est démarré sur le port 5000.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const handleQuickLogin = (demoName: string, demoEmail: string, role: string) => {
+  const handleQuickLogin = async (demoName: string, demoEmail: string, role: string) => {
     setEmail(demoEmail);
     setPassword('demo1234');
+    setErrorMessage('');
     setIsLoading(true);
-    setTimeout(() => {
-      setIsLoading(false);
-      onLoginSuccess({
-        name: demoName,
-        email: demoEmail,
-        role: role
+
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ email: demoEmail, password: 'demo1234' })
       });
-    }, 400);
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        // For demo accounts: if user doesn't exist in DB, allow demo login
+        if (res.status === 401 || res.status === 404) {
+          setIsLoading(false);
+          onLoginSuccess({ name: demoName, email: demoEmail, role });
+          return;
+        }
+        setErrorMessage(data.error || 'Impossible de se connecter avec ce compte démo.');
+        setIsLoading(false);
+        return;
+      }
+
+      onLoginSuccess({
+        name: data.data?.user?.name || demoName,
+        email: data.data?.user?.email || demoEmail,
+        role: data.data?.user?.role || role
+      });
+    } catch {
+      // Fallback to demo mode if backend is unreachable
+      onLoginSuccess({ name: demoName, email: demoEmail, role });
+    } finally {
+      setIsLoading(false);
+    }
   };
+
 
   return (
     <div className="min-h-screen w-full flex flex-col items-center justify-center p-4 sm:p-6 relative overflow-hidden bg-[#e4fffe]">

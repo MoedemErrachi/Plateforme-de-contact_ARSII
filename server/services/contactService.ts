@@ -1,5 +1,6 @@
 import { prisma } from '../db/prisma';
 import { AppError } from '../utils/AppError';
+import { NoteType } from '@prisma/client';
 
 export interface QueryContactsParams {
   page?: number;
@@ -16,22 +17,53 @@ export interface CreateContactPayload {
   name?: string;
   title?: string;
   email: string;
-  organization: string;
-  country: string;
+  organization?: string;
+  country?: string;
   phone?: string;
   linkedinUrl?: string;
   linkedin?: string;
   expertiseDomain?: string;
+  expertise?: string[];
+  interventionZones?: string[];
   typeActeurId?: string;
   actorType?: string;
 }
 
 export interface UpdateContactPayload extends Partial<CreateContactPayload> {}
 
+export interface CreateNotePayload {
+  title: string;
+  content: string;
+  type?: string;
+  date?: string;
+  relativeTime?: string;
+  author?: string;
+  authorInitials?: string;
+  projectName?: string;
+}
+
+function buildName(payload: CreateContactPayload): string {
+  if (payload.name) return payload.name.trim();
+  const first = (payload.firstName || '').trim();
+  const last = (payload.lastName || '').trim();
+  if (first && last) return `${first} ${last}`;
+  return first || last || 'Nouveau Contact';
+}
+
+function buildInitials(name: string): string {
+  return name
+    .split(' ')
+    .filter(Boolean)
+    .map(p => p[0])
+    .join('')
+    .substring(0, 2)
+    .toUpperCase() || 'NC';
+}
+
 export class ContactService {
   public async getContacts(params: QueryContactsParams) {
     const page = Math.max(1, params.page || 1);
-    const limit = Math.max(1, Math.min(100, params.limit || 10));
+    const limit = Math.max(1, Math.min(100, params.limit || 50));
     const skip = (page - 1) * limit;
 
     const where: any = {};
@@ -42,8 +74,7 @@ export class ContactService {
         { name: { contains: q, mode: 'insensitive' } },
         { email: { contains: q, mode: 'insensitive' } },
         { organization: { contains: q, mode: 'insensitive' } },
-        { title: { contains: q, mode: 'insensitive' } },
-        { expertise: { hasSome: [q] } }
+        { title: { contains: q, mode: 'insensitive' } }
       ];
     }
 
@@ -54,16 +85,12 @@ export class ContactService {
     if (params.typeActeurId) {
       where.OR = [
         { actorTypeId: params.typeActeurId },
-        { actorType: params.typeActeurId }
+        { actorType: { equals: params.typeActeurId, mode: 'insensitive' } }
       ];
     }
 
     if (params.segmentId) {
-      where.tags = {
-        some: {
-          tagId: params.segmentId
-        }
-      };
+      where.tags = { some: { tagId: params.segmentId } };
     }
 
     const [totalRecords, contacts] = await Promise.all([
@@ -75,13 +102,9 @@ export class ContactService {
         orderBy: { createdAt: 'desc' },
         include: {
           typeActeur: true,
-          tags: {
-            include: { tag: true }
-          },
-          projects: {
-            include: { project: true }
-          },
-          exchangeNotes: true
+          tags: { include: { tag: true } },
+          projects: { include: { project: true } },
+          exchangeNotes: { orderBy: { createdAt: 'desc' } }
         }
       })
     ]);
@@ -105,15 +128,9 @@ export class ContactService {
       where: { id },
       include: {
         typeActeur: true,
-        tags: {
-          include: { tag: true }
-        },
-        projects: {
-          include: { project: true }
-        },
-        exchangeNotes: {
-          orderBy: { createdAt: 'desc' }
-        }
+        tags: { include: { tag: true } },
+        projects: { include: { project: true } },
+        exchangeNotes: { orderBy: { createdAt: 'desc' } }
       }
     });
 
@@ -127,22 +144,13 @@ export class ContactService {
   public async createContact(payload: CreateContactPayload) {
     const emailClean = payload.email.toLowerCase().trim();
 
-    const existing = await prisma.contact.findUnique({
-      where: { email: emailClean }
-    });
-
+    const existing = await prisma.contact.findUnique({ where: { email: emailClean } });
     if (existing) {
       throw new AppError(`Un contact avec l'email ${payload.email} existe déjà`, 409);
     }
 
-    const name = payload.name || `${payload.firstName || ''} ${payload.lastName || ''}`.trim() || 'Nouveau Contact';
-    const initials = name
-      .split(' ')
-      .filter(Boolean)
-      .map(part => part[0])
-      .join('')
-      .substring(0, 2)
-      .toUpperCase() || 'NC';
+    const name = buildName(payload);
+    const initials = buildInitials(name);
 
     const newContact = await prisma.contact.create({
       data: {
@@ -156,8 +164,16 @@ export class ContactService {
         country: payload.country || 'Tunisie',
         actorTypeId: payload.typeActeurId || null,
         actorType: payload.actorType || 'PME',
-        expertise: payload.expertiseDomain ? [payload.expertiseDomain] : [],
-        interventionZones: payload.country ? [payload.country] : []
+        expertise: payload.expertise?.length
+          ? payload.expertise
+          : payload.expertiseDomain
+          ? [payload.expertiseDomain]
+          : [],
+        interventionZones: payload.interventionZones?.length
+          ? payload.interventionZones
+          : payload.country
+          ? [payload.country]
+          : []
       },
       include: {
         typeActeur: true,
@@ -171,10 +187,7 @@ export class ContactService {
   }
 
   public async updateContact(id: string, payload: UpdateContactPayload) {
-    const existing = await prisma.contact.findUnique({
-      where: { id }
-    });
-
+    const existing = await prisma.contact.findUnique({ where: { id } });
     if (!existing) {
       throw new AppError(`Contact avec l'ID ${id} non trouvé`, 404);
     }
@@ -182,9 +195,7 @@ export class ContactService {
     if (payload.email) {
       const emailClean = payload.email.toLowerCase().trim();
       if (emailClean !== existing.email.toLowerCase()) {
-        const duplicate = await prisma.contact.findUnique({
-          where: { email: emailClean }
-        });
+        const duplicate = await prisma.contact.findUnique({ where: { email: emailClean } });
         if (duplicate) {
           throw new AppError(`Un autre contact avec l'email ${payload.email} existe déjà`, 409);
         }
@@ -192,18 +203,14 @@ export class ContactService {
     }
 
     const dataToUpdate: any = {};
-    if (payload.name || payload.firstName || payload.lastName) {
-      const name = payload.name || `${payload.firstName || ''} ${payload.lastName || ''}`.trim();
-      dataToUpdate.name = name;
-      dataToUpdate.initials = name
-        .split(' ')
-        .filter(Boolean)
-        .map(part => part[0])
-        .join('')
-        .substring(0, 2)
-        .toUpperCase();
+
+    const newName = buildName({ ...existing, ...payload } as CreateContactPayload);
+    if (newName !== existing.name) {
+      dataToUpdate.name = newName;
+      dataToUpdate.initials = buildInitials(newName);
     }
-    if (payload.email) dataToUpdate.email = payload.email.toLowerCase().trim();
+    if (payload.title !== undefined) dataToUpdate.title = payload.title;
+    if (payload.email !== undefined) dataToUpdate.email = payload.email.toLowerCase().trim();
     if (payload.organization !== undefined) dataToUpdate.organization = payload.organization;
     if (payload.country !== undefined) dataToUpdate.country = payload.country;
     if (payload.phone !== undefined) dataToUpdate.phone = payload.phone;
@@ -212,7 +219,9 @@ export class ContactService {
     }
     if (payload.typeActeurId !== undefined) dataToUpdate.actorTypeId = payload.typeActeurId;
     if (payload.actorType !== undefined) dataToUpdate.actorType = payload.actorType;
-    if (payload.expertiseDomain) dataToUpdate.expertise = [payload.expertiseDomain];
+    if (payload.expertise !== undefined) dataToUpdate.expertise = payload.expertise;
+    if (payload.expertiseDomain !== undefined) dataToUpdate.expertise = [payload.expertiseDomain];
+    if (payload.interventionZones !== undefined) dataToUpdate.interventionZones = payload.interventionZones;
 
     const updatedContact = await prisma.contact.update({
       where: { id },
@@ -221,11 +230,115 @@ export class ContactService {
         typeActeur: true,
         tags: { include: { tag: true } },
         projects: { include: { project: true } },
-        exchangeNotes: true
+        exchangeNotes: { orderBy: { createdAt: 'desc' } }
       }
     });
 
     return updatedContact;
+  }
+
+  public async deleteContact(id: string) {
+    const existing = await prisma.contact.findUnique({ where: { id } });
+    if (!existing) {
+      throw new AppError(`Contact avec l'ID ${id} non trouvé`, 404);
+    }
+
+    await prisma.contact.delete({ where: { id } });
+    return { success: true, deletedId: id };
+  }
+
+  public async addNote(contactId: string, payload: CreateNotePayload) {
+    const existing = await prisma.contact.findUnique({ where: { id: contactId } });
+    if (!existing) {
+      throw new AppError(`Contact avec l'ID ${contactId} non trouvé`, 404);
+    }
+
+    const noteTypeMap: Record<string, NoteType> = {
+      MEETING: NoteType.MEETING,
+      EMAIL: NoteType.EMAIL,
+      CALL: NoteType.CALL,
+      NOTE: NoteType.NOTE,
+      meeting: NoteType.MEETING,
+      email: NoteType.EMAIL,
+      call: NoteType.CALL,
+      note: NoteType.NOTE
+    };
+
+    const note = await prisma.exchangeNote.create({
+      data: {
+        contactId,
+        title: payload.title,
+        content: payload.content,
+        type: noteTypeMap[payload.type || 'NOTE'] || NoteType.NOTE,
+        date: payload.date || new Date().toISOString().split('T')[0],
+        relativeTime: payload.relativeTime || 'À l\'instant',
+        author: payload.author || null,
+        authorInitials: payload.authorInitials || null,
+        projectName: payload.projectName || null
+      }
+    });
+
+    return note;
+  }
+
+  public async bulkSave(newContactsPayloads: CreateContactPayload[], updatedContactsPayloads: Array<{ id: string } & UpdateContactPayload>) {
+    let createdCount = 0;
+    let updatedCount = 0;
+
+    for (const payload of newContactsPayloads) {
+      if (!payload.email) continue;
+      const emailClean = payload.email.toLowerCase().trim();
+      const existing = await prisma.contact.findUnique({ where: { email: emailClean } });
+      if (existing) {
+        // Skip or update existing
+        continue;
+      }
+      const name = buildName(payload);
+      const initials = buildInitials(name);
+      await prisma.contact.create({
+        data: {
+          name,
+          initials,
+          title: payload.title || 'Partenaire R&I',
+          organization: payload.organization || '',
+          email: emailClean,
+          phone: payload.phone || '',
+          linkedin: payload.linkedinUrl || payload.linkedin || '',
+          country: payload.country || 'Sénégal',
+          actorType: payload.actorType || 'Labo de recherche',
+          expertise: payload.expertise || [],
+          interventionZones: payload.interventionZones || [payload.country || 'Sénégal']
+        }
+      });
+      createdCount++;
+    }
+
+    for (const updateItem of updatedContactsPayloads) {
+      if (!updateItem.id) continue;
+      const existing = await prisma.contact.findUnique({ where: { id: updateItem.id } });
+      if (!existing) continue;
+
+      const dataToUpdate: any = {};
+      const newName = buildName({ ...existing, ...updateItem } as CreateContactPayload);
+      if (newName !== existing.name) {
+        dataToUpdate.name = newName;
+        dataToUpdate.initials = buildInitials(newName);
+      }
+      if (updateItem.title !== undefined) dataToUpdate.title = updateItem.title;
+      if (updateItem.organization !== undefined) dataToUpdate.organization = updateItem.organization;
+      if (updateItem.country !== undefined) dataToUpdate.country = updateItem.country;
+      if (updateItem.phone !== undefined) dataToUpdate.phone = updateItem.phone;
+      if (updateItem.actorType !== undefined) dataToUpdate.actorType = updateItem.actorType;
+      if (updateItem.expertise !== undefined) dataToUpdate.expertise = updateItem.expertise;
+
+      await prisma.contact.update({
+        where: { id: updateItem.id },
+        data: dataToUpdate
+      });
+      updatedCount++;
+    }
+
+    return { createdCount, updatedCount };
   }
 
   public async importContactsPreview(rows: Array<Partial<CreateContactPayload>>) {
@@ -234,9 +347,7 @@ export class ContactService {
       .filter(Boolean);
 
     const existingContacts = await prisma.contact.findMany({
-      where: {
-        email: { in: emails }
-      },
+      where: { email: { in: emails } },
       select: { id: true, email: true }
     });
 
@@ -254,25 +365,20 @@ export class ContactService {
         inputData: row,
         status: !isValid ? 'INVALID' : isDuplicate ? 'DUPLICATE' : 'VALID',
         existingContactId: existingId,
-        message: !isValid 
-          ? 'Email manquant ou invalide' 
-          : isDuplicate 
-          ? 'Un contact avec cette adresse e-mail existe déjà en base de données' 
+        message: !isValid
+          ? 'Email manquant ou invalide'
+          : isDuplicate
+          ? 'Un contact avec cette adresse e-mail existe déjà en base de données'
           : 'Prêt pour importation'
       };
     });
 
-    const totalInput = preview.length;
-    const validCount = preview.filter(p => p.status === 'VALID').length;
-    const duplicateCount = preview.filter(p => p.status === 'DUPLICATE').length;
-    const invalidCount = preview.filter(p => p.status === 'INVALID').length;
-
     return {
       summary: {
-        totalInput,
-        validCount,
-        duplicateCount,
-        invalidCount
+        totalInput: preview.length,
+        validCount: preview.filter(p => p.status === 'VALID').length,
+        duplicateCount: preview.filter(p => p.status === 'DUPLICATE').length,
+        invalidCount: preview.filter(p => p.status === 'INVALID').length
       },
       preview
     };

@@ -59,12 +59,17 @@ export function sanitizeFilename(filename: string): string {
  * Middleware for validating file upload request payloads
  */
 export const validateFileUpload = (req: Request, res: Response, next: NextFunction) => {
-  // Check payload or raw file buffer if present in body
-  const { fileName, fileData, mimeType, fileSize } = req.body || {};
+  const { fileName, fileData, mimeType, fileSize, rows } = req.body || {};
 
-  if (!fileData && !(req as any).file && (!req.body || Object.keys(req.body).length === 0)) {
+  // If rows array provided (JSON-body import), skip file checks
+  if (Array.isArray(rows) && rows.length > 0) {
+    return next();
+  }
+
+  // Otherwise require either fileData or a multipart file
+  if (!fileData && !(req as any).file) {
     return res.status(400).json({
-      error: 'Aucun fichier fourni pour l\'importation.',
+      error: "Aucun fichier fourni pour l'importation.",
       code: 'MISSING_FILE'
     });
   }

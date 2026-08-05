@@ -138,83 +138,63 @@ export const NewContactView: React.FC<NewContactViewProps> = ({
     setCompetences(competences.filter(item => item !== c));
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!nom || !email) return;
 
     const formattedName = prenom ? `${prenom} ${nom}`.trim() : nom;
     const initials = `${prenom[0] || ''}${nom[0] || ''}`.toUpperCase() || 'NC';
 
+    const flagEmoji =
+      country === 'Sénégal' ? '🇸🇳' :
+      country === 'Tunisie' ? '🇹🇳' :
+      country === 'Maroc' ? '🇲🇦' :
+      country === 'France' ? '🇫🇷' :
+      country === 'Belgique' ? '🇧🇪' : '🌐';
+
     if (contactToEdit && onUpdateContact) {
       const updatedContact: Contact = {
         ...contactToEdit,
         name: formattedName,
-        initials: initials,
+        initials,
         title: fonction || contactToEdit.title,
         organization: organization || contactToEdit.organization,
-        email: email,
+        email,
         phone: phone || contactToEdit.phone,
-        country: country,
-        flagEmoji: country === 'Sénégal' ? '🇸🇳' : country === 'Tunisie' ? '🇹🇳' : country === 'Maroc' ? '🇲🇦' : country === 'France' ? '🇫🇷' : '🌐',
+        country,
+        flagEmoji,
         interventionZones: interventionZones.length ? interventionZones : [country],
         actorType: actorType,
         expertise: competences.length ? competences : contactToEdit.expertise,
-        projects: projetsInput ? [{
-          id: contactToEdit.projects?.[0]?.id || `p-${Date.now()}`,
-          title: projetsInput,
-          description: contactToEdit.projects?.[0]?.description || 'Projet associatif',
-          period: contactToEdit.projects?.[0]?.period || '2024 - Présent',
-          status: contactToEdit.projects?.[0]?.status || 'En cours',
-          sector: domaine || 'Général'
-        }] : contactToEdit.projects || [],
-        exchangeNotes: exchangeSummary ? [{
-          id: `e-${Date.now()}`,
-          date: lastDate || new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' }),
-          relativeTime: 'Récemment',
-          title: 'Notes mises à jour',
-          content: exchangeSummary,
-          type: 'meeting'
-        }, ...(contactToEdit.exchangeNotes || [])] : contactToEdit.exchangeNotes || []
+        projects: contactToEdit.projects || [],
+        exchangeNotes: contactToEdit.exchangeNotes || []
       };
 
-      onUpdateContact(updatedContact);
+      await onUpdateContact(updatedContact);
       onNavigate('contacts');
     } else {
       const newContact: Contact = {
-        id: `contact-${Date.now()}`,
+        id: '',          // will be replaced by DB-generated ID
         name: formattedName,
-        initials: initials,
-        title: fonction || 'Directeur de Recherche',
-        organization: organization || 'ARSII Member',
-        email: email,
-        phone: phone || '+221 00 000 00 00',
-        country: country,
-        flagEmoji: country === 'Sénégal' ? '🇸🇳' : country === 'Tunisie' ? '🇹🇳' : '🇫🇷',
+        initials,
+        title: fonction || 'Membre Réseau',
+        organization: organization || '',
+        email,
+        phone: phone || '',
+        country,
+        flagEmoji,
         interventionZones: interventionZones.length ? interventionZones : [country],
         actorType: actorType,
-        expertise: competences.length ? competences : [domaine || 'Recherche & Innovation'],
-        projects: projetsInput ? [{
-          id: `p-${Date.now()}`,
-          title: projetsInput,
-          description: 'Projet nouvellement associé',
-          period: '2024 - Présent',
-          status: 'En cours',
-          sector: domaine || 'Général'
-        }] : [],
-        exchangeNotes: exchangeSummary ? [{
-          id: `e-${Date.now()}`,
-          date: lastDate || 'Aujourd\'hui',
-          relativeTime: 'À l\'instant',
-          title: 'Résumé d\'échange initial',
-          content: exchangeSummary,
-          type: 'meeting'
-        }] : []
+        expertise: competences.length ? competences : domaine ? [domaine] : [],
+        projects: [],
+        exchangeNotes: []
       };
 
-      onAddContact(newContact);
+      await onAddContact(newContact);
       onNavigate('contacts');
     }
   };
+
 
   return (
     <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-10 py-8 space-y-6 animate-fade-in">
