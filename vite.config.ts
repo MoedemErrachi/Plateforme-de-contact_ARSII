@@ -19,6 +19,11 @@ export default defineConfig(() => {
           changeOrigin: true,
           secure: false,
         },
+        '/uploads': {
+          target: 'http://localhost:5000',
+          changeOrigin: true,
+          secure: false,
+        },
       },
       hmr: process.env.DISABLE_HMR !== 'true',
       watch: process.env.DISABLE_HMR === 'true' ? null : {},

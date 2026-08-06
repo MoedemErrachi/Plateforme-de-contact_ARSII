@@ -1,14 +1,15 @@
 import React, { useState } from 'react';
 import { User, Lock, Eye, EyeOff, ShieldCheck, Sparkles, CheckCircle2, ArrowRight, HelpCircle, X, Mail, Building2 } from 'lucide-react';
 import { ArsiiLogo } from './ArsiiLogo';
+import { User as AuthUser } from '../types';
 
 interface AuthViewProps {
-  onLoginSuccess: (userData?: { name: string; email: string; role: string }) => void;
+  onLoginSuccess: (userData: AuthUser) => void;
 }
 
 export const AuthView: React.FC<AuthViewProps> = ({ onLoginSuccess }) => {
-  const [email, setEmail] = useState('votre.nom@arsii.org');
-  const [password, setPassword] = useState('••••••••');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
@@ -52,53 +53,14 @@ export const AuthView: React.FC<AuthViewProps> = ({ onLoginSuccess }) => {
       }
 
       onLoginSuccess({
+        id: data.data?.user?.id,
         name: data.data?.user?.name || email.split('@')[0].toUpperCase(),
         email: data.data?.user?.email || email,
-        role: data.data?.user?.role || 'Membre ARSII'
+        role: data.data?.user?.role || 'user',
+        avatarUrl: data.data?.user?.avatarUrl || null
       });
     } catch (err) {
       setErrorMessage('Erreur réseau. Vérifiez que le serveur est démarré sur le port 5000.');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleQuickLogin = async (demoName: string, demoEmail: string, role: string) => {
-    setEmail(demoEmail);
-    setPassword('demo1234');
-    setErrorMessage('');
-    setIsLoading(true);
-
-    try {
-      const res = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ email: demoEmail, password: 'demo1234' })
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        // For demo accounts: if user doesn't exist in DB, allow demo login
-        if (res.status === 401 || res.status === 404) {
-          setIsLoading(false);
-          onLoginSuccess({ name: demoName, email: demoEmail, role });
-          return;
-        }
-        setErrorMessage(data.error || 'Impossible de se connecter avec ce compte démo.');
-        setIsLoading(false);
-        return;
-      }
-
-      onLoginSuccess({
-        name: data.data?.user?.name || demoName,
-        email: data.data?.user?.email || demoEmail,
-        role: data.data?.user?.role || role
-      });
-    } catch {
-      // Fallback to demo mode if backend is unreachable
-      onLoginSuccess({ name: demoName, email: demoEmail, role });
     } finally {
       setIsLoading(false);
     }
@@ -249,29 +211,6 @@ export const AuthView: React.FC<AuthViewProps> = ({ onLoginSuccess }) => {
 
           </form>
 
-          {/* Quick Demo Accounts */}
-          <div className="w-full mt-6 pt-5 border-t border-slate-100 flex flex-col gap-2">
-            <span className="text-[10px] font-extrabold text-[#6d7a78] uppercase tracking-wider text-center block mb-1">
-              Accès rapide démonstration :
-            </span>
-            <div className="flex flex-col sm:flex-row gap-2">
-              <button
-                type="button"
-                onClick={() => handleQuickLogin('Dr. Jean Dupont', 'j.dupont@arsii.org', 'Directeur R&I')}
-                className="flex-1 py-2 px-2.5 bg-[#dff9f8] hover:bg-[#c9ece8] text-[#006a66] rounded-xl text-[11px] font-bold text-center transition-colors border border-[#bcc9c7]/30 cursor-pointer"
-              >
-                Directeur R&I
-              </button>
-              <button
-                type="button"
-                onClick={() => handleQuickLogin('Prof. Amadou Diallo', 'a.diallo@research-network.org', 'Chercheur Senior')}
-                className="flex-1 py-2 px-2.5 bg-[#dff9f8] hover:bg-[#c9ece8] text-[#006a66] rounded-xl text-[11px] font-bold text-center transition-colors border border-[#bcc9c7]/30 cursor-pointer"
-              >
-                Chercheur Senior
-              </button>
-            </div>
-          </div>
-
           {/* Footer Access Request Link */}
           <div className="mt-6 text-center flex items-center gap-1.5 text-xs">
             <span className="text-[#3d4948] font-medium">Nouveau membre ?</span>
@@ -295,7 +234,7 @@ export const AuthView: React.FC<AuthViewProps> = ({ onLoginSuccess }) => {
 
       {/* FORGOT PASSWORD MODAL */}
       {isForgotPasswordOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
           <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 space-y-4 animate-fade-in relative">
             <div className="flex justify-between items-center border-b border-slate-100 pb-3">
               <h3 className="font-extrabold text-base text-[#071f1f]">Réinitialisation du mot de passe</h3>
@@ -365,7 +304,7 @@ export const AuthView: React.FC<AuthViewProps> = ({ onLoginSuccess }) => {
 
       {/* REQUEST ACCESS MODAL */}
       {isRequestAccessOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
           <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 space-y-4 animate-fade-in relative">
             <div className="flex justify-between items-center border-b border-slate-100 pb-3">
               <h3 className="font-extrabold text-base text-[#071f1f]">Demande d'accès au réseau ARSII</h3>

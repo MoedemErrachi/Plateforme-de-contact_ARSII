@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import ExcelJS from 'exceljs';
-import { ViewPage, Contact } from '../types';
+import { Link } from 'react-router-dom';
+import { Contact } from '../types';
 import { 
   ChevronRight, 
   FileText, 
@@ -17,13 +18,11 @@ import {
 } from 'lucide-react';
 
 interface ExportViewProps {
-  onNavigate: (page: ViewPage) => void;
   contacts: Contact[];
   selectedContactIds?: string[];
 }
 
 export const ExportView: React.FC<ExportViewProps> = ({ 
-  onNavigate,
   contacts = [],
   selectedContactIds = []
 }) => {
@@ -196,9 +195,9 @@ export const ExportView: React.FC<ExportViewProps> = ({
       {/* Header & Breadcrumb */}
       <div>
         <nav className="flex items-center gap-1.5 text-xs text-[#3d4948] font-semibold mb-2">
-          <button onClick={() => onNavigate('contacts')} className="hover:text-[#006a66] cursor-pointer">
+          <Link to="/contacts" className="hover:text-[#006a66] cursor-pointer">
             Contacts
-          </button>
+          </Link>
           <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
           <span className="text-[#006a66] font-bold">Exportation de la base</span>
         </nav>
@@ -268,13 +267,12 @@ export const ExportView: React.FC<ExportViewProps> = ({
                 <Info className="w-4 h-4 shrink-0 text-amber-600" />
                 <span>
                   Aucun contact n'est actuellement coché dans l'annuaire.{' '}
-                  <button 
-                    type="button" 
-                    onClick={() => onNavigate('contacts')} 
+                  <Link 
+                    to="/contacts" 
                     className="underline font-bold hover:text-amber-900 cursor-pointer"
                   >
                     Sélectionner des contacts dans l'annuaire
-                  </button>{' '}
+                  </Link>{' '}
                   ou basculez sur "Tous les contacts".
                 </span>
               </div>
@@ -526,12 +524,12 @@ export const ExportView: React.FC<ExportViewProps> = ({
               </button>
             )}
 
-            <button
-              onClick={() => onNavigate('contacts')}
-              className="w-full py-2.5 bg-white border border-[#006a66] text-[#006a66] font-bold rounded-xl hover:bg-[#dff9f8] transition-colors cursor-pointer"
+            <Link
+              to="/contacts"
+              className="w-full py-2.5 bg-white border border-[#006a66] text-[#006a66] font-bold rounded-xl hover:bg-[#dff9f8] transition-colors cursor-pointer inline-flex items-center justify-center"
             >
               Retour à l'annuaire
-            </button>
+            </Link>
           </div>
 
         </div>

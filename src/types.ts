@@ -69,6 +69,14 @@ export interface Contact {
   isVerified?: boolean;
 }
 
+export interface User {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  avatarUrl?: string | null;
+}
+
 export interface ImportConflict {
   id: string;
   imported: {

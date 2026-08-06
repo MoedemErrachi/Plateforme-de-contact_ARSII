@@ -17,6 +17,7 @@ async function main() {
   // 1. Seed Users
   const adminPassword = await bcrypt.hash('arsii2026', 10);
   const demoPassword = await bcrypt.hash('demo1234', 10);
+  const supervisorPassword = await bcrypt.hash('admin123', 10);
 
   const admin = await prisma.user.upsert({
     where: { email: 'admin@arsii.org' },
@@ -40,6 +41,24 @@ async function main() {
       role: Role.USER,
       twoFactorEnabled: true,
       twoFactorSecret: 'JBSWY3DPEHPK3PXP'
+    }
+  });
+
+  // Supervisor account — REAL production credentials (maalel.ahmed@gmail.com / admin123)
+  const supervisor = await prisma.user.upsert({
+    where: { email: 'maalel.ahmed@gmail.com' },
+    update: {
+      name: 'Ahmed Maalel',
+      passwordHash: supervisorPassword,
+      role: Role.ADMIN,
+      twoFactorEnabled: false
+    },
+    create: {
+      email: 'maalel.ahmed@gmail.com',
+      name: 'Ahmed Maalel',
+      passwordHash: supervisorPassword,
+      role: Role.ADMIN,
+      twoFactorEnabled: false
     }
   });
 

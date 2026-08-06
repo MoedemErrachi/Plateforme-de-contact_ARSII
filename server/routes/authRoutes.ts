@@ -82,7 +82,8 @@ router.post('/login', async (req, res) => {
     id: user.id,
     email: user.email,
     name: user.name,
-    role: userRole
+    role: userRole,
+    avatarUrl: user.avatarUrl || null
   };
 
   // Set HttpOnly + SameSite=Strict cookie
@@ -140,12 +141,91 @@ router.post('/google', async (req, res) => {
   });
 });
 
-// GET /api/auth/me (Get current session)
-router.get('/me', authenticateJWT, (req: AuthenticatedRequest, res: Response) => {
-  return res.json({
-    authenticated: true,
-    user: req.user
-  });
+// GET /api/auth/me (Get current session with fresh user data from DB)
+router.get('/me', authenticateJWT, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: req.user!.id },
+      select: { id: true, email: true, name: true, role: true, avatarUrl: true }
+    });
+
+    if (!user) {
+      return res.status(404).json({ error: 'Utilisateur introuvable.' });
+    }
+
+    const userRole = String(user.role).toLowerCase() === 'admin' ? 'admin' : 'user';
+
+    return res.json({
+      authenticated: true,
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        role: userRole,
+        avatarUrl: user.avatarUrl || null
+      }
+    });
+  } catch (err) {
+    console.error('Error fetching current user:', err);
+    return res.status(500).json({ error: 'Erreur lors de la récupération du profil.' });
+  }
+});
+
+// PUT /api/auth/profile (Update name / email / avatarUrl of current user)
+router.put('/profile', authenticateJWT, async (req: AuthenticatedRequest, res: Response) => {
+  const { name, email, avatarUrl } = req.body || {};
+  const userId = req.user!.id;
+
+  if (!name || typeof name !== 'string' || !name.trim()) {
+    return res.status(400).json({ error: 'Le nom complet est requis.' });
+  }
+
+  const dataToUpdate: any = { name: name.trim() };
+
+  if (typeof email === 'string' && email.trim()) {
+    const emailClean = email.trim().toLowerCase();
+    if (!emailClean.includes('@')) {
+      return res.status(400).json({ error: 'Adresse e-mail invalide.' });
+    }
+    const duplicate = await prisma.user.findFirst({
+      where: { email: emailClean, id: { not: userId } }
+    });
+    if (duplicate) {
+      return res.status(409).json({ error: 'Un autre utilisateur utilise déjà cet e-mail.' });
+    }
+    dataToUpdate.email = emailClean;
+  }
+
+  if (typeof avatarUrl === 'string') {
+    dataToUpdate.avatarUrl = avatarUrl || null;
+  }
+
+  try {
+    const updated = await prisma.user.update({
+      where: { id: userId },
+      data: dataToUpdate,
+      select: { id: true, email: true, name: true, role: true, avatarUrl: true }
+    });
+
+    const userRole = String(updated.role).toLowerCase() === 'admin' ? 'admin' : 'user';
+    const userPayload = {
+      id: updated.id,
+      email: updated.email,
+      name: updated.name,
+      role: userRole
+    };
+
+    // Re-issue HttpOnly cookie so JWT payload stays in sync
+    setAuthCookie(res, userPayload);
+
+    return res.json({
+      success: true,
+      user: { ...userPayload, avatarUrl: updated.avatarUrl || null }
+    });
+  } catch (err) {
+    console.error('Error updating profile:', err);
+    return res.status(500).json({ error: 'Erreur lors de la mise à jour du profil.' });
+  }
 });
 
 // POST /api/auth/logout

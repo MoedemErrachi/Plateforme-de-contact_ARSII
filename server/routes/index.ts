@@ -5,6 +5,7 @@ import authRoutes from './authRoutes';
 import segmentRoutes from './segmentRoutes';
 import importRoutes from './importRoutes';
 import exportRoutes from './exportRoutes';
+import uploadRoutes from './uploadRoutes';
 
 const apiRouter = Router();
 
@@ -14,5 +15,6 @@ apiRouter.use('/dashboard', dashboardRoutes);
 apiRouter.use('/segments', segmentRoutes);
 apiRouter.use('/import', importRoutes);
 apiRouter.use('/export', exportRoutes);
+apiRouter.use('/uploads', uploadRoutes);
 
 export default apiRouter;

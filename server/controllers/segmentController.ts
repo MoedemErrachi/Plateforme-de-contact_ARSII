@@ -40,3 +40,20 @@ export const deleteSegment = async (req: Request, res: Response, next: NextFunct
     next(error);
   }
 };
+
+export const setTagContacts = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params;
+    const { contactIds } = req.body;
+
+    if (!Array.isArray(contactIds)) {
+      res.status(400).json({ status: 'fail', message: 'contactIds doit être un tableau d\'identifiants' });
+      return;
+    }
+
+    const tag = await segmentService.setTagContacts(id, contactIds);
+    res.status(200).json({ status: 'success', data: { tag } });
+  } catch (error) {
+    next(error);
+  }
+};

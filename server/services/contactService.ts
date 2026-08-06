@@ -27,6 +27,8 @@ export interface CreateContactPayload {
   interventionZones?: string[];
   typeActeurId?: string;
   actorType?: string;
+  avatarUrl?: string;
+  tagIds?: string[];
 }
 
 export interface UpdateContactPayload extends Partial<CreateContactPayload> {}
@@ -141,6 +143,26 @@ export class ContactService {
     return contact;
   }
 
+  /**
+   * Replaces all tags of a contact with the given tag IDs (validates existence first).
+   */
+  private async setContactTags(contactId: string, tagIds: string[]) {
+    const uniqueIds = Array.from(new Set(tagIds)).filter(Boolean);
+    const existingTags = await prisma.tag.findMany({
+      where: { id: { in: uniqueIds } },
+      select: { id: true }
+    });
+    const validIds = existingTags.map(t => t.id);
+
+    await prisma.$transaction([
+      prisma.tagOnContact.deleteMany({ where: { contactId } }),
+      prisma.tagOnContact.createMany({
+        data: validIds.map(tagId => ({ contactId, tagId })),
+        skipDuplicates: true
+      })
+    ]);
+  }
+
   public async createContact(payload: CreateContactPayload) {
     const emailClean = payload.email.toLowerCase().trim();
 
@@ -173,8 +195,17 @@ export class ContactService {
           ? payload.interventionZones
           : payload.country
           ? [payload.country]
-          : []
-      },
+          : [],
+        avatarUrl: payload.avatarUrl || null
+      }
+    });
+
+    if (payload.tagIds?.length) {
+      await this.setContactTags(newContact.id, payload.tagIds);
+    }
+
+    return prisma.contact.findUnique({
+      where: { id: newContact.id },
       include: {
         typeActeur: true,
         tags: { include: { tag: true } },
@@ -182,8 +213,6 @@ export class ContactService {
         exchangeNotes: true
       }
     });
-
-    return newContact;
   }
 
   public async updateContact(id: string, payload: UpdateContactPayload) {
@@ -222,6 +251,7 @@ export class ContactService {
     if (payload.expertise !== undefined) dataToUpdate.expertise = payload.expertise;
     if (payload.expertiseDomain !== undefined) dataToUpdate.expertise = [payload.expertiseDomain];
     if (payload.interventionZones !== undefined) dataToUpdate.interventionZones = payload.interventionZones;
+    if (payload.avatarUrl !== undefined) dataToUpdate.avatarUrl = payload.avatarUrl || null;
 
     const updatedContact = await prisma.contact.update({
       where: { id },
@@ -233,6 +263,19 @@ export class ContactService {
         exchangeNotes: { orderBy: { createdAt: 'desc' } }
       }
     });
+
+    if (Array.isArray(payload.tagIds)) {
+      await this.setContactTags(id, payload.tagIds);
+      return prisma.contact.findUnique({
+        where: { id },
+        include: {
+          typeActeur: true,
+          tags: { include: { tag: true } },
+          projects: { include: { project: true } },
+          exchangeNotes: { orderBy: { createdAt: 'desc' } }
+        }
+      });
+    }
 
     return updatedContact;
   }

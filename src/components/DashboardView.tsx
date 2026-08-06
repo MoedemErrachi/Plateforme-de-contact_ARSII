@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { ViewPage, Contact } from '../types';
+import { Link } from 'react-router-dom';
+import { Contact } from '../types';
 import { 
   Users, 
   Globe, 
@@ -27,7 +28,6 @@ import { DashboardSkeleton } from './Skeletons';
 
 interface DashboardViewProps {
   contacts: Contact[];
-  onNavigate: (page: ViewPage) => void;
   onSelectContact: (contactId: string) => void;
   isLoading?: boolean;
 }
@@ -49,7 +49,6 @@ const DEFAULT_WIDGETS: WidgetConfig[] = [
 
 export const DashboardView: React.FC<DashboardViewProps> = ({
   contacts,
-  onNavigate,
   onSelectContact,
   isLoading = false
 }) => {
@@ -60,7 +59,19 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const [widgets, setWidgets] = useState<WidgetConfig[]>(() => {
     try {
       const saved = localStorage.getItem('arsii_dashboard_widgets');
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        const parsed: WidgetConfig[] = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          // Merge with defaults: keep order/visibility, drop stale ids, restore missing defaults
+          const savedMap = new Map(parsed.map((w, idx) => [w.id, { ...w, order: typeof w.order === 'number' ? w.order : idx }]));
+          const merged = DEFAULT_WIDGETS.map(def => savedMap.get(def.id) || { ...def });
+          const mergedIds = new Set(merged.map(w => w.id));
+          savedMap.forEach((w, id) => {
+            if (!mergedIds.has(id)) merged.push(w);
+          });
+          return merged.sort((a, b) => a.order - b.order);
+        }
+      }
     } catch (e) {
       // ignore
     }
@@ -311,21 +322,21 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             Personnaliser la disposition
           </button>
 
-          <button
-            onClick={() => onNavigate('new-contact')}
+          <Link
+            to="/contacts/new"
             className="flex items-center gap-2 bg-[#35b8b2] hover:bg-[#2b958f] text-white px-4 py-2.5 rounded-xl text-xs font-bold shadow-sm transition-all active:scale-95"
           >
             <Plus className="w-4 h-4" />
             Nouveau Contact
-          </button>
+          </Link>
           
-          <button
-            onClick={() => onNavigate('importation')}
+          <Link
+            to="/import"
             className="flex items-center gap-2 bg-white border border-[#bcc9c7] text-[#006a66] hover:bg-[#dff9f8] px-4 py-2.5 rounded-xl text-xs font-bold shadow-sm transition-all active:scale-95"
           >
             <Upload className="w-4 h-4" />
             Importer CSV
-          </button>
+          </Link>
         </div>
       </div>
 
@@ -610,12 +621,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   </div>
                   
                   <div className="flex items-center justify-between sm:justify-end w-full sm:w-auto gap-3">
-                    <button 
-                      onClick={() => onNavigate('contacts')}
+                    <Link 
+                      to="/contacts"
                       className="text-[#006a66] font-bold text-xs hover:underline flex items-center gap-1 cursor-pointer"
                     >
                       Voir tout l'historique <ArrowRight className="w-3.5 h-3.5" />
-                    </button>
+                    </Link>
 
                     <div className="flex items-center gap-1 border-l border-slate-200 pl-2 shrink-0">
                       <button onClick={() => moveWidget('recentExchanges', 'up')} className="p-1 hover:bg-slate-100 rounded cursor-pointer" title="Monter"><MoveUp className="w-3.5 h-3.5 text-slate-500" /></button>
@@ -700,7 +711,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
       {/* DASHBOARD CUSTOMIZATION MODAL */}
       {isCustomizeModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
           <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-6 space-y-6 animate-fade-in">
             <div className="flex justify-between items-center border-b border-slate-100 pb-3">
               <div className="flex items-center gap-2">

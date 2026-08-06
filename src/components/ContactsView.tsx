@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
-import { ViewPage, Contact, FilterState, Segment, Tag as TagType } from '../types';
+import { Link } from 'react-router-dom';
+import { Contact, FilterState, Segment, Tag as TagType } from '../types';
 import { 
   Search, 
   SlidersHorizontal, 
@@ -9,8 +10,6 @@ import {
   Map, 
   Brain, 
   Users, 
-  Settings, 
-  HelpCircle, 
   Bookmark, 
   UserPlus, 
   Flag, 
@@ -21,14 +20,10 @@ import {
   X, 
   Download, 
   Tag as TagIcon, 
-  GitMerge, 
   Mail, 
   Phone, 
   ExternalLink,
   RotateCcw,
-  PlusCircle,
-  Layers,
-  Sparkles,
   Check
 } from 'lucide-react';
 import { ContactsTableSkeleton } from './Skeletons';
@@ -40,12 +35,10 @@ interface ContactsViewProps {
   activeSegmentId: string;
   onSelectSegment: (segmentId: string) => void;
   onSaveCurrentAsSegment: (segmentName: string, filters: FilterState) => void;
-  onNavigate: (page: ViewPage) => void;
   onSelectContact: (contactId: string) => void;
   onDeleteContact?: (contactId: string) => void;
   itemsPerPage?: number;
   onItemsPerPageChange?: (newLimit: number) => void;
-  onEditContact?: (contact: Contact) => void;
   selectedContactIds?: string[];
   onSelectContactIds?: (ids: string[] | ((prev: string[]) => string[])) => void;
   isLoading?: boolean;
@@ -58,12 +51,10 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
   activeSegmentId,
   onSelectSegment,
   onSaveCurrentAsSegment,
-  onNavigate,
   onSelectContact,
   onDeleteContact,
   itemsPerPage = 10,
   onItemsPerPageChange,
-  onEditContact,
   selectedContactIds: propSelectedContactIds,
   onSelectContactIds: propOnSelectContactIds,
   isLoading = false
@@ -122,21 +113,6 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
   // Save Segment Modal State
   const [isSaveSegmentModalOpen, setIsSaveSegmentModalOpen] = useState(false);
   const [newSegmentNameInput, setNewSegmentNameInput] = useState('');
-
-  // Settings & Support Modals State
-  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
-  const [isSupportModalOpen, setIsSupportModalOpen] = useState(false);
-  const [supportMessage, setSupportMessage] = useState({ subject: '', body: '' });
-  const [supportSubmitted, setSupportSubmitted] = useState(false);
-  
-  // Settings preferences state
-  const [settingsPrefs, setSettingsPrefs] = useState({
-    emailAlerts: true,
-    defaultItemsPerPage: 20,
-    autoSync: true,
-    theme: 'Clair (R&I Standard)'
-  });
-  const [settingsSaved, setSettingsSaved] = useState(false);
 
   // Handle Save Current Applied Filters as Segment
   const handleSaveSegmentSubmit = (e: React.FormEvent) => {
@@ -204,6 +180,25 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
       appliedFilters.tags.length > 0
     );
   }, [appliedFilters]);
+
+  // "Tous les contacts" default segment shown at the front of the quick-access bar
+  const ALL_SEGMENT: Segment = useMemo(() => ({
+    id: 'all',
+    name: 'Tous les contacts',
+    filters: {
+      search: '',
+      headquarters: 'Tous les pays',
+      zones: [],
+      expertises: [],
+      actorTypes: [],
+      tags: []
+    }
+  }), []);
+
+  const displaySegments = useMemo(() => {
+    const hasAll = segments.some(s => s.id === 'all');
+    return hasAll ? segments : [ALL_SEGMENT, ...segments];
+  }, [segments, ALL_SEGMENT]);
 
   // Expanded tags popover ID
   const [popoverContactId, setPopoverContactId] = useState<string | null>(null);
@@ -361,22 +356,34 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
   };
 
   return (
-    <div className="flex-1 flex flex-col min-[1600px]:flex-row min-h-[calc(100vh-64px)] w-full max-w-full bg-[#dff9f8] relative">
+    <div className="flex-1 flex flex-col lg:flex-row lg:items-start min-h-[calc(100vh-64px)] w-full max-w-full bg-[#dff9f8] relative">
       
-      {/* Mobile / Slide-over Filter Backdrop (< 1600px) */}
+      {/* Mobile / Slide-over Filter Backdrop (< lg) */}
       {isMobileFilterOpen && (
         <div 
           onClick={() => setIsMobileFilterOpen(false)}
-          className="min-[1600px]:hidden fixed inset-0 bg-slate-900/50 backdrop-blur-xs z-40 animate-in fade-in duration-200"
+          className="lg:hidden fixed inset-0 bg-slate-900/50 backdrop-blur-xs z-40 animate-in fade-in duration-200"
         />
       )}
 
-      {/* Left Sidebar Filter Drawer (Non-scrollable Lock, sticky top-16 >= 1600px) */}
+      {/* Left Sidebar Filter Panel (sticky on lg+, slide-over drawer below) */}
       <aside className={`
-        fixed min-[1600px]:sticky top-0 min-[1600px]:top-16 inset-y-0 min-[1600px]:inset-y-auto left-0 z-40 min-[1600px]:z-30 w-[280px] sm:w-80 h-full min-[1600px]:h-[calc(100vh-64px)] bg-[#e4fffe] border-r border-[#bcc9c7] p-5 flex flex-col justify-between shrink-0 overflow-hidden transition-transform duration-300 shadow-2xl min-[1600px]:shadow-none
-        ${isMobileFilterOpen ? 'translate-x-0' : '-translate-x-full min-[1600px]:translate-x-0'}
+        w-72 flex-shrink-0
+        fixed lg:relative
+        inset-y-0 lg:inset-y-auto
+        left-0
+        z-40
+        h-full lg:h-auto
+        bg-[#e4fffe] border-r border-[#bcc9c7]
+        p-4 sm:p-5
+        flex flex-col
+        overflow-y-auto lg:overflow-visible
+        transition-transform duration-300
+        shadow-2xl lg:shadow-none
+        lg:translate-x-0
+        ${isMobileFilterOpen ? 'translate-x-0' : '-translate-x-full'}
       `}>
-        <div className="space-y-6">
+        <div className="space-y-5">
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-lg font-bold text-[#006a66]">Filtres</h2>
@@ -384,12 +391,25 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
                 Sélectionnez vos critères
               </p>
             </div>
-            <button 
-              onClick={() => setIsMobileFilterOpen(false)}
-              className="min-[1600px]:hidden p-1.5 rounded-lg text-slate-500 hover:bg-slate-200/60 transition-colors cursor-pointer"
-            >
-              <X className="w-5 h-5" />
-            </button>
+            <div className="flex items-center gap-1.5">
+              <button 
+                type="button"
+                onClick={() => {
+                  handleResetFilters();
+                  setIsMobileFilterOpen(false);
+                }}
+                className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-200/60 hover:text-[#006a66] transition-colors cursor-pointer"
+                title="Réinitialiser les filtres"
+              >
+                <RotateCcw className="w-4 h-4" />
+              </button>
+              <button 
+                onClick={() => setIsMobileFilterOpen(false)}
+                className="lg:hidden p-1.5 rounded-lg text-slate-500 hover:bg-slate-200/60 transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
           </div>
 
           <div className="space-y-5">
@@ -505,76 +525,34 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
               </div>
             </section>
           </div>
-        </div>
 
-        {/* Sidebar Footer Buttons */}
-        <div className="pt-4 border-t border-[#bcc9c7] mt-6 space-y-2.5">
-          {/* Appliquer les filtres */}
-          <button 
-            onClick={() => {
-              handleApplyFilters();
-              setIsMobileFilterOpen(false);
-            }}
-            className="w-full py-3 px-4 bg-[#005f5a] hover:bg-[#004f4a] text-white rounded-2xl text-xs font-extrabold flex items-center justify-start gap-3 shadow-xs transition-all active:scale-95 cursor-pointer"
-          >
-            <Filter className="w-4 h-4 text-white stroke-[2.5]" />
-            <span>Appliquer les filtres</span>
-          </button>
+          {/* Sidebar Action Buttons (end of content) */}
+          <div className="pt-4 border-t border-[#bcc9c7] space-y-2.5">
+            {/* Appliquer les filtres */}
+            <button 
+              onClick={() => {
+                handleApplyFilters();
+                setIsMobileFilterOpen(false);
+              }}
+              className="w-full py-3 px-4 bg-[#005f5a] hover:bg-[#004f4a] text-white rounded-2xl text-xs font-extrabold flex items-center justify-start gap-3 shadow-xs transition-all active:scale-95 cursor-pointer"
+            >
+              <Filter className="w-4 h-4 text-white stroke-[2.5]" />
+              <span>Appliquer les filtres</span>
+            </button>
 
-          {/* Réinitialiser les filtres */}
-          <button 
-            onClick={() => {
-              handleResetFilters();
-              setIsMobileFilterOpen(false);
-            }}
-            className="w-full py-2.5 px-4 bg-white hover:bg-slate-100 text-slate-700 border border-[#bcc9c7] rounded-2xl text-xs font-extrabold flex items-center justify-start gap-3 transition-all cursor-pointer shadow-2xs"
-            title="Réinitialiser tous les critères de filtrage"
-          >
-            <RotateCcw className="w-4 h-4 text-slate-500 stroke-[2.5]" />
-            <span>Réinitialiser les filtres</span>
-          </button>
-
-          {/* Enregistrer comme segment */}
-          <button 
-            onClick={() => {
-              setIsSaveSegmentModalOpen(true);
-              setIsMobileFilterOpen(false);
-            }}
-            className="w-full py-2.5 px-4 bg-[#d7f2ef] hover:bg-[#c9ece8] text-[#005f5a] rounded-2xl text-xs font-extrabold flex items-center justify-start gap-3 transition-all active:scale-95 cursor-pointer"
-            title="Enregistrer les filtres appliqués comme nouveau segment"
-          >
-            <Save className="w-4 h-4 text-[#005f5a] stroke-[2.5]" />
-            <span>Enregistrer comme segment</span>
-          </button>
-
-          {/* Subtle Divider */}
-          <div className="border-t border-[#bcc9c7]/40 my-1 pt-1"></div>
-
-          {/* Paramètres */}
-          <button 
-            onClick={() => {
-              setIsSettingsModalOpen(true);
-              setIsMobileFilterOpen(false);
-            }}
-            className="w-full py-2 px-2 text-[#3d4948] hover:text-[#005f5a] hover:bg-white/60 rounded-xl text-xs font-bold flex items-center justify-start gap-3 transition-colors cursor-pointer"
-            title="Ouvrir les paramètres"
-          >
-            <Settings className="w-4 h-4 text-[#3d4948]" />
-            <span>Paramètres</span>
-          </button>
-
-          {/* Support */}
-          <button 
-            onClick={() => {
-              setIsSupportModalOpen(true);
-              setIsMobileFilterOpen(false);
-            }}
-            className="w-full py-2 px-2 text-[#3d4948] hover:text-[#005f5a] hover:bg-white/60 rounded-xl text-xs font-bold flex items-center justify-start gap-3 transition-colors cursor-pointer"
-            title="Besoin d'aide ou support"
-          >
-            <HelpCircle className="w-4 h-4 text-[#3d4948]" />
-            <span>Support</span>
-          </button>
+            {/* Enregistrer comme segment */}
+            <button 
+              onClick={() => {
+                setIsSaveSegmentModalOpen(true);
+                setIsMobileFilterOpen(false);
+              }}
+              className="w-full py-2.5 px-4 bg-[#d7f2ef] hover:bg-[#c9ece8] text-[#005f5a] rounded-2xl text-xs font-extrabold flex items-center justify-start gap-3 transition-all active:scale-95 cursor-pointer"
+              title="Enregistrer les filtres appliqués comme nouveau segment"
+            >
+              <Save className="w-4 h-4 text-[#005f5a] stroke-[2.5]" />
+              <span>Enregistrer comme segment</span>
+            </button>
+          </div>
         </div>
       </aside>
 
@@ -611,13 +589,13 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
           </div>
 
           <div className="flex items-center gap-2 shrink-0 justify-end">
-            <button 
-              onClick={() => onNavigate('new-contact')}
+            <Link 
+              to="/contacts/new"
               className="flex items-center justify-center gap-1.5 px-4 py-2.5 bg-[#35b8b2] hover:bg-[#2b958f] text-white font-bold text-xs rounded-xl shadow-sm hover:shadow transition-all active:scale-95 cursor-pointer w-full sm:w-auto"
             >
               <UserPlus className="w-4 h-4" />
               <span>Nouveau Contact</span>
-            </button>
+            </Link>
           </div>
         </div>
 
@@ -647,7 +625,7 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
             ref={segmentsRef}
             className="flex items-center gap-2 overflow-x-auto scrollbar-none scroll-smooth flex-1 py-0.5"
           >
-            {segments.map(seg => {
+            {displaySegments.map(seg => {
               const isActive = seg.id === 'all'
                 ? (activeSegmentId === 'all' && !isAnyCustomFilterActive)
                 : (activeSegmentId === seg.id);
@@ -870,19 +848,13 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
                               >
                                 <ExternalLink className="w-4 h-4" />
                               </button>
-                              <button 
-                                onClick={() => {
-                                  if (onEditContact) {
-                                    onEditContact(contact);
-                                  } else {
-                                    onNavigate('new-contact');
-                                  }
-                                }}
+                              <Link 
+                                to={`/contacts/${contact.id}/edit`}
                                 className="p-1.5 hover:bg-[#35b8b2]/20 rounded-lg text-[#006a66] cursor-pointer" 
                                 title="Modifier"
                               >
                                 <Edit className="w-4 h-4" />
-                              </button>
+                              </Link>
                               {onDeleteContact && (
                                 <button 
                                   onClick={() => onDeleteContact(contact.id)}
@@ -996,18 +968,12 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
                           >
                             <ExternalLink className="w-3.5 h-3.5" /> Voir
                           </button>
-                          <button 
-                            onClick={() => {
-                              if (onEditContact) {
-                                onEditContact(contact);
-                              } else {
-                                onNavigate('new-contact');
-                              }
-                            }}
+                          <Link 
+                            to={`/contacts/${contact.id}/edit`}
                             className="p-1.5 hover:bg-slate-100 rounded-lg text-[#006a66] cursor-pointer" 
                           >
                             <Edit className="w-4 h-4" />
-                          </button>
+                          </Link>
                           {onDeleteContact && (
                             <button 
                               onClick={() => onDeleteContact(contact.id)}
@@ -1107,18 +1073,18 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
             <div className="h-5 w-px bg-white/20" />
 
             <div className="flex items-center gap-4 text-xs font-bold">
-              <button 
-                onClick={() => onNavigate('exportation')}
+              <Link 
+                to="/export"
                 className="flex items-center gap-1.5 hover:text-[#7df6ef] transition-colors"
               >
                 <Download className="w-4 h-4" /> Exporter
-              </button>
-              <button 
-                onClick={() => onNavigate('segmentation')}
+              </Link>
+              <Link 
+                to="/segments"
                 className="flex items-center gap-1.5 hover:text-[#7df6ef] transition-colors"
               >
                 <TagIcon className="w-4 h-4" /> Ajouter des tags
-              </button>
+              </Link>
             </div>
 
             <button 
@@ -1136,7 +1102,7 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
       {quickDrawerContact && (
         <div 
           onClick={() => setQuickDrawerContact(null)}
-          className="fixed inset-0 z-50 flex justify-end bg-black/20 backdrop-blur-xs cursor-pointer"
+          className="fixed inset-0 z-50 flex justify-end bg-black/50 backdrop-blur-sm cursor-pointer"
         >
           <div 
             onClick={(e) => e.stopPropagation()}
@@ -1192,12 +1158,13 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
                 <section>
                   <h3 className="text-xs font-bold text-[#071f1f] mb-2 flex items-center justify-between">
                     <span>Étiquettes / Tags</span>
-                    <button 
-                      onClick={() => onNavigate('segmentation')}
+                    <Link 
+                      to="/segments"
+                      onClick={() => setQuickDrawerContact(null)}
                       className="text-[11px] text-[#006a66] hover:underline font-bold"
                     >
                       Gérer
-                    </button>
+                    </Link>
                   </h3>
                   <div className="flex flex-wrap gap-1.5">
                     {quickDrawerContact.tags && quickDrawerContact.tags.length > 0 ? (
@@ -1227,19 +1194,14 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
             </div>
 
             <div className="pt-6 border-t border-[#bcc9c7] mt-6 flex gap-2">
-              <button 
-                onClick={() => {
-                  const contactToEdit = quickDrawerContact;
-                  setQuickDrawerContact(null);
-                  if (onEditContact && contactToEdit) {
-                    onEditContact(contactToEdit);
-                  }
-                }}
+              <Link 
+                to={`/contacts/${quickDrawerContact.id}/edit`}
+                onClick={() => setQuickDrawerContact(null)}
                 className="px-4 py-3 bg-[#abece7] text-[#006a66] hover:bg-[#86e2dc] font-bold text-xs rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer shrink-0"
               >
                 <Edit className="w-4 h-4" />
                 Modifier
-              </button>
+              </Link>
               <button 
                 onClick={() => {
                   const id = quickDrawerContact.id;
@@ -1260,7 +1222,7 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
       {isSaveSegmentModalOpen && (
         <div 
           onClick={() => setIsSaveSegmentModalOpen(false)}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 cursor-pointer"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 cursor-pointer"
         >
           <div 
             onClick={(e) => e.stopPropagation()}
@@ -1326,252 +1288,6 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
                 </button>
               </div>
             </form>
-          </div>
-        </div>
-      )}
-
-      {/* SETTINGS MODAL */}
-      {isSettingsModalOpen && (
-        <div 
-          onClick={() => {
-            setIsSettingsModalOpen(false);
-            setSettingsSaved(false);
-          }}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 cursor-pointer"
-        >
-          <div 
-            onClick={(e) => e.stopPropagation()}
-            className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-6 space-y-5 animate-fade-in cursor-default"
-          >
-            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-              <div className="flex items-center gap-2">
-                <Settings className="w-5 h-5 text-[#006a66]" />
-                <h3 className="font-extrabold text-base text-[#071f1f]">
-                  Paramètres de l'Annuaire R&I
-                </h3>
-              </div>
-              <button 
-                onClick={() => {
-                  setIsSettingsModalOpen(false);
-                  setSettingsSaved(false);
-                }}
-                className="p-1 hover:bg-slate-100 rounded-full text-slate-400"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="space-y-4 text-xs">
-              {settingsSaved && (
-                <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl font-bold flex items-center justify-between">
-                  <span>Modifications enregistrées avec succès !</span>
-                  <Check className="w-4 h-4 text-emerald-600" />
-                </div>
-              )}
-
-              {/* Preferences */}
-              <div className="space-y-3">
-                <h4 className="font-extrabold text-[#006a66] uppercase text-[10px] tracking-wider">Affichage & Navigation</h4>
-                <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-200">
-                  <div>
-                    <span className="font-bold text-[#071f1f] block">Éléments par page par défaut</span>
-                    <span className="text-slate-500 text-[11px]">Nombre de contacts affichés dans la table</span>
-                  </div>
-                  <select 
-                    value={settingsPrefs.defaultItemsPerPage}
-                    onChange={(e) => setSettingsPrefs({ ...settingsPrefs, defaultItemsPerPage: Number(e.target.value) })}
-                    className="p-2 bg-white border border-slate-300 rounded-lg font-bold text-xs cursor-pointer"
-                  >
-                    <option value={10}>10 par page</option>
-                    <option value={20}>20 par page</option>
-                    <option value={50}>50 par page</option>
-                    <option value={100}>100 par page</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* Notifications */}
-              <div className="space-y-3">
-                <h4 className="font-extrabold text-[#006a66] uppercase text-[10px] tracking-wider">Notifications & Alertes</h4>
-                <label className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-200 cursor-pointer">
-                  <div>
-                    <span className="font-bold text-[#071f1f] block">Alertes par e-mail sur nouveaux contacts</span>
-                    <span className="text-slate-500 text-[11px]">Recevoir une notification lors d'imports R&I automatiques</span>
-                  </div>
-                  <input 
-                    type="checkbox"
-                    checked={settingsPrefs.emailAlerts}
-                    onChange={(e) => setSettingsPrefs({ ...settingsPrefs, emailAlerts: e.target.checked })}
-                    className="w-4 h-4 rounded text-[#006a66] focus:ring-[#006a66]"
-                  />
-                </label>
-              </div>
-
-              {/* Data Sync */}
-              <div className="space-y-3">
-                <h4 className="font-extrabold text-[#006a66] uppercase text-[10px] tracking-wider">Synchronisation & Sécurité</h4>
-                <label className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-200 cursor-pointer">
-                  <div>
-                    <span className="font-bold text-[#071f1f] block">Mise à jour automatique des conflits</span>
-                    <span className="text-slate-500 text-[11px]">Proposer la fusion automatique des doublons d'emails</span>
-                  </div>
-                  <input 
-                    type="checkbox"
-                    checked={settingsPrefs.autoSync}
-                    onChange={(e) => setSettingsPrefs({ ...settingsPrefs, autoSync: e.target.checked })}
-                    className="w-4 h-4 rounded text-[#006a66] focus:ring-[#006a66]"
-                  />
-                </label>
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-3 pt-3 border-t border-slate-100">
-              <button
-                type="button"
-                onClick={() => {
-                  setIsSettingsModalOpen(false);
-                  setSettingsSaved(false);
-                }}
-                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition-colors text-xs cursor-pointer"
-              >
-                Fermer
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  if (onItemsPerPageChange) {
-                    onItemsPerPageChange(settingsPrefs.defaultItemsPerPage);
-                  }
-                  setSettingsSaved(true);
-                  setTimeout(() => setSettingsSaved(false), 2500);
-                }}
-                className="px-5 py-2 bg-[#006a66] hover:bg-[#256865] text-white font-bold rounded-xl shadow transition-all active:scale-95 text-xs cursor-pointer"
-              >
-                Sauvegarder
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* SUPPORT MODAL */}
-      {isSupportModalOpen && (
-        <div 
-          onClick={() => {
-            setIsSupportModalOpen(false);
-            setSupportSubmitted(false);
-          }}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 cursor-pointer"
-        >
-          <div 
-            onClick={(e) => e.stopPropagation()}
-            className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-6 space-y-5 animate-fade-in cursor-default"
-          >
-            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-              <div className="flex items-center gap-2">
-                <HelpCircle className="w-5 h-5 text-[#006a66]" />
-                <h3 className="font-extrabold text-base text-[#071f1f]">
-                  Support & Assistance Technique
-                </h3>
-              </div>
-              <button 
-                onClick={() => {
-                  setIsSupportModalOpen(false);
-                  setSupportSubmitted(false);
-                }}
-                className="p-1 hover:bg-slate-100 rounded-full text-slate-400"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {supportSubmitted ? (
-              <div className="p-6 bg-emerald-50 border border-emerald-200 rounded-2xl text-center space-y-3">
-                <div className="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto">
-                  <Check className="w-6 h-6" />
-                </div>
-                <h4 className="font-extrabold text-emerald-900 text-sm">Message transmis au support R&I !</h4>
-                <p className="text-xs text-emerald-700">
-                  Notre équipe technique prendra en charge votre demande dans les plus brefs délais.
-                </p>
-                <button
-                  onClick={() => {
-                    setIsSupportModalOpen(false);
-                    setSupportSubmitted(false);
-                  }}
-                  className="px-5 py-2 bg-[#006a66] text-white font-bold text-xs rounded-xl shadow cursor-pointer"
-                >
-                  Fermer
-                </button>
-              </div>
-            ) : (
-              <div className="space-y-4 text-xs">
-                <div className="bg-[#dff9f8] p-3.5 rounded-xl border border-[#bcc9c7]/40 flex items-start gap-3">
-                  <Sparkles className="w-5 h-5 text-[#006a66] shrink-0 mt-0.5" />
-                  <div>
-                    <p className="font-bold text-[#006a66]">Besoin d'aide avec l'Annuaire R&I ?</p>
-                    <p className="text-slate-600 text-[11px]">
-                      Vous pouvez contacter l'équipe d'administration ou poser vos questions sur l'importation de contacts, les filtres et les segments.
-                    </p>
-                  </div>
-                </div>
-
-                <form 
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    setSupportSubmitted(true);
-                    setSupportMessage({ subject: '', body: '' });
-                  }} 
-                  className="space-y-3"
-                >
-                  <div>
-                    <label className="font-bold text-slate-700 block mb-1">Sujet de votre demande *</label>
-                    <input
-                      type="text"
-                      required
-                      value={supportMessage.subject}
-                      onChange={(e) => setSupportMessage({ ...supportMessage, subject: e.target.value })}
-                      placeholder="ex: Problème d'importation CSV ou question sur les filtres..."
-                      className="w-full p-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#006a66] text-xs font-medium"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="font-bold text-slate-700 block mb-1">Message / Description *</label>
-                    <textarea
-                      required
-                      rows={4}
-                      value={supportMessage.body}
-                      onChange={(e) => setSupportMessage({ ...supportMessage, body: e.target.value })}
-                      placeholder="Décrivez votre question ou le comportement observé..."
-                      className="w-full p-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#006a66] text-xs font-medium resize-none"
-                    />
-                  </div>
-
-                  <div className="pt-2 flex justify-between items-center border-t border-slate-100">
-                    <span className="text-[11px] text-slate-500 font-medium">
-                      E-mail support: <a href="mailto:support-ri@recherche.org" className="text-[#006a66] underline font-bold">support-ri@recherche.org</a>
-                    </span>
-
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setIsSupportModalOpen(false)}
-                        className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition-colors cursor-pointer"
-                      >
-                        Annuler
-                      </button>
-                      <button
-                        type="submit"
-                        className="px-5 py-2 bg-[#006a66] hover:bg-[#256865] text-white font-bold rounded-xl shadow transition-all active:scale-95 cursor-pointer"
-                      >
-                        Envoyer
-                      </button>
-                    </div>
-                  </div>
-                </form>
-              </div>
-            )}
           </div>
         </div>
       )}

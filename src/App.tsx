@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { ViewPage, Contact, ImportConflict, ExchangeNote, Tag, Segment, FilterState } from './types';
+import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
+import { Contact, ImportConflict, ExchangeNote, Tag, Segment, FilterState, User } from './types';
 import { INITIAL_IMPORT_CONFLICTS } from './data/mockData';
 import { useToast } from './components/Toast';
 import { Header } from './components/Header';
@@ -11,6 +12,7 @@ import { ImportWizardView } from './components/ImportWizardView';
 import { NewContactView } from './components/NewContactView';
 import { ExportView } from './components/ExportView';
 import { SegmentationView } from './components/SegmentationView';
+import { ProfileView } from './components/ProfileView';
 import { AuthView } from './components/AuthView';
 
 // --- API helper ---
@@ -50,20 +52,34 @@ async function apiFetch(path: string, options?: RequestInit) {
 
 export default function App() {
   const { showToast } = useToast();
-  const [activePage, setActivePage] = useState<ViewPage>('dashboard');
+  const navigate = useNavigate();
+  const location = useLocation();
+
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [conflicts, setConflicts] = useState<ImportConflict[]>(INITIAL_IMPORT_CONFLICTS);
-  const [selectedContactId, setSelectedContactId] = useState<string>('');
   const [isLoadingData, setIsLoadingData] = useState<boolean>(true);
 
   // Selected contacts in directory for bulk actions & export
   const [selectedContactIds, setSelectedContactIds] = useState<string[]>([]);
 
-  // Pagination limit state across view switches
-  const [itemsPerPage, setItemsPerPage] = useState<number>(10);
+  // Pagination limit state across view switches (persisted locally)
+  const [itemsPerPage, setItemsPerPage] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('arsii_contacts_items_per_page');
+      const n = saved ? Number(saved) : NaN;
+      return [10, 20, 50, 100].includes(n) ? n : 10;
+    } catch {
+      return 10;
+    }
+  });
 
-  // Edit contact state
-  const [editingContact, setEditingContact] = useState<Contact | null>(null);
+  useEffect(() => {
+    try {
+      localStorage.setItem('arsii_contacts_items_per_page', String(itemsPerPage));
+    } catch {
+      // ignore
+    }
+  }, [itemsPerPage]);
 
   // Tags & Segments State
   const [tags, setTags] = useState<Tag[]>([]);
@@ -72,6 +88,7 @@ export default function App() {
 
   // Authentication State (defaults to true for smooth start, can toggle to auth page)
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(true);
+  const [user, setUser] = useState<User | null>(null);
 
   // ──────────────────────────────────────────────
   // Load contacts from database on mount
@@ -120,42 +137,48 @@ export default function App() {
     loadTagsAndSegments();
   }, [loadContacts, loadTagsAndSegments]);
 
-  // Currently selected contact
-  const currentContact = contacts.find(c => c.id === selectedContactId) || contacts[0];
+  // Restore active session on mount (real DB-backed user)
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await apiFetch('/api/auth/me');
+        if (!cancelled && data?.authenticated && data?.user) {
+          setUser(data.user);
+          setIsAuthenticated(true);
+        }
+      } catch {
+        if (!cancelled) {
+          setUser(null);
+          setIsAuthenticated(false);
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   // ──────────────────────────────────────────────
   // AUTH
   // ──────────────────────────────────────────────
-  const handleLoginSuccess = () => {
+  const handleLoginSuccess = (userData: User) => {
+    setUser(userData);
     setIsAuthenticated(true);
-    setActivePage('dashboard');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    navigate('/dashboard');
   };
 
   const handleLogout = () => {
+    setUser(null);
     setIsAuthenticated(false);
-    setActivePage('auth');
+    navigate('/login');
   };
 
-  // ──────────────────────────────────────────────
-  // NAVIGATION
-  // ──────────────────────────────────────────────
-  const handleNavigate = (page: ViewPage) => {
-    if (page === 'auth') setIsAuthenticated(false);
-    if (page !== 'new-contact') setEditingContact(null);
-    setActivePage(page);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+  const handleUserUpdate = (updatedUser: User) => {
+    setUser(updatedUser);
   };
 
   // ──────────────────────────────────────────────
   // CONTACT CRUD — all persisted to DB
   // ──────────────────────────────────────────────
-  const handleEditContact = (contact: Contact) => {
-    setEditingContact(contact);
-    setActivePage('new-contact');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
-
   const handleUpdateContact = async (updatedContact: Contact) => {
     try {
       const res = await apiFetch(`/api/contacts/${updatedContact.id}`, {
@@ -170,7 +193,11 @@ export default function App() {
           actorType: updatedContact.actorType,
           expertise: updatedContact.expertise,
           interventionZones: updatedContact.interventionZones,
-          linkedin: updatedContact.linkedin
+          linkedin: updatedContact.linkedin,
+          avatarUrl: updatedContact.avatarUrl,
+          tagIds: (updatedContact.tags || [])
+            .map(name => tags.find(t => t.name.toLowerCase() === name.toLowerCase())?.id)
+            .filter(Boolean)
         })
       });
       const saved = mapContactFromApi(res.data.contact);
@@ -180,13 +207,10 @@ export default function App() {
       showToast(`Erreur mise à jour : ${err.message}`, 'error');
       setContacts(prev => prev.map(c => c.id === updatedContact.id ? updatedContact : c));
     }
-    setEditingContact(null);
   };
 
   const handleSelectContact = (contactId: string) => {
-    setSelectedContactId(contactId);
-    setActivePage('contact-detail');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    navigate(`/contacts/${contactId}`);
   };
 
   const handleAddContact = async (newContact: Contact) => {
@@ -203,7 +227,11 @@ export default function App() {
           actorType: newContact.actorType,
           expertise: newContact.expertise,
           interventionZones: newContact.interventionZones,
-          linkedin: newContact.linkedin
+          linkedin: newContact.linkedin,
+          avatarUrl: newContact.avatarUrl,
+          tagIds: (newContact.tags || [])
+            .map(name => tags.find(t => t.name.toLowerCase() === name.toLowerCase())?.id)
+            .filter(Boolean)
         })
       });
       const saved = mapContactFromApi(res.data.contact);
@@ -296,8 +324,10 @@ export default function App() {
       });
       showToast(`Importation réussie : ${res.data?.createdCount || 0} créés, ${res.data?.updatedCount || 0} mis à jour.`, 'success');
       await loadContacts();
+      return true;
     } catch (err: any) {
       showToast(`Erreur lors de l'importation : ${err.message}`, 'error');
+      return false;
     }
   };
 
@@ -310,8 +340,7 @@ export default function App() {
 
   const handleApplySegmentFromManagement = (segment: Segment) => {
     setActiveSegmentId(segment.id);
-    setActivePage('contacts');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    navigate('/contacts');
   };
 
   const handleSaveCurrentAsSegment = async (segmentName: string, filters: FilterState) => {
@@ -446,26 +475,42 @@ export default function App() {
     }
   };
 
-  const handleToggleContactTag = (contactId: string, tagName: string) => {
-    // Optimistic local update — tag toggle is UI-only for now
-    setContacts(prev => prev.map(c => {
-      if (c.id === contactId) {
+  const handleSaveTagContacts = async (tagId: string, contactIds: string[]) => {
+    try {
+      const res = await apiFetch(`/api/segments/tags/${tagId}/contacts`, {
+        method: 'PUT',
+        body: JSON.stringify({ contactIds })
+      });
+      const savedTag = res.data.tag;
+      const savedContactIds = new Set((savedTag.contacts || []).map((rel: any) => rel.contactId));
+      setContacts(prev => prev.map(c => {
         const currentTags = c.tags || [];
-        const has = currentTags.includes(tagName);
-        return { ...c, tags: has ? currentTags.filter(t => t !== tagName) : [...currentTags, tagName] };
-      }
-      return c;
-    }));
+        const has = currentTags.includes(savedTag.name);
+        const shouldHave = savedContactIds.has(c.id);
+        if (has === shouldHave) return c;
+        return {
+          ...c,
+          tags: shouldHave
+            ? [...currentTags, savedTag.name]
+            : currentTags.filter(t => t !== savedTag.name)
+        };
+      }));
+      showToast(`${savedContactIds.size} contact(s) associé(s) au tag "${savedTag.name}".`, 'success');
+    } catch (err: any) {
+      showToast(`Erreur d'association du tag : ${err.message}`, 'error');
+      throw err;
+    }
   };
 
   // ──────────────────────────────────────────────
   // SCROLL-HIDE HEADER
   // ──────────────────────────────────────────────
+  const isContactsPage = location.pathname === '/contacts';
   const [isHeaderVisible, setIsHeaderVisible] = useState(true);
   const lastScrollY = useRef(0);
 
   useEffect(() => {
-    if (activePage === 'contacts') {
+    if (isContactsPage) {
       setIsHeaderVisible(true);
       return;
     }
@@ -482,115 +527,164 @@ export default function App() {
     };
     window.addEventListener('scroll', handleScroll, { passive: true });
     return () => window.removeEventListener('scroll', handleScroll);
-  }, [activePage]);
+  }, [isContactsPage]);
 
   useEffect(() => {
     setIsHeaderVisible(true);
     lastScrollY.current = 0;
-  }, [activePage]);
+  }, [isContactsPage]);
+
+  // Scroll to top on route change
+  useEffect(() => {
+    window.scrollTo({ top: 0 });
+  }, [location.pathname]);
 
   // ──────────────────────────────────────────────
   // RENDER
   // ──────────────────────────────────────────────
-  if (activePage === 'auth' || !isAuthenticated) {
-    return <AuthView onLoginSuccess={handleLoginSuccess} />;
+  if (!isAuthenticated) {
+    return (
+      <Routes>
+        <Route path="/login" element={<AuthView onLoginSuccess={handleLoginSuccess} />} />
+        <Route path="*" element={<Navigate to="/login" replace />} />
+      </Routes>
+    );
   }
 
   return (
     <div className="min-h-screen flex flex-col bg-[#F4F6F8] text-[#071f1f] font-sans selection:bg-[#35b8b2] selection:text-white w-full max-w-full overflow-x-hidden">
-      
       <Header
-        activePage={activePage}
-        onNavigate={handleNavigate}
         isAuthenticated={isAuthenticated}
+        user={user}
         onLogout={handleLogout}
         isHeaderVisible={isHeaderVisible}
       />
 
       <main className="flex-1 pt-16 w-full max-w-full overflow-x-hidden flex flex-col">
-        <div className={activePage === 'dashboard' ? 'block' : 'hidden'}>
-          <DashboardView
-            contacts={contacts}
-            onNavigate={handleNavigate}
-            onSelectContact={handleSelectContact}
-            isLoading={isLoadingData}
-          />
-        </div>
+      <Routes>
+        <Route path="/" element={<Navigate to="/dashboard" replace />} />
 
-        <div className={activePage === 'contacts' ? 'block' : 'hidden'}>
-          <ContactsView
-            contacts={contacts}
-            segments={segments}
-            tags={tags}
-            activeSegmentId={activeSegmentId}
-            onSelectSegment={handleSelectSegment}
-            onSaveCurrentAsSegment={handleSaveCurrentAsSegment}
-            onNavigate={handleNavigate}
-            onSelectContact={handleSelectContact}
-            onDeleteContact={handleDeleteContact}
-            itemsPerPage={itemsPerPage}
-            onItemsPerPageChange={setItemsPerPage}
-            onEditContact={handleEditContact}
-            selectedContactIds={selectedContactIds}
-            onSelectContactIds={setSelectedContactIds}
-            isLoading={isLoadingData}
-          />
-        </div>
+        <Route
+          path="/dashboard"
+          element={
+            <DashboardView
+              contacts={contacts}
+              onSelectContact={handleSelectContact}
+              isLoading={isLoadingData}
+            />
+          }
+        />
 
-        <div className={activePage === 'segmentation' ? 'block' : 'hidden'}>
-          <SegmentationView
-            contacts={contacts}
-            tags={tags}
-            segments={segments}
-            onNavigate={handleNavigate}
-            onApplySegment={handleApplySegmentFromManagement}
-            onCreateSegment={handleCreateSegment}
-            onUpdateSegment={handleUpdateSegment}
-            onDeleteSegment={handleDeleteSegment}
-            onCreateTag={handleCreateTag}
-            onUpdateTag={handleUpdateTag}
-            onDeleteTag={handleDeleteTag}
-            onToggleContactTag={handleToggleContactTag}
-          />
-        </div>
+        <Route
+          path="/profile"
+          element={
+            <ProfileView
+              user={user}
+              onUserUpdate={handleUserUpdate}
+              onLogout={handleLogout}
+            />
+          }
+        />
 
-        {activePage === 'contact-detail' && currentContact && (
-          <ContactDetailView
-            contact={currentContact}
-            onNavigate={handleNavigate}
-            onAddNote={handleAddNote}
-            onEditContact={handleEditContact}
-          />
-        )}
+        <Route
+          path="/contacts"
+          element={
+            <ContactsView
+              contacts={contacts}
+              segments={segments}
+              tags={tags}
+              activeSegmentId={activeSegmentId}
+              onSelectSegment={handleSelectSegment}
+              onSaveCurrentAsSegment={handleSaveCurrentAsSegment}
+              onSelectContact={handleSelectContact}
+              onDeleteContact={handleDeleteContact}
+              itemsPerPage={itemsPerPage}
+              onItemsPerPageChange={setItemsPerPage}
+              selectedContactIds={selectedContactIds}
+              onSelectContactIds={setSelectedContactIds}
+              isLoading={isLoadingData}
+            />
+          }
+        />
 
-        <div className={activePage === 'importation' ? 'block' : 'hidden'}>
-          <ImportWizardView
-            onNavigate={handleNavigate}
-            onImportContacts={handleImportContacts}
-            existingContacts={contacts}
-          />
-        </div>
+        <Route
+          path="/contacts/new"
+          element={
+            <NewContactView
+              onAddContact={handleAddContact}
+              onUpdateContact={handleUpdateContact}
+              existingContacts={contacts}
+              tags={tags}
+            />
+          }
+        />
 
-        {activePage === 'new-contact' && (
-          <NewContactView
-            onNavigate={handleNavigate}
-            onAddContact={handleAddContact}
-            contactToEdit={editingContact}
-            onUpdateContact={handleUpdateContact}
-            existingContacts={contacts}
-          />
-        )}
+        <Route
+          path="/contacts/:id/edit"
+          element={
+            <NewContactView
+              onAddContact={handleAddContact}
+              onUpdateContact={handleUpdateContact}
+              existingContacts={contacts}
+              tags={tags}
+            />
+          }
+        />
 
-        <div className={activePage === 'exportation' ? 'block' : 'hidden'}>
-          <ExportView
-            onNavigate={handleNavigate}
-            contacts={contacts}
-            selectedContactIds={selectedContactIds}
-          />
-        </div>
+        <Route
+          path="/contacts/:id"
+          element={
+            <ContactDetailView
+              contacts={contacts}
+              onAddNote={handleAddNote}
+            />
+          }
+        />
+
+        <Route
+          path="/import"
+          element={
+            <ImportWizardView
+              onImportContacts={handleImportContacts}
+              existingContacts={contacts}
+            />
+          }
+        />
+
+        <Route
+          path="/export"
+          element={
+            <ExportView
+              contacts={contacts}
+              selectedContactIds={selectedContactIds}
+            />
+          }
+        />
+
+        <Route
+          path="/segments"
+          element={
+            <SegmentationView
+              contacts={contacts}
+              tags={tags}
+              segments={segments}
+              onApplySegment={handleApplySegmentFromManagement}
+              onCreateSegment={handleCreateSegment}
+              onUpdateSegment={handleUpdateSegment}
+              onDeleteSegment={handleDeleteSegment}
+              onCreateTag={handleCreateTag}
+              onUpdateTag={handleUpdateTag}
+              onDeleteTag={handleDeleteTag}
+              onSaveTagContacts={handleSaveTagContacts}
+            />
+          }
+        />
+
+        <Route path="*" element={<Navigate to="/dashboard" replace />} />
+      </Routes>
       </main>
 
-      <Footer onNavigate={handleNavigate} />
+      <Footer />
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { ViewPage, Contact, Tag, Segment, FilterState } from '../types';
+import { Contact, Tag, Segment, FilterState } from '../types';
 import { 
   Layers, 
   Tag as TagIcon, 
@@ -25,7 +25,6 @@ interface SegmentationViewProps {
   contacts: Contact[];
   tags: Tag[];
   segments: Segment[];
-  onNavigate: (page: ViewPage) => void;
   onApplySegment: (segment: Segment) => void;
   onCreateSegment: (segment: Segment) => void;
   onUpdateSegment: (segment: Segment) => void;
@@ -33,14 +32,13 @@ interface SegmentationViewProps {
   onCreateTag: (tag: Tag) => void;
   onUpdateTag: (tag: Tag) => void;
   onDeleteTag: (tagId: string) => void;
-  onToggleContactTag: (contactId: string, tagName: string) => void;
+  onSaveTagContacts: (tagId: string, contactIds: string[]) => Promise<void>;
 }
 
 export const SegmentationView: React.FC<SegmentationViewProps> = ({
   contacts,
   tags,
   segments,
-  onNavigate,
   onApplySegment,
   onCreateSegment,
   onUpdateSegment,
@@ -48,7 +46,7 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
   onCreateTag,
   onUpdateTag,
   onDeleteTag,
-  onToggleContactTag
+  onSaveTagContacts
 }) => {
   const [activeTab, setActiveTab] = useState<'segments' | 'tags'>('segments');
 
@@ -80,6 +78,8 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
   // Selected tag for detail drawer / assign tool
   const [selectedTagForDetail, setSelectedTagForDetail] = useState<Tag | null>(null);
   const [contactSearchInTagModal, setContactSearchInTagModal] = useState('');
+  const [tagContactSelection, setTagContactSelection] = useState<string[]>([]);
+  const [isSavingTagContacts, setIsSavingTagContacts] = useState(false);
 
   // Preset Colors for Tags
   const colorPresets = [
@@ -481,7 +481,13 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
                     </span>
 
                     <button
-                      onClick={() => setSelectedTagForDetail(tag)}
+                      onClick={() => {
+                        setTagContactSelection(
+                          contacts.filter(c => c.tags?.includes(tag.name)).map(c => c.id)
+                        );
+                        setContactSearchInTagModal('');
+                        setSelectedTagForDetail(tag);
+                      }}
                       className="text-[#006a66] font-bold hover:underline flex items-center gap-1 text-xs"
                     >
                       Gérer les contacts <ArrowRight className="w-3 h-3" />
@@ -494,7 +500,7 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
 
           {/* Tag Assignment Drawer / Modal */}
           {selectedTagForDetail && (
-            <div className="fixed inset-0 z-50 flex justify-end bg-black/30 backdrop-blur-xs">
+            <div className="fixed inset-0 z-50 flex justify-end bg-black/50 backdrop-blur-sm">
               <div className="w-full max-w-lg bg-white h-full shadow-2xl p-6 flex flex-col justify-between overflow-y-auto animate-slide-left">
                 <div>
                   <div className="flex justify-between items-center mb-6 border-b border-slate-100 pb-4">
@@ -516,7 +522,7 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
 
                   <div className="mb-4">
                     <p className="text-xs text-slate-600 mb-3">
-                      Cochez ou décochez les contacts pour leur attribuer ou leur retirer le tag <strong>"{selectedTagForDetail.name}"</strong> en temps réel.
+                      Cochez ou décochez les contacts pour leur attribuer ou leur retirer le tag <strong>"{selectedTagForDetail.name}"</strong>, puis cliquez sur <strong>Enregistrer</strong> pour valider.
                     </p>
 
                     <div className="relative">
@@ -539,7 +545,7 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
                         c.organization.toLowerCase().includes(contactSearchInTagModal.toLowerCase())
                       )
                       .map(contact => {
-                        const hasTag = contact.tags?.includes(selectedTagForDetail.name);
+                        const hasTag = tagContactSelection.includes(contact.id);
 
                         return (
                           <label 
@@ -558,8 +564,12 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
 
                             <input
                               type="checkbox"
-                              checked={!!hasTag}
-                              onChange={() => onToggleContactTag(contact.id, selectedTagForDetail.name)}
+                              checked={hasTag}
+                              onChange={() => setTagContactSelection(prev =>
+                                prev.includes(contact.id)
+                                  ? prev.filter(id => id !== contact.id)
+                                  : [...prev, contact.id]
+                              )}
                               className="rounded border-slate-300 text-[#006a66] focus:ring-[#006a66] w-4 h-4 cursor-pointer"
                             />
                           </label>
@@ -568,12 +578,39 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
                   </div>
                 </div>
 
-                <div className="pt-4 border-t border-slate-100">
+                <div className="pt-4 border-t border-slate-100 space-y-2.5">
+                  <button
+                    disabled={isSavingTagContacts}
+                    onClick={async () => {
+                      try {
+                        setIsSavingTagContacts(true);
+                        await onSaveTagContacts(selectedTagForDetail.id, tagContactSelection);
+                        setSelectedTagForDetail(null);
+                      } catch {
+                        // Keep drawer open so the user can retry
+                      } finally {
+                        setIsSavingTagContacts(false);
+                      }
+                    }}
+                    className="w-full py-2.5 bg-[#006a66] hover:bg-[#256865] text-white font-bold text-xs rounded-xl shadow flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    {isSavingTagContacts ? (
+                      <>
+                        <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                        </svg>
+                        Enregistrement...
+                      </>
+                    ) : (
+                      'Enregistrer'
+                    )}
+                  </button>
                   <button
                     onClick={() => setSelectedTagForDetail(null)}
-                    className="w-full py-2.5 bg-[#006a66] hover:bg-[#256865] text-white font-bold text-xs rounded-xl shadow"
+                    className="w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl"
                   >
-                    Fermer et sauvegarder
+                    Annuler
                   </button>
                 </div>
               </div>
@@ -585,7 +622,7 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
 
       {/* SEGMENT CREATE / EDIT MODAL */}
       {isSegmentModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
           <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full p-6 space-y-6 max-h-[90vh] overflow-y-auto animate-fade-in">
             <div className="flex justify-between items-center border-b border-slate-100 pb-4">
               <div className="flex items-center gap-2">
@@ -757,7 +794,7 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
 
       {/* TAG CREATE / EDIT MODAL */}
       {isTagModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
           <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 space-y-5 animate-fade-in">
             <div className="flex justify-between items-center border-b border-slate-100 pb-3">
               <div className="flex items-center gap-2">

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { ViewPage, Contact, ActorType } from '../types';
+import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Contact, ActorType, Tag } from '../types';
 import { 
   ChevronRight, 
   User, 
@@ -11,24 +12,31 @@ import {
   Lightbulb, 
   X, 
   AlertTriangle,
-  Plus
+  Plus,
+  Tag as TagIcon,
+  Camera,
+  Loader2
 } from 'lucide-react';
+import { useToast } from './Toast';
+import { validateImageFile, uploadImage, readFileAsDataUrl } from '../utils/upload';
 
 interface NewContactViewProps {
-  onNavigate: (page: ViewPage) => void;
   onAddContact: (contact: Contact) => void;
-  contactToEdit?: Contact | null;
   onUpdateContact?: (updated: Contact) => void;
   existingContacts?: Contact[];
+  tags?: Tag[];
 }
 
 export const NewContactView: React.FC<NewContactViewProps> = ({
-  onNavigate,
   onAddContact,
-  contactToEdit,
   onUpdateContact,
-  existingContacts = []
+  existingContacts = [],
+  tags = []
 }) => {
+  const { showToast } = useToast();
+  const navigate = useNavigate();
+  const { id } = useParams<{ id: string }>();
+  const contactToEdit = existingContacts.find(c => c.id === id) ?? null;
   // Form fields initialized according to contactToEdit or blank defaults
   const [nom, setNom] = useState(() => {
     if (!contactToEdit) return '';
@@ -65,6 +73,12 @@ export const NewContactView: React.FC<NewContactViewProps> = ({
     contactToEdit?.exchangeNotes?.[0]?.content || ''
   );
 
+  // Tags & Avatar
+  const [selectedTagNames, setSelectedTagNames] = useState<string[]>(contactToEdit?.tags || []);
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(contactToEdit?.avatarUrl || null);
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+  const avatarInputRef = React.useRef<HTMLInputElement>(null);
+
   // Sync state if contactToEdit changes
   React.useEffect(() => {
     if (contactToEdit) {
@@ -88,6 +102,8 @@ export const NewContactView: React.FC<NewContactViewProps> = ({
       setCompetences(contactToEdit.expertise || []);
       setLastDate(contactToEdit.exchangeNotes?.[0]?.date || '');
       setExchangeSummary(contactToEdit.exchangeNotes?.[0]?.content || '');
+      setSelectedTagNames(contactToEdit.tags || []);
+      setAvatarUrl(contactToEdit.avatarUrl || null);
     }
   }, [contactToEdit]);
 
@@ -138,6 +154,38 @@ export const NewContactView: React.FC<NewContactViewProps> = ({
     setCompetences(competences.filter(item => item !== c));
   };
 
+  const toggleTag = (tagName: string) => {
+    setSelectedTagNames(prev =>
+      prev.includes(tagName)
+        ? prev.filter(t => t !== tagName)
+        : [...prev, tagName]
+    );
+  };
+
+  const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+
+    const validationError = validateImageFile(file);
+    if (validationError) {
+      showToast(validationError, 'error');
+      return;
+    }
+
+    setIsUploadingAvatar(true);
+    try {
+      const dataUrl = await readFileAsDataUrl(file);
+      const url = await uploadImage(dataUrl);
+      setAvatarUrl(url);
+      showToast('Photo de profil mise à jour.', 'success');
+    } catch (err: any) {
+      showToast(`Erreur d'import de la photo : ${err.message}`, 'error');
+    } finally {
+      setIsUploadingAvatar(false);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!nom || !email) return;
@@ -166,12 +214,14 @@ export const NewContactView: React.FC<NewContactViewProps> = ({
         interventionZones: interventionZones.length ? interventionZones : [country],
         actorType: actorType,
         expertise: competences.length ? competences : contactToEdit.expertise,
+        tags: selectedTagNames,
+        avatarUrl: avatarUrl || undefined,
         projects: contactToEdit.projects || [],
         exchangeNotes: contactToEdit.exchangeNotes || []
       };
 
       await onUpdateContact(updatedContact);
-      onNavigate('contacts');
+      navigate('/contacts');
     } else {
       const newContact: Contact = {
         id: '',          // will be replaced by DB-generated ID
@@ -186,12 +236,14 @@ export const NewContactView: React.FC<NewContactViewProps> = ({
         interventionZones: interventionZones.length ? interventionZones : [country],
         actorType: actorType,
         expertise: competences.length ? competences : domaine ? [domaine] : [],
+        tags: selectedTagNames,
+        avatarUrl: avatarUrl || undefined,
         projects: [],
         exchangeNotes: []
       };
 
       await onAddContact(newContact);
-      onNavigate('contacts');
+      navigate('/contacts');
     }
   };
 
@@ -202,9 +254,9 @@ export const NewContactView: React.FC<NewContactViewProps> = ({
       {/* Header & Breadcrumbs */}
       <div className="flex flex-col gap-1">
         <nav className="flex items-center gap-1.5 text-xs text-[#3d4948] font-semibold">
-          <button onClick={() => onNavigate('contacts')} className="hover:text-[#006a66]">
+          <Link to="/contacts" className="hover:text-[#006a66]">
             Contacts
-          </button>
+          </Link>
           <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
           <span className="text-[#006a66] font-bold">
             {contactToEdit ? 'Modifier le Contact' : 'Nouveau Contact'}
@@ -224,13 +276,12 @@ export const NewContactView: React.FC<NewContactViewProps> = ({
           </div>
 
           <div className="flex gap-3">
-            <button
-              type="button"
-              onClick={() => onNavigate('contacts')}
+            <Link
+              to="/contacts"
               className="px-5 py-2.5 rounded-xl border border-[#bcc9c7] text-xs font-bold text-[#006a66] hover:bg-[#dff9f8] transition-colors cursor-pointer"
             >
               Annuler
-            </button>
+            </Link>
             <button
               onClick={handleSubmit}
               className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-[#35b8b2] to-[#256865] text-white text-xs font-bold shadow hover:shadow-md active:scale-95 transition-all cursor-pointer"
@@ -321,6 +372,36 @@ export const NewContactView: React.FC<NewContactViewProps> = ({
                     placeholder="Directeur de Recherche en IA"
                     className="w-full px-3 py-2.5 rounded-lg border border-[#bcc9c7] focus:border-[#35b8b2] focus:ring-2 focus:ring-[#35b8b2]/20"
                   />
+                </div>
+
+                {/* Avatar Upload */}
+                <div className="md:col-span-2 flex items-center gap-4">
+                  <div className="w-16 h-16 rounded-full overflow-hidden bg-[#cee8e7] border-2 border-[#35b8b2]/40 flex items-center justify-center shrink-0">
+                    {avatarUrl ? (
+                      <img src={avatarUrl} alt="Photo de profil" className="w-full h-full object-cover" />
+                    ) : (
+                      <span className="text-lg font-black text-[#006a66]">{(prenom || nom)[0]?.toUpperCase() || 'NC'}</span>
+                    )}
+                  </div>
+                  <div className="flex flex-col items-start gap-1">
+                    <button
+                      type="button"
+                      onClick={() => avatarInputRef.current?.click()}
+                      disabled={isUploadingAvatar}
+                      className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-[#dff9f8] hover:bg-[#abece7] text-[#006a66] font-bold transition-colors cursor-pointer disabled:opacity-75"
+                    >
+                      {isUploadingAvatar ? <Loader2 className="w-4 h-4 animate-spin" /> : <Camera className="w-4 h-4" />}
+                      {avatarUrl ? 'Changer la photo' : 'Ajouter une photo'}
+                    </button>
+                    <span className="text-[10px] text-slate-400">PNG, JPEG, WebP — 5 Mo max.</span>
+                    <input
+                      ref={avatarInputRef}
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp"
+                      className="hidden"
+                      onChange={handleAvatarChange}
+                    />
+                  </div>
                 </div>
               </div>
             </section>
@@ -444,6 +525,39 @@ export const NewContactView: React.FC<NewContactViewProps> = ({
                   </div>
                 </div>
               </div>
+            </section>
+
+            {/* Section 3.5: Tags / Étiquettes */}
+            <section className="space-y-4">
+              <h2 className="text-base font-bold text-[#006a66] border-b border-[#bcc9c7]/40 pb-2 flex items-center gap-2">
+                <TagIcon className="w-4 h-4 text-[#006a66]" /> Étiquettes / Tags
+              </h2>
+
+              {tags.length === 0 ? (
+                <p className="text-xs text-slate-400 italic">
+                  Aucun tag disponible. Créez des tags dans l'onglet Segmentation.
+                </p>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {tags.map(t => {
+                    const active = selectedTagNames.includes(t.name);
+                    return (
+                      <button
+                        key={t.id}
+                        type="button"
+                        onClick={() => toggleTag(t.name)}
+                        className={`px-3 py-1.5 rounded-full text-[11px] font-bold border transition-all cursor-pointer ${
+                          active
+                            ? 'bg-[#006a66] text-white border-[#006a66] shadow'
+                            : `${t.color} hover:opacity-90`
+                        }`}
+                      >
+                        {t.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </section>
 
             {/* Section 4: Notes & Suivi */}

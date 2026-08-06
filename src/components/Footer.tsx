@@ -1,12 +1,7 @@
 import React from 'react';
-import { ViewPage } from '../types';
 import { Globe, Mail, HelpCircle, Shield, FileText, Activity } from 'lucide-react';
 
-interface FooterProps {
-  onNavigate?: (page: ViewPage) => void;
-}
-
-export const Footer: React.FC<FooterProps> = ({ onNavigate }) => {
+export const Footer: React.FC = () => {
   return (
     <footer className="w-full bg-white border-t border-slate-200 py-6 px-4 sm:px-8 mt-auto text-slate-600 text-xs">
       <div className="max-w-[1440px] mx-auto flex flex-col md:flex-row items-center justify-between gap-4">

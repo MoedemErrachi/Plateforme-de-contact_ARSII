@@ -5,9 +5,46 @@ export class SegmentService {
   public async getSegments() {
     const [savedSegments, tags] = await Promise.all([
       prisma.savedSegment.findMany({ orderBy: { createdAt: 'desc' } }),
-      prisma.tag.findMany({ orderBy: { name: 'asc' } })
+      prisma.tag.findMany({
+        orderBy: { name: 'asc' },
+        include: { _count: { select: { contacts: true } } }
+      })
     ]);
     return { savedSegments, tags };
+  }
+
+  public async setTagContacts(tagId: string, contactIds: string[]) {
+    const existingTag = await prisma.tag.findUnique({ where: { id: tagId } });
+    if (!existingTag) {
+      throw new AppError(`Tag avec l'ID ${tagId} non trouvé`, 404);
+    }
+
+    const uniqueIds = Array.from(new Set(contactIds || []));
+
+    const tag = await prisma.$transaction(async (tx) => {
+      const validContacts = await tx.contact.findMany({
+        where: { id: { in: uniqueIds } },
+        select: { id: true }
+      });
+
+      await tx.tagOnContact.deleteMany({ where: { tagId } });
+
+      if (validContacts.length > 0) {
+        await tx.tagOnContact.createMany({
+          data: validContacts.map(contact => ({ tagId, contactId: contact.id }))
+        });
+      }
+
+      return tx.tag.findUniqueOrThrow({
+        where: { id: tagId },
+        include: {
+          contacts: { include: { contact: true } },
+          _count: { select: { contacts: true } }
+        }
+      });
+    });
+
+    return tag;
   }
 
   public async createSegment(data: { name: string; description?: string; icon?: string; filters: any; userId?: string }) {

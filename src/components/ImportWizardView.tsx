@@ -1,7 +1,9 @@
 import React, { useState, useRef, useMemo } from 'react';
 import Papa from 'papaparse';
 import ExcelJS from 'exceljs';
-import { ViewPage, Contact, ActorType } from '../types';
+import { Link } from 'react-router-dom';
+import { Contact, ActorType } from '../types';
+import { useToast } from './Toast';
 import { 
   Check, 
   Upload, 
@@ -26,8 +28,7 @@ import {
 } from 'lucide-react';
 
 interface ImportWizardViewProps {
-  onNavigate: (page: ViewPage) => void;
-  onImportContacts: (newContacts: Contact[], updatedContacts?: Contact[]) => void;
+  onImportContacts: (newContacts: Contact[], updatedContacts?: Contact[]) => Promise<boolean>;
   existingContacts: Contact[];
 }
 
@@ -83,10 +84,11 @@ const SYSTEM_FIELDS: SystemFieldDef[] = [
 ];
 
 export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
-  onNavigate,
   onImportContacts,
   existingContacts
 }) => {
+  const { showToast } = useToast();
+
   // Wizard Step State
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4>(1);
   
@@ -425,96 +427,100 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
   };
 
   // Step 3 -> Step 4: Execute Final Import
-  const handleExecuteImport = () => {
+  const handleExecuteImport = async () => {
     setIsExecuting(true);
-    
-    setTimeout(() => {
-      const newContactsToAdd: Contact[] = [];
-      const updatedContactsToMerge: Contact[] = [];
-      const skippedList: ParsedContactCandidate[] = [];
 
-      let countNew = 0;
-      let countMerged = 0;
+    const newContactsToAdd: Contact[] = [];
+    const updatedContactsToMerge: Contact[] = [];
+    const skippedList: ParsedContactCandidate[] = [];
 
-      candidates.forEach(cand => {
-        if (cand.resolutionAction === 'skip' || cand.status === 'invalid') {
-          skippedList.push(cand);
-          return;
-        }
+    let countNew = 0;
+    let countMerged = 0;
 
-        if (cand.resolutionAction === 'overwrite' && cand.duplicateMatch) {
-          const merged: Contact = {
-            ...cand.duplicateMatch,
-            name: cand.fullName || cand.duplicateMatch.name,
-            organization: cand.organization || cand.duplicateMatch.organization,
-            phone: cand.phone || cand.duplicateMatch.phone,
-            country: cand.country || cand.duplicateMatch.country,
-            actorType: cand.actorType || cand.duplicateMatch.actorType,
-            expertise: Array.from(new Set([...cand.duplicateMatch.expertise, ...cand.expertise])),
-            tags: Array.from(new Set([...(cand.duplicateMatch.tags || []), 'Importé', 'Mis à jour'])),
-            exchangeNotes: [
-              {
-                id: `note-merge-${Date.now()}-${cand.rowIndex}`,
-                date: new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' }),
-                relativeTime: 'Récemment mis à jour',
-                title: 'Données mises à jour par import',
-                content: `Fiche contact enrichie via l'importation du fichier ${file?.name || 'CSV/Excel'}.`,
-                type: 'note'
-              },
-              ...(cand.duplicateMatch.exchangeNotes || [])
-            ]
-          };
-          updatedContactsToMerge.push(merged);
-          countMerged++;
-        } else {
-          // Add as new contact
-          const initials = cand.fullName
-            .split(' ')
-            .map(n => n[0])
-            .join('')
-            .toUpperCase()
-            .slice(0, 2) || 'NC';
+    candidates.forEach(cand => {
+      if (cand.resolutionAction === 'skip' || cand.status === 'invalid') {
+        skippedList.push(cand);
+        return;
+      }
 
-          const newContact: Contact = {
-            id: `imp-${cand.rowIndex}-${Date.now()}`,
-            name: cand.fullName,
-            initials: initials,
-            title: cand.title || 'Partenaire R&I',
-            organization: cand.organization,
-            email: cand.email,
-            phone: cand.phone,
-            country: cand.country,
-            flagEmoji: cand.country === 'Sénégal' ? '🇸🇳' : cand.country === 'Tunisie' ? '🇹🇳' : cand.country === 'France' ? '🇫🇷' : '🌐',
-            interventionZones: [cand.country, 'Afrique'],
-            actorType: cand.actorType,
-            expertise: cand.expertise,
-            tags: cand.tags,
-            projects: [],
-            exchangeNotes: [{
-              id: `note-imp-${Date.now()}`,
+      if (cand.resolutionAction === 'overwrite' && cand.duplicateMatch) {
+        const merged: Contact = {
+          ...cand.duplicateMatch,
+          name: cand.fullName || cand.duplicateMatch.name,
+          organization: cand.organization || cand.duplicateMatch.organization,
+          phone: cand.phone || cand.duplicateMatch.phone,
+          country: cand.country || cand.duplicateMatch.country,
+          actorType: cand.actorType || cand.duplicateMatch.actorType,
+          expertise: Array.from(new Set([...cand.duplicateMatch.expertise, ...cand.expertise])),
+          tags: Array.from(new Set([...(cand.duplicateMatch.tags || []), 'Importé', 'Mis à jour'])),
+          exchangeNotes: [
+            {
+              id: `note-merge-${Date.now()}-${cand.rowIndex}`,
               date: new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' }),
-              relativeTime: 'Importé récemment',
-              title: 'Contact importé',
-              content: `Nouveau contact ajouté depuis le fichier ${file?.name || 'source'}.`,
-              type: 'email'
-            }]
-          };
-          newContactsToAdd.push(newContact);
-          countNew++;
-        }
-      });
+              relativeTime: 'Récemment mis à jour',
+              title: 'Données mises à jour par import',
+              content: `Fiche contact enrichie via l'importation du fichier ${file?.name || 'CSV/Excel'}.`,
+              type: 'note'
+            },
+            ...(cand.duplicateMatch.exchangeNotes || [])
+          ]
+        };
+        updatedContactsToMerge.push(merged);
+        countMerged++;
+      } else {
+        const initials = cand.fullName
+          .split(' ')
+          .map(n => n[0])
+          .join('')
+          .toUpperCase()
+          .slice(0, 2) || 'NC';
 
-      onImportContacts(newContactsToAdd, updatedContactsToMerge);
-      setSummaryReport({
-        importedNew: countNew,
-        updatedMerged: countMerged,
-        skippedIgnored: skippedList.length,
-        errors: skippedList
-      });
+        const newContact: Contact = {
+          id: `imp-${cand.rowIndex}-${Date.now()}`,
+          name: cand.fullName,
+          initials: initials,
+          title: cand.title || 'Partenaire R&I',
+          organization: cand.organization,
+          email: cand.email,
+          phone: cand.phone,
+          country: cand.country,
+          flagEmoji: cand.country === 'Sénégal' ? '🇸🇳' : cand.country === 'Tunisie' ? '🇹🇳' : cand.country === 'France' ? '🇫🇷' : '🌐',
+          interventionZones: [cand.country, 'Afrique'],
+          actorType: cand.actorType,
+          expertise: cand.expertise,
+          tags: cand.tags,
+          projects: [],
+          exchangeNotes: [{
+            id: `note-imp-${Date.now()}`,
+            date: new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' }),
+            relativeTime: 'Importé récemment',
+            title: 'Contact importé',
+            content: `Nouveau contact ajouté depuis le fichier ${file?.name || 'source'}.`,
+            type: 'email'
+          }]
+        };
+        newContactsToAdd.push(newContact);
+        countNew++;
+      }
+    });
 
-      setIsExecuting(false);
-      setCurrentStep(4);
-    }, 1000);
+    const success = await onImportContacts(newContactsToAdd, updatedContactsToMerge);
+
+    setIsExecuting(false);
+
+    if (!success) {
+      showToast("Échec de l'importation : aucune modification n'a été enregistrée.", 'error');
+      return;
+    }
+
+    setSummaryReport({
+      importedNew: countNew,
+      updatedMerged: countMerged,
+      skippedIgnored: skippedList.length,
+      errors: skippedList
+    });
+
+    setCurrentStep(4);
   };
 
   // Generate & Download CSV Error Log
@@ -1171,12 +1177,12 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
 
           {/* Action Call-to-Action Buttons */}
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-6 border-t border-slate-100">
-            <button
-              onClick={() => onNavigate('contacts')}
+            <Link
+              to="/contacts"
               className="w-full sm:w-auto px-8 py-3.5 bg-[#006a66] hover:bg-[#256865] text-white font-extrabold text-sm rounded-xl shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer"
             >
               <Eye className="w-4 h-4" /> Voir les contacts importés
-            </button>
+            </Link>
 
             {summaryReport.errors.length > 0 && (
               <button

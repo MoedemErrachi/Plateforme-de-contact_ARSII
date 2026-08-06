@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
+import path from 'path';
 import apiRouter from './routes';
 import { errorHandler } from './middleware/errorHandler';
 import { 
@@ -45,18 +46,21 @@ export function createApp() {
   app.use(express.urlencoded({ extended: true, limit: '10mb' }));
   app.use(cookieParser());
 
-  // 4. Rate Limiters & Security Defense Layers
+  // 4. Static serving of locally stored uploads (avatars, etc.)
+  app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
+
+  // 5. Rate Limiters & Security Defense Layers
   app.use('/api', globalApiRateLimiter);
   app.use('/api/auth', authRateLimiter);
 
-  // 5. CSRF Token Protection & Input Sanitization
+  // 6. CSRF Token Protection & Input Sanitization
   app.use('/api', csrfProtection);
   app.use('/api', sanitizeInput);
 
-  // 6. API Route Handlers
+  // 7. API Route Handlers
   app.use('/api', apiRouter);
 
-  // 7. Global Error Handler
+  // 8. Global Error Handler
   app.use('/api', errorHandler);
 
   return app;
