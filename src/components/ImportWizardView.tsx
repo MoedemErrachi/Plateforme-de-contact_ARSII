@@ -2,7 +2,7 @@ import React, { useState, useRef, useMemo } from 'react';
 import Papa from 'papaparse';
 import ExcelJS from 'exceljs';
 import { Link } from 'react-router-dom';
-import { Contact, ActorType } from '../types';
+import { Contact, Gender, ResearchCareerStage, GENDER_LABELS, CAREER_STAGE_LABELS } from '../types';
 import { useToast } from './Toast';
 import { 
   Check, 
@@ -24,11 +24,20 @@ import {
   ShieldCheck,
   Sparkles,
   Layers,
-  FileCheck
+  FileCheck,
+  X
 } from 'lucide-react';
 
+export interface ImportResult {
+  ok: boolean;
+  httpStatus: number;
+  status: string;
+  errorMessage: string;
+  data: { createdCount: number; updatedCount: number } | null;
+}
+
 interface ImportWizardViewProps {
-  onImportContacts: (newContacts: Contact[], updatedContacts?: Contact[]) => Promise<boolean>;
+  onImportContacts: (newContacts: Contact[], updatedContacts?: Contact[]) => Promise<ImportResult>;
   existingContacts: Contact[];
 }
 
@@ -44,15 +53,17 @@ export interface ParsedContactCandidate {
   lastName: string;
   fullName: string;
   email: string;
-  organization: string;
-  title: string;
-  country: string;
-  actorType: ActorType;
+  gender: Gender;
+  countryOfOrigin: string;
+  city: string;
   phone: string;
-  expertise: string[];
-  linkedinUrl: string;
+  affiliation: string;
+  function: string;
+  experience: string;
+  facultyDepartment: string;
+  researchCareerStage: ResearchCareerStage;
   tags: string[];
-  
+
   // Validation and Conflict Status
   status: 'valid' | 'duplicate' | 'invalid';
   errorReason?: string;
@@ -70,16 +81,18 @@ interface SystemFieldDef {
 const SYSTEM_FIELDS: SystemFieldDef[] = [
   { key: '__ignore__', label: '❌ Ne pas importer (Ignorer)', description: 'Ne sera pas enregistré' },
   { key: 'email', label: '✉️ E-mail', description: 'Recommandé pour identification unique', required: true },
-  { key: 'lastName', label: '👤 Nom de famille', description: 'Nom de famille' },
   { key: 'firstName', label: '👤 Prénom', description: 'Prénom' },
+  { key: 'lastName', label: '👤 Nom de famille', description: 'Nom de famille' },
   { key: 'fullName', label: '👥 Nom Complet', description: 'Prénom + Nom sur une colonne' },
-  { key: 'organization', label: '🏢 Organisation / Societé', description: 'Nom de l\'organisme partner' },
-  { key: 'title', label: '💼 Fonction / Poste', description: 'Intitulé de poste' },
-  { key: 'country', label: '🌍 Pays', description: 'Pays du siège ou d\'action' },
-  { key: 'actorType', label: '🏛️ Type d\'acteur', description: 'Université, PME, ONG, Chercheur...' },
+  { key: 'gender', label: '⚧ Genre', description: 'Femme, Homme, Autre, Préfère ne pas dire' },
+  { key: 'countryOfOrigin', label: '🌍 Pays d\'origine', description: 'Pays d\'origine du chercheur' },
+  { key: 'city', label: '🏙️ Ville', description: 'Ville de résidence' },
   { key: 'phone', label: '📞 Téléphone', description: 'Numéro de contact' },
-  { key: 'expertise', label: '💡 Domaines d\'expertise', description: 'Secteurs ou compétences (séparés par des virgules/points-virgules)' },
-  { key: 'linkedinUrl', label: '🔗 Profil LinkedIn', description: 'Lien du profil social' },
+  { key: 'affiliation', label: '🏢 Affiliation', description: 'Nom de l\'organisme / institution' },
+  { key: 'function', label: '💼 Fonction', description: 'Intitulé de poste' },
+  { key: 'experience', label: '🎯 Expérience', description: 'Expérience professionnelle (années, domaine)' },
+  { key: 'facultyDepartment', label: '🏛️ Faculté / Département', description: 'Faculté ou département de rattachement' },
+  { key: 'researchCareerStage', label: '🎓 Stade de carrière', description: 'R1, R2, R3 ou R4 (classement EURAXESS)' },
   { key: 'tags', label: '🏷️ Tags / Mots-clés', description: 'Mots-clés de classification' }
 ];
 
@@ -113,6 +126,7 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
     skippedIgnored: number;
     errors: ParsedContactCandidate[];
   }>({ importedNew: 0, updatedMerged: 0, skippedIgnored: 0, errors: [] });
+  const [importError, setImportError] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -124,6 +138,7 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
     setColumnMapping({});
     setCandidates([]);
     setFileError(null);
+    setImportError(null);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
@@ -139,6 +154,7 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
     setCandidates([]);
     setFilterStatus('all');
     setIsExecuting(false);
+    setImportError(null);
     setSummaryReport({ importedNew: 0, updatedMerged: 0, skippedIgnored: 0, errors: [] });
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
@@ -150,16 +166,18 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
   const autoMatchHeader = (header: string): string => {
     const clean = header.toLowerCase().trim();
     if (['email', 'e-mail', 'courriel', 'mail', 'adresse email'].some(k => clean.includes(k))) return 'email';
-    if (clean === 'nom' || clean === 'last name' || clean === 'lastname' || clean === 'family name') return 'lastName';
     if (clean === 'prénom' || clean === 'prenom' || clean === 'first name' || clean === 'firstname') return 'firstName';
+    if (clean === 'nom' || clean === 'last name' || clean === 'lastname' || clean === 'family name') return 'lastName';
     if (['nom complet', 'nom & prénom', 'nom et prénom', 'contact', 'full name', 'fullname'].some(k => clean.includes(k))) return 'fullName';
-    if (['organisation', 'organisme', 'société', 'societe', 'entreprise', 'institution', 'company', 'company name'].some(k => clean.includes(k))) return 'organization';
-    if (['fonction', 'poste', 'titre', 'job', 'position', 'role', 'rôle'].some(k => clean.includes(k))) return 'title';
-    if (['pays', 'country', 'nation'].some(k => clean.includes(k))) return 'country';
-    if (['type', 'acteur', 'catégorie', 'categorie', 'type d\'acteur', 'actor type'].some(k => clean.includes(k))) return 'actorType';
+    if (['genre', 'gender', 'sexe'].some(k => clean.includes(k))) return 'gender';
+    if (['pays d\'origine', 'pays', 'pays de provenance', 'country of origin', 'country'].some(k => clean.includes(k))) return 'countryOfOrigin';
+    if (['ville', 'city', 'town'].some(k => clean.includes(k))) return 'city';
     if (['téléphone', 'telephone', 'tél', 'tel', 'phone', 'mobile', 'cell'].some(k => clean.includes(k))) return 'phone';
-    if (['expertise', 'domaine', 'compétence', 'competence', 'sector', 'secteur', 'skills'].some(k => clean.includes(k))) return 'expertise';
-    if (['linkedin', 'url linkedin', 'profil linkedin'].some(k => clean.includes(k))) return 'linkedinUrl';
+    if (['affiliation', 'organisation', 'organisme', 'société', 'societe', 'entreprise', 'institution', 'company', 'company name'].some(k => clean.includes(k))) return 'affiliation';
+    if (['fonction', 'poste', 'titre', 'job', 'position', 'role', 'rôle'].some(k => clean.includes(k))) return 'function';
+    if (['expérience', 'experience', 'années d\'expérience', 'ans d\'expérience'].some(k => clean.includes(k))) return 'experience';
+    if (['faculté', 'faculte', 'département', 'departement', 'faculty', 'department', 'faculty/department', 'faculté / département'].some(k => clean.includes(k))) return 'facultyDepartment';
+    if (['stade de carrière', 'stade de carriere', 'carrière', 'career stage', 'career', 'research career stage'].some(k => clean.includes(k))) return 'researchCareerStage';
     if (['tags', 'mots-clés', 'mots clés', 'keywords'].some(k => clean.includes(k))) return 'tags';
     return '__ignore__';
   };
@@ -288,10 +306,28 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
     }
   };
 
+  // Parse raw gender string to enum value
+  const parseGender = (raw: string): Gender => {
+    const clean = raw.toLowerCase().trim();
+    if (['femme', 'female', 'f', 'féminin', 'feminin'].some(k => clean === k || clean.includes(k))) return 'FEMALE';
+    if (['homme', 'male', 'm', 'masculin', 'h'].some(k => clean === k || clean.includes(k))) return 'MALE';
+    if (['autre', 'other', 'non binaire', 'non-binaire', 'o'].some(k => clean === k || clean.includes(k))) return 'OTHER';
+    return 'PREFER_NOT_TO_SAY';
+  };
+
+  // Parse raw career stage string to enum value
+  const parseCareerStage = (raw: string): ResearchCareerStage => {
+    const clean = raw.toLowerCase().trim();
+    if (['r1', 'r1_first_stage', 'r1 —', '1', 'debutant', 'débutant', 'first stage'].some(k => clean.includes(k))) return 'R1_FIRST_STAGE';
+    if (['r2', 'r2_recognized', 'r2 —', '2', 'reconnu', 'recognised', 'recognized'].some(k => clean.includes(k))) return 'R2_RECOGNIZED';
+    if (['r3', 'r3_established', 'r3 —', '3', 'établi', 'etabli', 'established'].some(k => clean.includes(k))) return 'R3_ESTABLISHED';
+    if (['r4', 'r4_leading', 'r4 —', '4', 'leader', 'leading'].some(k => clean.includes(k))) return 'R4_LEADING';
+    return 'R1_FIRST_STAGE';
+  };
+
   // Check if required fields mapped in Step 2
   const isEmailMapped = Object.values(columnMapping).includes('email');
   const isNameMapped = Object.values(columnMapping).some(k => ['lastName', 'firstName', 'fullName'].includes(k as string));
-  const isOrgMapped = Object.values(columnMapping).includes('organization');
 
   // Step 2 -> Step 3: Execute Row-by-Row Analysis & Conflict Resolution
   const analyzeRowsAndProceedToStep3 = () => {
@@ -305,16 +341,16 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
       const firstName = getVal('firstName').trim();
       const lastName = getVal('lastName').trim();
       const fullNameVal = getVal('fullName').trim();
-      const organization = getVal('organization').trim() || 'Organisme Partenaire';
-      const title = getVal('title').trim() || 'Contact Partenaire';
-      const country = getVal('country').trim() || 'Sénégal';
-      const actorTypeVal = getVal('actorType').trim() as ActorType || 'Labo de recherche';
+      const gender = parseGender(getVal('gender'));
+      const countryOfOrigin = getVal('countryOfOrigin').trim() || 'Sénégal';
+      const city = getVal('city').trim();
       const phone = getVal('phone').trim() || '';
-      const linkedinUrl = getVal('linkedinUrl').trim() || '';
-      
-      const rawExp = getVal('expertise');
-      const expertise = rawExp ? rawExp.split(/[,;/]/).map(s => s.trim()).filter(Boolean) : ['Innovation'];
-      
+      const affiliation = getVal('affiliation').trim() || '';
+      const fonction = getVal('function').trim() || '';
+      const experience = getVal('experience').trim() || '';
+      const facultyDepartment = getVal('facultyDepartment').trim() || '';
+      const researchCareerStage = parseCareerStage(getVal('researchCareerStage'));
+
       const rawTags = getVal('tags');
       const tags = rawTags ? rawTags.split(/[,;/]/).map(s => s.trim()).filter(Boolean) : ['Importation'];
 
@@ -332,9 +368,9 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
       const cleanEmail = email.toLowerCase();
 
       // Check duplicate against existing contacts
-      const duplicateMatch = existingContacts.find(c => 
+      const duplicateMatch = existingContacts.find(c =>
         (cleanEmail && c.email.toLowerCase() === cleanEmail) ||
-        (finalFullName.toLowerCase() === c.name.toLowerCase() && organization.toLowerCase() === c.organization.toLowerCase())
+        (finalFullName.toLowerCase() === c.name.toLowerCase() && affiliation.toLowerCase() === c.affiliation.toLowerCase())
       );
 
       let status: 'valid' | 'duplicate' | 'invalid' = 'valid';
@@ -359,13 +395,15 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
         lastName,
         fullName: finalFullName,
         email,
-        organization,
-        title,
-        country,
-        actorType: actorTypeVal,
+        gender,
+        countryOfOrigin,
+        city,
         phone,
-        expertise,
-        linkedinUrl,
+        affiliation,
+        function: fonction,
+        experience,
+        facultyDepartment,
+        researchCareerStage,
         tags,
         status,
         errorReason,
@@ -384,7 +422,7 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
   };
 
   // Inline edit handler for candidate fields
-  const handleUpdateCandidateField = (id: string, field: 'email' | 'fullName' | 'organization', val: string) => {
+  const handleUpdateCandidateField = (id: string, field: 'email' | 'fullName' | 'affiliation', val: string) => {
     setCandidates(prev => prev.map(c => {
       if (c.id !== id) return c;
       const updated = { ...c, [field]: val };
@@ -447,12 +485,19 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
         const merged: Contact = {
           ...cand.duplicateMatch,
           name: cand.fullName || cand.duplicateMatch.name,
-          organization: cand.organization || cand.duplicateMatch.organization,
+          firstName: cand.firstName || cand.duplicateMatch.firstName,
+          lastName: cand.lastName || cand.duplicateMatch.lastName,
+          email: cand.email || cand.duplicateMatch.email,
           phone: cand.phone || cand.duplicateMatch.phone,
-          country: cand.country || cand.duplicateMatch.country,
-          actorType: cand.actorType || cand.duplicateMatch.actorType,
-          expertise: Array.from(new Set([...cand.duplicateMatch.expertise, ...cand.expertise])),
-          tags: Array.from(new Set([...(cand.duplicateMatch.tags || []), 'Importé', 'Mis à jour'])),
+          gender: cand.gender,
+          countryOfOrigin: cand.countryOfOrigin || cand.duplicateMatch.countryOfOrigin,
+          city: cand.city || cand.duplicateMatch.city,
+          affiliation: cand.affiliation || cand.duplicateMatch.affiliation,
+          function: cand.function || cand.duplicateMatch.function,
+          experience: cand.experience || cand.duplicateMatch.experience,
+          facultyDepartment: cand.facultyDepartment || cand.duplicateMatch.facultyDepartment,
+          researchCareerStage: cand.researchCareerStage,
+          tags: Array.from(new Set([...(cand.duplicateMatch.tags || []), ...cand.tags, 'Importé', 'Mis à jour'])),
           exchangeNotes: [
             {
               id: `note-merge-${Date.now()}-${cand.rowIndex}`,
@@ -479,17 +524,19 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
           id: `imp-${cand.rowIndex}-${Date.now()}`,
           name: cand.fullName,
           initials: initials,
-          title: cand.title || 'Partenaire R&I',
-          organization: cand.organization,
+          firstName: cand.firstName,
+          lastName: cand.lastName,
           email: cand.email,
           phone: cand.phone,
-          country: cand.country,
-          flagEmoji: cand.country === 'Sénégal' ? '🇸🇳' : cand.country === 'Tunisie' ? '🇹🇳' : cand.country === 'France' ? '🇫🇷' : '🌐',
-          interventionZones: [cand.country, 'Afrique'],
-          actorType: cand.actorType,
-          expertise: cand.expertise,
+          gender: cand.gender,
+          countryOfOrigin: cand.countryOfOrigin,
+          city: cand.city,
+          affiliation: cand.affiliation,
+          function: cand.function || undefined,
+          experience: cand.experience || undefined,
+          facultyDepartment: cand.facultyDepartment || undefined,
+          researchCareerStage: cand.researchCareerStage,
           tags: cand.tags,
-          projects: [],
           exchangeNotes: [{
             id: `note-imp-${Date.now()}`,
             date: new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' }),
@@ -504,15 +551,16 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
       }
     });
 
-    const success = await onImportContacts(newContactsToAdd, updatedContactsToMerge);
+    const result = await onImportContacts(newContactsToAdd, updatedContactsToMerge);
 
     setIsExecuting(false);
 
-    if (!success) {
-      showToast("Échec de l'importation : aucune modification n'a été enregistrée.", 'error');
+    if (!result.ok || result.status !== 'SUCCESS') {
+      setImportError(result.errorMessage || 'Erreur inconnue lors de l\'importation.');
       return;
     }
 
+    setImportError(null);
     setSummaryReport({
       importedNew: countNew,
       updatedMerged: countMerged,
@@ -531,7 +579,7 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
       'Ligne': err.rowIndex,
       'Nom': err.fullName,
       'Email': err.email,
-      'Organisation': err.organization,
+      'Affiliation': err.affiliation,
       'Statut': err.status.toUpperCase(),
       'Motif': err.errorReason || 'Ignoré par l\'utilisateur',
       'Action': err.resolutionAction
@@ -566,27 +614,27 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
       {/* Header Title */}
       <header className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2 text-xs font-bold text-[#006a66] uppercase tracking-wider mb-1">
+          <div className="flex items-center gap-2 text-xs font-bold text-[#005596] uppercase tracking-wider mb-1">
             <Layers className="w-4 h-4" /> Assistant d'Importation Pro
           </div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-[#071f1f]">
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-[#1C2529]">
             Importation & Synchronisation des Contacts
           </h1>
-          <p className="text-sm text-[#3d4948] mt-1">
-            Intégrez vos fichiers CSV, XLSX ou XLS dans la base réseau ARSII avec détection intelligente des doublons.
+          <p className="text-sm text-[#55636B] mt-1">
+            Intégrez vos fichiers CSV, XLSX ou XLS dans la base réseau EURAXESS Africa avec détection intelligente des doublons.
           </p>
         </div>
 
         {file && (
-          <div className="bg-[#dff9f8] text-[#006a66] border border-[#35b8b2]/40 px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 shadow-sm">
-            <FileSpreadsheet className="w-4 h-4 text-[#006a66]" />
+          <div className="bg-[#E8F1F8] text-[#005596] border border-[#005596]/40 px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 shadow-sm">
+            <FileSpreadsheet className="w-4 h-4 text-[#005596]" />
             <span>{file.name} ({rawRows.length} lignes décelées)</span>
           </div>
         )}
       </header>
 
       {/* 4-Step Stepper Progress Bar */}
-      <div className="px-2 py-4 bg-white rounded-2xl border border-[#bcc9c7]/50 shadow-sm overflow-x-auto scrollbar-none">
+      <div className="px-2 py-4 bg-white rounded-2xl border border-[#C9D4DE]/50 shadow-sm overflow-x-auto scrollbar-none">
         <div className="flex items-center w-full justify-between relative min-w-[500px] max-w-4xl mx-auto px-4">
           
           {/* Step 1 */}
@@ -598,19 +646,19 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
           >
             <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm transition-all group-hover:scale-105 ${
               currentStep === 1 
-                ? 'bg-[#006a66] text-white ring-4 ring-[#35b8b2]/30 scale-105 shadow-md' 
-                : currentStep > 1 ? 'bg-[#006a66] text-white' : 'bg-slate-200 text-slate-500'
+                ? 'bg-[#005596] text-white ring-4 ring-[#005596]/30 scale-105 shadow-md' 
+                : currentStep > 1 ? 'bg-[#005596] text-white' : 'bg-slate-200 text-slate-500'
             }`}>
               {currentStep > 1 ? <Check className="w-5 h-5" /> : '1'}
             </div>
             <span className={`text-[11px] font-extrabold uppercase tracking-wider transition-colors ${
-              currentStep === 1 ? 'text-[#006a66]' : 'text-slate-500 group-hover:text-[#006a66]'
+              currentStep === 1 ? 'text-[#005596]' : 'text-slate-500 group-hover:text-[#005596]'
             }`}>
               1. Chargement
             </span>
           </button>
 
-          <div className={`flex-grow h-[3px] mx-2 transition-colors ${currentStep >= 2 ? 'bg-[#006a66]' : 'bg-slate-200'}`} />
+          <div className={`flex-grow h-[3px] mx-2 transition-colors ${currentStep >= 2 ? 'bg-[#005596]' : 'bg-slate-200'}`} />
 
           {/* Step 2 */}
           <button 
@@ -628,19 +676,19 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
           >
             <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm transition-all ${
               currentStep === 2 
-                ? 'bg-[#006a66] text-white ring-4 ring-[#35b8b2]/30 scale-105 shadow-md' 
-                : currentStep > 2 ? 'bg-[#006a66] text-white' : 'bg-slate-200 text-slate-500'
+                ? 'bg-[#005596] text-white ring-4 ring-[#005596]/30 scale-105 shadow-md' 
+                : currentStep > 2 ? 'bg-[#005596] text-white' : 'bg-slate-200 text-slate-500'
             } ${file && rawRows.length > 0 ? 'group-hover:scale-105' : ''}`}>
               {currentStep > 2 ? <Check className="w-5 h-5" /> : '2'}
             </div>
             <span className={`text-[11px] font-extrabold uppercase tracking-wider transition-colors ${
-              currentStep === 2 ? 'text-[#006a66]' : 'text-slate-500 group-hover:text-[#006a66]'
+              currentStep === 2 ? 'text-[#005596]' : 'text-slate-500 group-hover:text-[#005596]'
             }`}>
               2. Mappage
             </span>
           </button>
 
-          <div className={`flex-grow h-[3px] mx-2 transition-colors ${currentStep >= 3 ? 'bg-[#006a66]' : 'bg-slate-200'}`} />
+          <div className={`flex-grow h-[3px] mx-2 transition-colors ${currentStep >= 3 ? 'bg-[#005596]' : 'bg-slate-200'}`} />
 
           {/* Step 3 */}
           <button 
@@ -662,19 +710,19 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
           >
             <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm transition-all ${
               currentStep === 3 
-                ? 'bg-[#006a66] text-white ring-4 ring-[#35b8b2]/30 scale-105 shadow-md' 
-                : currentStep > 3 ? 'bg-[#006a66] text-white' : 'bg-slate-200 text-slate-500'
+                ? 'bg-[#005596] text-white ring-4 ring-[#005596]/30 scale-105 shadow-md' 
+                : currentStep > 3 ? 'bg-[#005596] text-white' : 'bg-slate-200 text-slate-500'
             } ${rawRows.length > 0 ? 'group-hover:scale-105' : ''}`}>
               {currentStep > 3 ? <Check className="w-5 h-5" /> : '3'}
             </div>
             <span className={`text-[11px] font-extrabold uppercase tracking-wider transition-colors ${
-              currentStep === 3 ? 'text-[#006a66]' : 'text-slate-500 group-hover:text-[#006a66]'
+              currentStep === 3 ? 'text-[#005596]' : 'text-slate-500 group-hover:text-[#005596]'
             }`}>
               3. Analyse & Conflits
             </span>
           </button>
 
-          <div className={`flex-grow h-[3px] mx-2 transition-colors ${currentStep >= 4 ? 'bg-[#006a66]' : 'bg-slate-200'}`} />
+          <div className={`flex-grow h-[3px] mx-2 transition-colors ${currentStep >= 4 ? 'bg-[#005596]' : 'bg-slate-200'}`} />
 
           {/* Step 4 */}
           <button 
@@ -692,13 +740,13 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
           >
             <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm transition-all ${
               currentStep === 4 
-                ? 'bg-[#006a66] text-white ring-4 ring-[#35b8b2]/30 scale-105 shadow-md' 
+                ? 'bg-[#005596] text-white ring-4 ring-[#005596]/30 scale-105 shadow-md' 
                 : 'bg-slate-200 text-slate-500'
             } ${(summaryReport.importedNew > 0 || summaryReport.updatedMerged > 0 || summaryReport.skippedIgnored > 0) ? 'group-hover:scale-105' : ''}`}>
               4
             </div>
             <span className={`text-[11px] font-extrabold uppercase tracking-wider transition-colors ${
-              currentStep === 4 ? 'text-[#006a66]' : 'text-slate-500 group-hover:text-[#006a66]'
+              currentStep === 4 ? 'text-[#005596]' : 'text-slate-500 group-hover:text-[#005596]'
             }`}>
               4. Rapport Final
             </span>
@@ -709,11 +757,11 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
 
       {/* STEP 1: FILE VALIDATION & PARSING */}
       {currentStep === 1 && (
-        <div className="bg-white rounded-2xl border border-[#bcc9c7]/60 p-8 shadow-[0_6px_18px_rgba(0,0,0,0.06)] max-w-4xl mx-auto space-y-6">
+        <div className="bg-white rounded-2xl border border-[#C9D4DE]/60 p-8 shadow-[0_6px_18px_rgba(0,0,0,0.06)] max-w-4xl mx-auto space-y-6">
           <div className="text-center space-y-2">
-            <h2 className="text-xl font-extrabold text-[#071f1f]">Étape 1 : Sélectionner le fichier de contacts</h2>
-            <p className="text-xs text-[#3d4948]">
-              Formats supportés : <strong className="text-[#006a66]">.csv, .xlsx, .xls</strong>. Assurez-vous que la première ligne contient les en-têtes de colonnes.
+            <h2 className="text-xl font-extrabold text-[#1C2529]">Étape 1 : Sélectionner le fichier de contacts</h2>
+            <p className="text-xs text-[#55636B]">
+              Formats supportés : <strong className="text-[#005596]">.csv, .xlsx, .xls</strong>. Assurez-vous que la première ligne contient les en-têtes de colonnes.
             </p>
           </div>
 
@@ -735,8 +783,8 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
             onClick={() => fileInputRef.current?.click()}
             className={`border-3 border-dashed rounded-2xl p-10 text-center cursor-pointer transition-all space-y-4 group ${
               file && !fileError
-                ? 'border-[#006a66] bg-[#dff9f8]/40'
-                : 'border-[#35b8b2]/50 hover:border-[#006a66] bg-slate-50/50 hover:bg-[#dff9f8]/30'
+                ? 'border-[#005596] bg-[#E8F1F8]/40'
+                : 'border-[#005596]/50 hover:border-[#005596] bg-slate-50/50 hover:bg-[#E8F1F8]/30'
             }`}
           >
             <input 
@@ -747,15 +795,15 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
               className="hidden" 
             />
             
-            <div className="w-16 h-16 bg-[#006a66] text-white rounded-2xl flex items-center justify-center mx-auto shadow-md group-hover:scale-110 transition-transform">
+            <div className="w-16 h-16 bg-[#005596] text-white rounded-2xl flex items-center justify-center mx-auto shadow-md group-hover:scale-110 transition-transform">
               <Upload className="w-8 h-8" />
             </div>
 
             <div>
-              <p className="font-bold text-sm text-[#071f1f]">
-                Glissez-déposez votre fichier ici ou <span className="text-[#006a66] underline">parcourez vos fichiers</span>
+              <p className="font-bold text-sm text-[#1C2529]">
+                Glissez-déposez votre fichier ici ou <span className="text-[#005596] underline">parcourez vos fichiers</span>
               </p>
-              <p className="text-xs text-[#3d4948] mt-1">Accepte les fichiers .csv et Excel (.xlsx, .xls)</p>
+              <p className="text-xs text-[#55636B] mt-1">Accepte les fichiers .csv et Excel (.xlsx, .xls)</p>
             </div>
           </div>
 
@@ -798,7 +846,7 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
                   <button
                     type="button"
                     onClick={() => setCurrentStep(2)}
-                    className="px-5 py-2.5 bg-[#006a66] hover:bg-[#256865] text-white font-bold text-xs rounded-xl shadow-md flex items-center gap-2 transition-all cursor-pointer"
+                    className="px-5 py-2.5 bg-[#005596] hover:bg-[#004275] text-white font-bold text-xs rounded-xl shadow-md flex items-center gap-2 transition-all cursor-pointer"
                   >
                     <span>Continuer vers Mappage</span>
                     <ArrowRight className="w-4 h-4" />
@@ -814,17 +862,17 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
       {currentStep === 2 && (
         <div className="grid grid-cols-12 gap-6">
           <div className="col-span-12 min-[1380px]:col-span-8 space-y-6">
-            <div className="bg-white rounded-2xl border border-[#bcc9c7]/50 shadow-sm p-6 space-y-6">
+            <div className="bg-white rounded-2xl border border-[#C9D4DE]/50 shadow-sm p-6 space-y-6">
               
               <div className="flex items-center justify-between border-b border-slate-100 pb-4">
                 <div>
-                  <h2 className="text-lg font-bold text-[#071f1f]">Associer les colonnes du fichier aux champs système</h2>
-                  <p className="text-xs text-[#3d4948] mt-0.5">
-                    Sélectionnez le champ équivalent pour chaque colonne extraite de <strong className="text-[#006a66]">{file?.name}</strong>.
+                  <h2 className="text-lg font-bold text-[#1C2529]">Associer les colonnes du fichier aux champs système</h2>
+                  <p className="text-xs text-[#55636B] mt-0.5">
+                    Sélectionnez le champ équivalent pour chaque colonne extraite de <strong className="text-[#005596]">{file?.name}</strong>.
                   </p>
                 </div>
                 
-                <span className="text-xs font-bold bg-[#dff9f8] text-[#006a66] px-3 py-1.5 rounded-full border border-[#35b8b2]/30">
+                <span className="text-xs font-bold bg-[#E8F1F8] text-[#005596] px-3 py-1.5 rounded-full border border-[#005596]/30">
                   {Object.values(columnMapping).filter(v => v !== '__ignore__').length} / {headers.length} Mappées
                 </span>
               </div>
@@ -854,14 +902,14 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
                     <div 
                       key={header}
                       className={`p-4 rounded-xl border transition-all flex flex-col min-[1380px]:flex-row min-[1380px]:items-center justify-between gap-3 ${
-                        currentMappedKey !== '__ignore__' ? 'bg-slate-50 border-[#35b8b2]/40 shadow-2xs' : 'bg-white border-slate-200'
+                        currentMappedKey !== '__ignore__' ? 'bg-slate-50 border-[#005596]/40 shadow-2xs' : 'bg-white border-slate-200'
                       }`}
                     >
                       <div className="space-y-1 w-full min-[1380px]:max-w-md">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-extrabold text-sm text-[#071f1f] break-words">{header}</span>
+                          <span className="font-extrabold text-sm text-[#1C2529] break-words">{header}</span>
                           {currentMappedKey !== '__ignore__' && (
-                            <span className="px-2 py-0.5 bg-[#abece7] text-[#2b6c6a] text-[10px] font-bold rounded-md shrink-0">
+                            <span className="px-2 py-0.5 bg-[#BCD7EE] text-[#005596] text-[10px] font-bold rounded-md shrink-0">
                               Auto-associé
                             </span>
                           )}
@@ -876,7 +924,7 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
                         <select
                           value={currentMappedKey}
                           onChange={(e) => setColumnMapping(prev => ({ ...prev, [header]: e.target.value }))}
-                          className="w-full max-w-full bg-white border border-[#bcc9c7] text-[#071f1f] font-semibold text-xs rounded-xl p-2.5 focus:ring-2 focus:ring-[#006a66] outline-none cursor-pointer truncate"
+                          className="w-full max-w-full bg-white border border-[#C9D4DE] text-[#1C2529] font-semibold text-xs rounded-xl p-2.5 focus:ring-2 focus:ring-[#005596] outline-none cursor-pointer truncate"
                         >
                           {SYSTEM_FIELDS.map(sys => (
                             <option key={sys.key} value={sys.key} className="truncate">
@@ -895,16 +943,16 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
 
           {/* Sidebar Step 2 Controls */}
           <aside className="col-span-12 min-[1380px]:col-span-4 space-y-6">
-            <div className="bg-white rounded-2xl border border-[#bcc9c7]/50 p-6 shadow-sm text-xs space-y-4">
-              <h3 className="text-base font-bold text-[#071f1f]">Instructions de Mappage</h3>
+            <div className="bg-white rounded-2xl border border-[#C9D4DE]/50 p-6 shadow-sm text-xs space-y-4">
+              <h3 className="text-base font-bold text-[#1C2529]">Instructions de Mappage</h3>
               
-              <ul className="space-y-2 text-[#3d4948] leading-relaxed">
+              <ul className="space-y-2 text-[#55636B] leading-relaxed">
                 <li className="flex items-start gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-[#006a66] shrink-0 mt-0.5" />
+                  <CheckCircle2 className="w-4 h-4 text-[#005596] shrink-0 mt-0.5" />
                   <span><strong>E-mail :</strong> Utilisé pour détecter automatiquement les doublons avec votre base existante.</span>
                 </li>
                 <li className="flex items-start gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-[#006a66] shrink-0 mt-0.5" />
+                  <CheckCircle2 className="w-4 h-4 text-[#005596] shrink-0 mt-0.5" />
                   <span><strong>Champs optionnels :</strong> S'ils sont absents, ils seront enregistrés avec une valeur vide.</span>
                 </li>
               </ul>
@@ -912,7 +960,7 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
               <div className="pt-4 border-t border-slate-100 space-y-2">
                 <button
                   onClick={analyzeRowsAndProceedToStep3}
-                  className="w-full py-3.5 bg-[#006a66] hover:bg-[#256865] text-white rounded-xl font-bold text-sm shadow hover:shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer"
+                  className="w-full py-3.5 bg-[#005596] hover:bg-[#004275] text-white rounded-xl font-bold text-sm shadow hover:shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer"
                 >
                   Lancer l'Analyse des Lignes (Étape 3)
                   <ArrowRight className="w-4 h-4" />
@@ -936,12 +984,12 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
         <div className="space-y-6">
           
           {/* Top Status Summary Bar */}
-          <div className="bg-white rounded-2xl border border-[#bcc9c7]/50 p-6 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="bg-white rounded-2xl border border-[#C9D4DE]/50 p-6 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div className="flex flex-wrap items-center gap-3">
               <button
                 onClick={() => setFilterStatus('all')}
                 className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                  filterStatus === 'all' ? 'bg-[#006a66] text-white shadow' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                  filterStatus === 'all' ? 'bg-[#005596] text-white shadow' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
                 }`}
               >
                 Tous les contacts ({candidates.length})
@@ -995,15 +1043,15 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
           </div>
 
           {/* Table of Candidates */}
-          <div className="bg-white rounded-2xl border border-[#bcc9c7]/50 shadow-sm overflow-hidden">
+          <div className="bg-white rounded-2xl border border-[#C9D4DE]/50 shadow-sm overflow-hidden">
             <div className="overflow-x-auto text-xs border rounded-lg">
               <table className="w-full text-left font-medium min-w-[800px]">
                 <thead>
-                  <tr className="bg-[#dff9f8]/60 text-[#3d4948] border-b border-[#bcc9c7]/40 text-[11px] font-bold uppercase">
+                  <tr className="bg-[#E8F1F8]/60 text-[#55636B] border-b border-[#C9D4DE]/40 text-[11px] font-bold uppercase">
                     <th className="px-4 py-3 min-w-[70px]">LIGNE</th>
                     <th className="px-4 py-3 min-w-[170px]">NOM COMPLET</th>
                     <th className="px-4 py-3 min-w-[190px]">E-MAIL</th>
-                    <th className="px-4 py-3 min-w-[150px]">ORGANISATION</th>
+                    <th className="px-4 py-3 min-w-[150px]">AFFILIATION</th>
                     <th className="px-4 py-3 min-w-[140px]">STATUT</th>
                     <th className="px-4 py-3 text-center min-w-[210px]">DECISION D'IMPORTATION</th>
                   </tr>
@@ -1025,9 +1073,9 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
                           type="text"
                           value={cand.fullName}
                           onChange={(e) => handleUpdateCandidateField(cand.id, 'fullName', e.target.value)}
-                          className="font-bold text-[#071f1f] bg-transparent border-b border-transparent hover:border-slate-300 focus:border-[#006a66] focus:bg-white outline-none px-1 rounded transition-all"
+                          className="font-bold text-[#1C2529] bg-transparent border-b border-transparent hover:border-slate-300 focus:border-[#005596] focus:bg-white outline-none px-1 rounded transition-all"
                         />
-                        <p className="text-[11px] text-slate-500 px-1">{cand.actorType} • {cand.country}</p>
+                        <p className="text-[11px] text-slate-500 px-1">{CAREER_STAGE_LABELS[cand.researchCareerStage]} • {cand.countryOfOrigin}</p>
                       </td>
 
                       {/* Email Editable */}
@@ -1038,18 +1086,18 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
                           onChange={(e) => handleUpdateCandidateField(cand.id, 'email', e.target.value)}
                           placeholder="email@domaine.org"
                           className={`font-mono font-semibold bg-transparent border-b hover:border-slate-300 focus:bg-white outline-none px-1 rounded transition-all ${
-                            cand.status === 'invalid' ? 'border-red-400 text-red-700' : 'border-transparent text-[#3d4948] focus:border-[#006a66]'
+                            cand.status === 'invalid' ? 'border-red-400 text-red-700' : 'border-transparent text-[#55636B] focus:border-[#005596]'
                           }`}
                         />
                       </td>
 
-                      {/* Organization Editable */}
+                      {/* Affiliation Editable */}
                       <td className="px-4 py-3">
                         <input
                           type="text"
-                          value={cand.organization}
-                          onChange={(e) => handleUpdateCandidateField(cand.id, 'organization', e.target.value)}
-                          className="text-[#3d4948] bg-transparent border-b border-transparent hover:border-slate-300 focus:border-[#006a66] focus:bg-white outline-none px-1 rounded transition-all"
+                          value={cand.affiliation}
+                          onChange={(e) => handleUpdateCandidateField(cand.id, 'affiliation', e.target.value)}
+                          className="text-[#55636B] bg-transparent border-b border-transparent hover:border-slate-300 focus:border-[#005596] focus:bg-white outline-none px-1 rounded transition-all"
                         />
                       </td>
 
@@ -1084,7 +1132,7 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
                         <select
                           value={cand.resolutionAction}
                           onChange={(e) => handleCandidateResolutionChange(cand.id, e.target.value as any)}
-                          className="bg-white border border-[#bcc9c7] font-bold text-xs rounded-xl px-3 py-1.5 focus:ring-2 focus:ring-[#006a66] outline-none cursor-pointer shadow-sm"
+                          className="bg-white border border-[#C9D4DE] font-bold text-xs rounded-xl px-3 py-1.5 focus:ring-2 focus:ring-[#005596] outline-none cursor-pointer shadow-sm"
                         >
                           {cand.status === 'duplicate' ? (
                             <>
@@ -1113,7 +1161,7 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
           </div>
 
           {/* Bottom Action CTA */}
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-[#bcc9c7]/50 shadow-sm">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-[#C9D4DE]/50 shadow-sm">
             <button
               onClick={() => setCurrentStep(2)}
               className="px-5 py-2.5 text-slate-600 hover:text-slate-900 font-bold text-xs rounded-xl hover:bg-slate-100 transition-colors cursor-pointer flex items-center gap-2"
@@ -1124,7 +1172,7 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
             <button
               onClick={handleExecuteImport}
               disabled={isExecuting || candidates.every(c => c.resolutionAction === 'skip')}
-              className="px-8 py-3.5 bg-[#006a66] hover:bg-[#256865] text-white font-extrabold text-sm rounded-xl shadow-lg hover:shadow-xl transition-all flex items-center gap-3 cursor-pointer disabled:opacity-50"
+              className="px-8 py-3.5 bg-[#005596] hover:bg-[#004275] text-white font-extrabold text-sm rounded-xl shadow-lg hover:shadow-xl transition-all flex items-center gap-3 cursor-pointer disabled:opacity-50"
             >
               {isExecuting ? (
                 <>
@@ -1139,21 +1187,43 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
             </button>
           </div>
 
+          {importError && (
+            <div className="bg-rose-50 border border-rose-300 rounded-2xl p-6 flex flex-col sm:flex-row items-start gap-4 animate-fade-in">
+              <div className="w-12 h-12 bg-rose-100 text-rose-600 rounded-full flex items-center justify-center shrink-0">
+                <XCircle className="w-7 h-7" />
+              </div>
+              <div className="flex-1 text-left space-y-1.5">
+                <p className="font-black text-rose-900 text-sm">Échec de l'importation</p>
+                <p className="text-xs text-rose-700">{importError}</p>
+                <p className="text-[11px] text-rose-500">
+                  Aucune modification n'a été enregistrée. Corrigez le problème puis réessayez.
+                </p>
+              </div>
+              <button
+                onClick={() => setImportError(null)}
+                className="text-rose-400 hover:text-rose-600 cursor-pointer p-1"
+                title="Fermer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+          )}
+
         </div>
       )}
 
       {/* STEP 4: IMPORT EXECUTION & REPORT SUMMARY */}
       {currentStep === 4 && (
-        <div className="bg-white rounded-2xl border border-[#bcc9c7]/60 p-8 shadow-sm max-w-4xl mx-auto space-y-8 animate-fade-in text-center">
+        <div className="bg-white rounded-2xl border border-[#C9D4DE]/60 p-8 shadow-sm max-w-4xl mx-auto space-y-8 animate-fade-in text-center">
           
           <div className="w-20 h-20 bg-emerald-100 text-emerald-700 rounded-full flex items-center justify-center mx-auto shadow-inner">
             <CheckCircle2 className="w-12 h-12" />
           </div>
 
           <div className="space-y-2">
-            <h2 className="text-2xl font-black text-[#071f1f]">Importation Terminée avec Succès !</h2>
-            <p className="text-xs text-[#3d4948]">
-              Les enregistrements ont été synchronisés et intégrés dans votre annuaire de contacts ARSII.
+            <h2 className="text-2xl font-black text-[#1C2529]">Importation Terminée avec Succès !</h2>
+            <p className="text-xs text-[#55636B]">
+              Les enregistrements ont été synchronisés et intégrés dans votre annuaire de contacts EURAXESS Africa.
             </p>
           </div>
 
@@ -1179,7 +1249,7 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-6 border-t border-slate-100">
             <Link
               to="/contacts"
-              className="w-full sm:w-auto px-8 py-3.5 bg-[#006a66] hover:bg-[#256865] text-white font-extrabold text-sm rounded-xl shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer"
+              className="w-full sm:w-auto px-8 py-3.5 bg-[#005596] hover:bg-[#004275] text-white font-extrabold text-sm rounded-xl shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer"
             >
               <Eye className="w-4 h-4" /> Voir les contacts importés
             </Link>

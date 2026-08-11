@@ -7,27 +7,27 @@ export const Footer: React.FC = () => {
       <div className="max-w-[1440px] mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
         
         <div className="flex items-center gap-3">
-          <span className="font-extrabold text-[#006a66] text-sm">ARSII</span>
+          <span className="font-extrabold text-[#005596] text-sm">EURAXESS Africa</span>
           <span className="text-slate-300">|</span>
-          <span>© 2026 Réseau de Recherche & Innovation ARSII (Europe - Afrique)</span>
+          <span>© 2026 Réseau de Recherche & Innovation EURAXESS Africa (Europe - Afrique)</span>
         </div>
 
         <nav className="flex flex-wrap items-center justify-center gap-6 text-slate-500 font-medium">
-          <a href="#status" className="hover:text-[#006a66] transition-colors flex items-center gap-1">
-            <Activity className="w-3.5 h-3.5 text-[#006a66]" /> État du système
+          <a href="#status" className="hover:text-[#005596] transition-colors flex items-center gap-1">
+            <Activity className="w-3.5 h-3.5 text-[#005596]" /> État du système
           </a>
-          <a href="#help" className="hover:text-[#006a66] transition-colors flex items-center gap-1">
-            <HelpCircle className="w-3.5 h-3.5 text-[#006a66]" /> Centre d'aide
+          <a href="#help" className="hover:text-[#005596] transition-colors flex items-center gap-1">
+            <HelpCircle className="w-3.5 h-3.5 text-[#005596]" /> Centre d'aide
           </a>
-          <a href="#privacy" className="hover:text-[#006a66] transition-colors flex items-center gap-1">
-            <Shield className="w-3.5 h-3.5 text-[#006a66]" /> Politique de confidentialité
+          <a href="#privacy" className="hover:text-[#005596] transition-colors flex items-center gap-1">
+            <Shield className="w-3.5 h-3.5 text-[#005596]" /> Politique de confidentialité
           </a>
         </nav>
 
         <div className="flex items-center gap-3 text-slate-400">
-          <Globe className="w-4 h-4 hover:text-[#006a66] cursor-pointer transition-colors" />
-          <Mail className="w-4 h-4 hover:text-[#006a66] cursor-pointer transition-colors" />
-          <FileText className="w-4 h-4 hover:text-[#006a66] cursor-pointer transition-colors" />
+          <Globe className="w-4 h-4 hover:text-[#005596] cursor-pointer transition-colors" />
+          <Mail className="w-4 h-4 hover:text-[#005596] cursor-pointer transition-colors" />
+          <FileText className="w-4 h-4 hover:text-[#005596] cursor-pointer transition-colors" />
         </div>
 
       </div>

@@ -2,52 +2,101 @@ import { prisma } from '../db/prisma';
 
 export class DashboardService {
   public async getDashboardStats() {
-    const [totalContacts, activeProjects, totalExchangeNotes, countryGroup, actorTypeGroup, typeActeurs] = await Promise.all([
+    const [totalContacts, countryGroup, genderGroup, careerStageGroup, tagGroup] = await Promise.all([
       prisma.contact.count(),
-      prisma.project.count(),
-      prisma.exchangeNote.count(),
       prisma.contact.groupBy({
-        by: ['country'],
+        by: ['countryOfOrigin'],
         _count: { id: true }
       }),
       prisma.contact.groupBy({
-        by: ['actorType', 'actorTypeId'],
+        by: ['gender'],
         _count: { id: true }
       }),
-      prisma.typeActeur.findMany()
+      prisma.contact.groupBy({
+        by: ['researchCareerStage'],
+        _count: { id: true }
+      }),
+      prisma.tagOnContact.groupBy({
+        by: ['tagId'],
+        _count: { _all: true }
+      })
     ]);
 
-    const totalCountries = countryGroup.length;
+    const countriesCovered = countryGroup.length;
+
+    const affiliationsGroup = await prisma.contact.groupBy({
+      by: ['affiliation'],
+      _count: { id: true }
+    });
+    const affiliationsCount = affiliationsGroup.filter(a => a.affiliation).length;
+
+    const seniorStages = new Set(['R3_ESTABLISHED', 'R4_LEADING']);
+    const seniorResearchers = careerStageGroup
+      .filter(item => seniorStages.has(item.researchCareerStage))
+      .reduce((sum, item) => sum + item._count.id, 0);
+
     const distributionByCountry = countryGroup.map(item => {
       const count = item._count.id;
       return {
-        country: item.country || 'Inconnu',
+        country: item.countryOfOrigin || 'Inconnu',
         count,
         percentage: totalContacts > 0 ? Math.round((count / totalContacts) * 100) : 0
       };
     });
 
-    const typeActeurMap = new Map(typeActeurs.map(t => [t.id, t.name]));
-
-    const distributionByTypeActeur = actorTypeGroup.map(item => {
+    const distributionByGender = genderGroup.map(item => {
       const count = item._count.id;
-      const label = (item.actorTypeId && typeActeurMap.get(item.actorTypeId)) || item.actorType || 'Autre';
       return {
-        typeActeur: label,
+        gender: item.gender,
         count,
         percentage: totalContacts > 0 ? Math.round((count / totalContacts) * 100) : 0
       };
     });
+
+    const distributionByCareerStage = careerStageGroup.map(item => {
+      const count = item._count.id;
+      return {
+        careerStage: item.researchCareerStage,
+        count,
+        percentage: totalContacts > 0 ? Math.round((count / totalContacts) * 100) : 0
+      };
+    });
+
+    const tagIds = tagGroup.map(t => t.tagId);
+    const tagNameMap = new Map(
+      (await prisma.tag.findMany({
+        where: { id: { in: tagIds } },
+        select: { id: true, name: true, color: true }
+      })).map(t => [t.id, t])
+    );
+
+    const distributionByTag = tagGroup
+      .map(item => {
+        const tag = tagNameMap.get(item.tagId);
+        return {
+          tagId: item.tagId,
+          name: tag?.name || 'Inconnu',
+          color: tag?.color || '#35B8B2',
+          count: item._count._all
+        };
+      })
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 10);
 
     return {
       kpis: {
         totalContacts,
-        totalCountries,
-        activeProjects,
-        totalExchangeNotes
+        countriesCovered,
+        affiliationsCount,
+        seniorResearchers: {
+          count: seniorResearchers,
+          percentage: totalContacts > 0 ? Math.round((seniorResearchers / totalContacts) * 100) : 0
+        }
       },
       distributionByCountry,
-      distributionByTypeActeur
+      distributionByGender,
+      distributionByCareerStage,
+      distributionByTag
     };
   }
 }

@@ -45,7 +45,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ user, onUserUpdate, on
   if (!user) {
     return (
       <div className="max-w-2xl mx-auto px-4 sm:px-6 py-16 text-center">
-        <p className="text-sm text-[#3d4948]">Profil non disponible.</p>
+        <p className="text-sm text-[#55636B]">Profil non disponible.</p>
       </div>
     );
   }
@@ -107,20 +107,20 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ user, onUserUpdate, on
     }
   };
 
-  const roleLabel = user.role === 'admin' ? 'Administrateur' : 'Membre ARSII';
+  const roleLabel = user.role === 'admin' ? 'Administrateur' : 'Membre EURAXESS Africa';
 
   return (
     <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-10 py-8 space-y-6 animate-fade-in">
       <div>
-        <nav className="flex items-center gap-1.5 text-xs text-[#3d4948] font-semibold mb-2">
-          <Link to="/dashboard" className="hover:text-[#006a66] cursor-pointer">
+        <nav className="flex items-center gap-1.5 text-xs text-[#55636B] font-semibold mb-2">
+          <Link to="/dashboard" className="hover:text-[#005596] cursor-pointer">
             Tableau de bord
           </Link>
           <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
-          <span className="text-[#006a66] font-bold">Mon profil</span>
+          <span className="text-[#005596] font-bold">Mon profil</span>
         </nav>
-        <h1 className="text-2xl sm:text-3xl font-extrabold text-[#071f1f]">Mon profil</h1>
-        <p className="text-xs text-[#3d4948] mt-1">
+        <h1 className="text-2xl sm:text-3xl font-extrabold text-[#1C2529]">Mon profil</h1>
+        <p className="text-xs text-[#55636B] mt-1">
           Gérez vos informations personnelles et votre photo de profil.
         </p>
       </div>
@@ -128,20 +128,20 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ user, onUserUpdate, on
       <form onSubmit={handleSave} className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Avatar Card */}
         <div className="lg:col-span-4">
-          <div className="bg-white rounded-2xl p-6 shadow-[0_6px_18px_rgba(0,0,0,0.06)] border border-[#bcc9c7]/50 flex flex-col items-center text-center space-y-4">
+          <div className="bg-white rounded-2xl p-6 shadow-[0_6px_18px_rgba(0,0,0,0.06)] border border-[#C9D4DE]/50 flex flex-col items-center text-center space-y-4">
             <div className="relative">
-              <div className="w-28 h-28 rounded-full overflow-hidden bg-[#cee8e7] border-4 border-[#35b8b2]/30 flex items-center justify-center">
+              <div className="w-28 h-28 rounded-full overflow-hidden bg-[#D9E6F2] border-4 border-[#005596]/30 flex items-center justify-center">
                 {avatarUrl ? (
                   <img src={avatarUrl} alt="Photo de profil" className="w-full h-full object-cover" />
                 ) : (
-                  <span className="text-3xl font-black text-[#006a66]">{getInitials(name)}</span>
+                  <span className="text-3xl font-black text-[#005596]">{getInitials(name)}</span>
                 )}
               </div>
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
                 disabled={isUploading}
-                className="absolute bottom-0 right-0 w-9 h-9 rounded-full bg-[#006a66] hover:bg-[#256865] text-white flex items-center justify-center shadow-lg border-2 border-white transition-colors cursor-pointer disabled:opacity-75"
+                className="absolute bottom-0 right-0 w-9 h-9 rounded-full bg-[#005596] hover:bg-[#004275] text-white flex items-center justify-center shadow-lg border-2 border-white transition-colors cursor-pointer disabled:opacity-75"
                 title="Changer la photo de profil"
               >
                 {isUploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Camera className="w-4 h-4" />}
@@ -156,11 +156,11 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ user, onUserUpdate, on
             </div>
 
             <div>
-              <p className="font-bold text-sm text-[#071f1f]">{user.name}</p>
-              <p className="text-xs text-[#3d4948] mt-0.5">{user.email}</p>
+              <p className="font-bold text-sm text-[#1C2529]">{user.name}</p>
+              <p className="text-xs text-[#55636B] mt-0.5">{user.email}</p>
             </div>
 
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#dff9f8] text-[#006a66] text-[11px] font-bold">
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#E8F1F8] text-[#005596] text-[11px] font-bold">
               <ShieldCheck className="w-3.5 h-3.5" />
               {roleLabel}
             </span>
@@ -173,55 +173,55 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ user, onUserUpdate, on
 
         {/* Edit Fields Card */}
         <div className="lg:col-span-8">
-          <div className="bg-white rounded-2xl p-6 shadow-[0_6px_18px_rgba(0,0,0,0.06)] border border-[#bcc9c7]/50 space-y-5">
-            <h2 className="text-base font-bold text-[#071f1f] flex items-center gap-2">
-              <UserCircle className="w-5 h-5 text-[#006a66]" />
+          <div className="bg-white rounded-2xl p-6 shadow-[0_6px_18px_rgba(0,0,0,0.06)] border border-[#C9D4DE]/50 space-y-5">
+            <h2 className="text-base font-bold text-[#1C2529] flex items-center gap-2">
+              <UserCircle className="w-5 h-5 text-[#005596]" />
               Informations personnelles
             </h2>
 
             <div className="flex flex-col gap-1.5">
-              <label htmlFor="profile-name" className="text-[11px] font-extrabold text-[#3d4948] uppercase tracking-wider">
+              <label htmlFor="profile-name" className="text-[11px] font-extrabold text-[#55636B] uppercase tracking-wider">
                 Nom complet
               </label>
               <div className="relative">
-                <UserCircle className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-[#6d7a78]" />
+                <UserCircle className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-[#8A98A1]" />
                 <input
                   id="profile-name"
                   type="text"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  className="w-full pl-10 pr-4 py-3 bg-[#dff9f8]/60 focus:bg-white border border-[#bcc9c7] focus:border-[#006a66] rounded-xl text-xs font-bold text-[#071f1f] focus:outline-none focus:ring-2 focus:ring-[#006a66]/20 transition-all"
+                  className="w-full pl-10 pr-4 py-3 bg-[#E8F1F8]/60 focus:bg-white border border-[#C9D4DE] focus:border-[#005596] rounded-xl text-xs font-bold text-[#1C2529] focus:outline-none focus:ring-2 focus:ring-[#005596]/20 transition-all"
                 />
               </div>
             </div>
 
             <div className="flex flex-col gap-1.5">
-              <label htmlFor="profile-email" className="text-[11px] font-extrabold text-[#3d4948] uppercase tracking-wider">
+              <label htmlFor="profile-email" className="text-[11px] font-extrabold text-[#55636B] uppercase tracking-wider">
                 Adresse e-mail
               </label>
               <div className="relative">
-                <AtSign className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-[#6d7a78]" />
+                <AtSign className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-[#8A98A1]" />
                 <input
                   id="profile-email"
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="w-full pl-10 pr-4 py-3 bg-[#dff9f8]/60 focus:bg-white border border-[#bcc9c7] focus:border-[#006a66] rounded-xl text-xs font-bold text-[#071f1f] focus:outline-none focus:ring-2 focus:ring-[#006a66]/20 transition-all"
+                  className="w-full pl-10 pr-4 py-3 bg-[#E8F1F8]/60 focus:bg-white border border-[#C9D4DE] focus:border-[#005596] rounded-xl text-xs font-bold text-[#1C2529] focus:outline-none focus:ring-2 focus:ring-[#005596]/20 transition-all"
                 />
               </div>
             </div>
 
             <div className="flex flex-col gap-1.5">
-              <label className="text-[11px] font-extrabold text-[#3d4948] uppercase tracking-wider">
+              <label className="text-[11px] font-extrabold text-[#55636B] uppercase tracking-wider">
                 Rôle
               </label>
               <div className="relative">
-                <BadgeCheck className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-[#6d7a78]" />
+                <BadgeCheck className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-[#8A98A1]" />
                 <input
                   type="text"
                   readOnly
                   value={roleLabel}
-                  className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-[#bcc9c7] rounded-xl text-xs font-bold text-[#3d4948] cursor-not-allowed"
+                  className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-[#C9D4DE] rounded-xl text-xs font-bold text-[#55636B] cursor-not-allowed"
                 />
               </div>
             </div>
@@ -230,7 +230,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ user, onUserUpdate, on
               <button
                 type="submit"
                 disabled={isSaving || isUploading}
-                className="flex-1 py-3 px-4 bg-gradient-to-r from-[#35b8b2] to-[#256865] hover:from-[#2ca39d] hover:to-[#1d5351] text-white font-extrabold rounded-xl text-sm shadow-md hover:shadow-lg transition-all active:scale-[0.98] flex items-center justify-center gap-2 cursor-pointer disabled:opacity-75"
+                className="flex-1 py-3 px-4 bg-gradient-to-r from-[#005596] to-[#004275] hover:from-[#004275] hover:to-[#003B66] text-white font-extrabold rounded-xl text-sm shadow-md hover:shadow-lg transition-all active:scale-[0.98] flex items-center justify-center gap-2 cursor-pointer disabled:opacity-75"
               >
                 {isSaving ? (
                   <>
@@ -247,7 +247,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ user, onUserUpdate, on
               <button
                 type="button"
                 onClick={() => navigate('/dashboard')}
-                className="py-3 px-5 bg-white border border-[#006a66] text-[#006a66] font-bold rounded-xl hover:bg-[#dff9f8] transition-colors cursor-pointer"
+                className="py-3 px-5 bg-white border border-[#005596] text-[#005596] font-bold rounded-xl hover:bg-[#E8F1F8] transition-colors cursor-pointer"
               >
                 Annuler
               </button>

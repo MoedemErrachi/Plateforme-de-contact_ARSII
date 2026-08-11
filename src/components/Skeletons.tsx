@@ -1,7 +1,7 @@
 import React from 'react';
 
 export const SkeletonBox: React.FC<{ className?: string }> = ({ className = '' }) => (
-  <div className={`animate-pulse bg-[#cee8e7]/50 rounded-lg ${className}`} />
+  <div className={`animate-pulse bg-[#D9E6F2]/50 rounded-lg ${className}`} />
 );
 
 export const LoadingSpinner: React.FC<{ size?: 'sm' | 'md' | 'lg'; text?: string }> = ({ 
@@ -11,8 +11,8 @@ export const LoadingSpinner: React.FC<{ size?: 'sm' | 'md' | 'lg'; text?: string
   const dimension = size === 'sm' ? 'w-5 h-5 border-2' : size === 'lg' ? 'w-12 h-12 border-4' : 'w-8 h-8 border-3';
   return (
     <div className="flex flex-col items-center justify-center p-8 space-y-3">
-      <div className={`${dimension} border-[#006a66] border-t-transparent rounded-full animate-spin`} />
-      {text && <p className="text-xs font-bold text-[#006a66] animate-pulse">{text}</p>}
+      <div className={`${dimension} border-[#005596] border-t-transparent rounded-full animate-spin`} />
+      {text && <p className="text-xs font-bold text-[#005596] animate-pulse">{text}</p>}
     </div>
   );
 };
@@ -22,7 +22,7 @@ export const DashboardSkeleton: React.FC = () => (
     {/* KPI Stats Skeletons */}
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
       {[1, 2, 3, 4].map(i => (
-        <div key={i} className="bg-white p-6 rounded-2xl shadow-[0_6px_18px_rgba(0,0,0,0.06)] border border-[#bcc9c7]/30 h-40 flex flex-col justify-between">
+        <div key={i} className="bg-white p-6 rounded-2xl shadow-[0_6px_18px_rgba(0,0,0,0.06)] border border-[#C9D4DE]/30 h-40 flex flex-col justify-between">
           <div className="flex justify-between items-start">
             <SkeletonBox className="w-10 h-10 rounded-xl" />
             <SkeletonBox className="w-16 h-6 rounded-full" />
@@ -37,7 +37,7 @@ export const DashboardSkeleton: React.FC = () => (
 
     {/* Charts Grid Skeletons */}
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      <div className="bg-white p-6 rounded-2xl shadow-[0_6px_18px_rgba(0,0,0,0.06)] border border-[#bcc9c7]/30 space-y-4 h-80">
+      <div className="bg-white p-6 rounded-2xl shadow-[0_6px_18px_rgba(0,0,0,0.06)] border border-[#C9D4DE]/30 space-y-4 h-80">
         <div className="flex justify-between items-center pb-3 border-b border-slate-100">
           <SkeletonBox className="w-48 h-6" />
           <SkeletonBox className="w-24 h-8" />
@@ -52,7 +52,7 @@ export const DashboardSkeleton: React.FC = () => (
         </div>
       </div>
 
-      <div className="bg-white p-6 rounded-2xl shadow-[0_6px_18px_rgba(0,0,0,0.06)] border border-[#bcc9c7]/30 space-y-4 h-80 flex flex-col justify-between">
+      <div className="bg-white p-6 rounded-2xl shadow-[0_6px_18px_rgba(0,0,0,0.06)] border border-[#C9D4DE]/30 space-y-4 h-80 flex flex-col justify-between">
         <div className="flex justify-between items-center pb-3 border-b border-slate-100">
           <SkeletonBox className="w-40 h-6" />
         </div>
@@ -72,7 +72,7 @@ export const DashboardSkeleton: React.FC = () => (
 export const ContactsTableSkeleton: React.FC = () => (
   <div className="space-y-6">
     {/* Filter bar skeleton */}
-    <div className="bg-white rounded-2xl p-4 shadow-[0_6px_18px_rgba(0,0,0,0.06)] border border-[#bcc9c7]/40 flex flex-col md:flex-row gap-4 items-center justify-between">
+    <div className="bg-white rounded-2xl p-4 shadow-[0_6px_18px_rgba(0,0,0,0.06)] border border-[#C9D4DE]/40 flex flex-col md:flex-row gap-4 items-center justify-between">
       <SkeletonBox className="w-full md:w-96 h-10 rounded-xl" />
       <div className="flex items-center gap-3 w-full md:w-auto justify-end">
         <SkeletonBox className="w-28 h-10 rounded-xl" />
@@ -81,7 +81,7 @@ export const ContactsTableSkeleton: React.FC = () => (
     </div>
 
     {/* Table skeleton */}
-    <div className="bg-white rounded-2xl shadow-[0_6px_18px_rgba(0,0,0,0.06)] border border-[#bcc9c7]/40 overflow-hidden">
+    <div className="bg-white rounded-2xl shadow-[0_6px_18px_rgba(0,0,0,0.06)] border border-[#C9D4DE]/40 overflow-hidden">
       <div className="p-4 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
         <SkeletonBox className="w-36 h-5" />
         <SkeletonBox className="w-24 h-5" />

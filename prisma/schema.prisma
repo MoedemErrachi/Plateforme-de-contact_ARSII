@@ -30,10 +30,18 @@ enum NoteType {
   NOTE
 }
 
-enum ProjectStatus {
-  EN_COURS   @map("En cours")
-  PLANIFIE   @map("Planifié")
-  TERMINE    @map("Terminé")
+enum Gender {
+  FEMALE
+  MALE
+  OTHER
+  PREFER_NOT_TO_SAY
+}
+
+enum ResearchCareerStage {
+  R1_FIRST_STAGE
+  R2_RECOGNIZED
+  R3_ESTABLISHED
+  R4_LEADING
 }
 
 model User {
@@ -47,19 +55,9 @@ model User {
   avatarUrl        String?
   role             Role              @default(USER)
   logs             ImportExportLog[]
-  savedSegments    SavedSegment[]
+  segments         Segment[]
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
-}
-
-model TypeActeur {
-  id          String    @id @default(uuid())
-  name        String    @unique
-  code        String    @unique
-  description String?
-  contacts    Contact[]
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
 }
 
 model Tag {
@@ -74,28 +72,25 @@ model Tag {
 }
 
 model Contact {
-  id                String             @id @default(uuid())
-  name              String
-  initials          String
-  title             String             @default("Membre Réseau")
-  organization      String
-  email             String             @unique
-  phone             String             @default("")
-  linkedin          String?
-  country           String             @default("Tunisie")
-  flagEmoji         String?
-  interventionZones String[]
-  actorTypeId       String?
-  typeActeur        TypeActeur?        @relation(fields: [actorTypeId], references: [id])
-  actorType         String             @default("PME")
-  expertise         String[]
-  tags              TagOnContact[]
-  avatarUrl         String?
-  projects          ProjectOnContact[]
-  exchangeNotes     ExchangeNote[]
-  isVerified        Boolean            @default(true)
-  createdAt         DateTime           @default(now())
-  updatedAt         DateTime           @updatedAt
+  id                    String               @id @default(uuid())
+  email                 String               @unique
+  firstName             String
+  lastName              String
+  gender                Gender
+  countryOfOrigin       String
+  city                  String
+  phone                 String               @default("")
+  affiliation           String
+  function              String?
+  experience            String?
+  facultyDepartment     String?
+  researchCareerStage   ResearchCareerStage
+  avatarUrl             String?
+  isVerified            Boolean              @default(true)
+  tags                  TagOnContact[]
+  exchangeNotes         ExchangeNote[]
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
 }
 
 model TagOnContact {
@@ -105,29 +100,6 @@ model TagOnContact {
   tag       Tag     @relation(fields: [tagId], references: [id], onDelete: Cascade)
 
   @@id([contactId, tagId])
-}
-
-model Project {
-  id          String             @id @default(uuid())
-  title       String
-  code        String             @unique
-  description String?
-  period      String?
-  sector      String?
-  imageUrl    String?
-  status      ProjectStatus      @default(EN_COURS)
-  contacts    ProjectOnContact[]
-  createdAt   DateTime           @default(now())
-  updatedAt   DateTime           @updatedAt
-}
-
-model ProjectOnContact {
-  projectId String
-  contactId String
-  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  contact   Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
-
-  @@id([projectId, contactId])
 }
 
 model ExchangeNote {
@@ -145,12 +117,12 @@ model ExchangeNote {
   createdAt      DateTime @default(now())
 }
 
-model SavedSegment {
+model Segment {
   id          String   @id @default(uuid())
   name        String
   description String?
   icon        String?  @default("Filter")
-  filters     Json     // FilterState JSON object
+  filters     Json
   userId      String?
   user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
   createdAt   DateTime @default(now())

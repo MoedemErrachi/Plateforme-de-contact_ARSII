@@ -1,24 +1,41 @@
-export type ViewPage = 
-  | 'dashboard' 
-  | 'contacts' 
-  | 'contact-detail' 
-  | 'importation' 
-  | 'new-contact' 
-  | 'exportation' 
-  | 'auth' 
+export type ViewPage =
+  | 'dashboard'
+  | 'contacts'
+  | 'contact-detail'
+  | 'importation'
+  | 'new-contact'
+  | 'exportation'
+  | 'auth'
   | 'segmentation';
 
-export type ActorType = 'Labo de recherche' | 'PME' | 'ONG' | 'Université' | 'Institutionnel';
+export type Gender = 'FEMALE' | 'MALE' | 'OTHER' | 'PREFER_NOT_TO_SAY';
 
-export interface Project {
-  id: string;
-  title: string;
-  description: string;
-  period: string;
-  status: 'En cours' | 'Planifié' | 'Terminé';
-  sector: string;
-  imageUrl?: string;
-}
+export type ResearchCareerStage =
+  | 'R1_FIRST_STAGE'
+  | 'R2_RECOGNIZED'
+  | 'R3_ESTABLISHED'
+  | 'R4_LEADING';
+
+export const GENDER_LABELS: Record<Gender, string> = {
+  FEMALE: 'Femme',
+  MALE: 'Homme',
+  OTHER: 'Autre',
+  PREFER_NOT_TO_SAY: 'Préfère ne pas dire'
+};
+
+export const CAREER_STAGE_LABELS: Record<ResearchCareerStage, string> = {
+  R1_FIRST_STAGE: 'R1 — Chercheur débutant (First Stage)',
+  R2_RECOGNIZED: 'R2 — Chercheur reconnu (Recognised)',
+  R3_ESTABLISHED: 'R3 — Chercheur établi (Established)',
+  R4_LEADING: 'R4 — Chercheur leader (Leading)'
+};
+
+export const CAREER_STAGE_SHORT_LABELS: Record<ResearchCareerStage, string> = {
+  R1_FIRST_STAGE: 'R1 Débutant',
+  R2_RECOGNIZED: 'R2 Reconnu',
+  R3_ESTABLISHED: 'R3 Établi',
+  R4_LEADING: 'R4 Leader'
+};
 
 export interface ExchangeNote {
   id: string;
@@ -38,6 +55,7 @@ export interface Tag {
   color: string;
   category?: string;
   description?: string;
+  _count?: { contacts: number };
 }
 
 export interface Segment {
@@ -50,23 +68,24 @@ export interface Segment {
 
 export interface Contact {
   id: string;
-  name: string;
-  initials: string;
-  title: string;
-  organization: string;
+  firstName: string;
+  lastName: string;
+  name?: string;
+  initials?: string;
   email: string;
+  gender: Gender;
+  countryOfOrigin: string;
+  city: string;
   phone: string;
-  linkedin?: string;
-  country: string;
-  flagEmoji?: string;
-  interventionZones: string[];
-  actorType: ActorType;
-  expertise: string[];
-  tags?: string[];
+  affiliation: string;
+  function?: string;
+  experience?: string;
+  facultyDepartment?: string;
+  researchCareerStage: ResearchCareerStage;
   avatarUrl?: string;
-  projects: Project[];
-  exchangeNotes: ExchangeNote[];
   isVerified?: boolean;
+  tags: string[];
+  exchangeNotes: ExchangeNote[];
 }
 
 export interface User {
@@ -77,27 +96,11 @@ export interface User {
   avatarUrl?: string | null;
 }
 
-export interface ImportConflict {
-  id: string;
-  imported: {
-    name: string;
-    org: string;
-    email: string;
-    type: string;
-  };
-  existing: {
-    name: string;
-    org: string;
-    email: string;
-  };
-  status: 'conflict' | 'resolved_merged' | 'ignored' | 'forced_new';
-}
-
 export interface FilterState {
   search: string;
-  headquarters: string;
-  zones: string[];
-  expertises: string[];
-  actorTypes: string[];
+  countries: string[];
+  genders: Gender[];
+  careerStages: ResearchCareerStage[];
+  affiliations: string;
   tags: string[];
 }

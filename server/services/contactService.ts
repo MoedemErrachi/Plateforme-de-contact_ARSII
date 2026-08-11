@@ -1,32 +1,32 @@
 import { prisma } from '../db/prisma';
 import { AppError } from '../utils/AppError';
-import { NoteType } from '@prisma/client';
+import { NoteType, Gender, ResearchCareerStage } from '@prisma/client';
 
 export interface QueryContactsParams {
   page?: number;
   limit?: number;
   search?: string;
-  country?: string;
-  typeActeurId?: string;
+  countryOfOrigin?: string;
+  gender?: string;
+  careerStage?: string;
+  affiliation?: string;
+  tagId?: string;
   segmentId?: string;
 }
 
 export interface CreateContactPayload {
   firstName?: string;
   lastName?: string;
-  name?: string;
-  title?: string;
   email: string;
-  organization?: string;
-  country?: string;
+  gender?: string;
+  countryOfOrigin?: string;
+  city?: string;
   phone?: string;
-  linkedinUrl?: string;
-  linkedin?: string;
-  expertiseDomain?: string;
-  expertise?: string[];
-  interventionZones?: string[];
-  typeActeurId?: string;
-  actorType?: string;
+  affiliation?: string;
+  function?: string;
+  experience?: string;
+  facultyDepartment?: string;
+  researchCareerStage?: string;
   avatarUrl?: string;
   tagIds?: string[];
 }
@@ -45,7 +45,6 @@ export interface CreateNotePayload {
 }
 
 function buildName(payload: CreateContactPayload): string {
-  if (payload.name) return payload.name.trim();
   const first = (payload.firstName || '').trim();
   const last = (payload.lastName || '').trim();
   if (first && last) return `${first} ${last}`;
@@ -62,6 +61,18 @@ function buildInitials(name: string): string {
     .toUpperCase() || 'NC';
 }
 
+function normalizeGender(value?: string): Gender {
+  const v = (value || '').toUpperCase();
+  const valid = ['FEMALE', 'MALE', 'OTHER', 'PREFER_NOT_TO_SAY'] as const;
+  return (valid as readonly string[]).includes(v) ? (v as Gender) : Gender.PREFER_NOT_TO_SAY;
+}
+
+function normalizeCareerStage(value?: string): ResearchCareerStage {
+  const v = (value || '').toUpperCase();
+  const valid = ['R1_FIRST_STAGE', 'R2_RECOGNIZED', 'R3_ESTABLISHED', 'R4_LEADING'] as const;
+  return (valid as readonly string[]).includes(v) ? (v as ResearchCareerStage) : ResearchCareerStage.R1_FIRST_STAGE;
+}
+
 export class ContactService {
   public async getContacts(params: QueryContactsParams) {
     const page = Math.max(1, params.page || 1);
@@ -73,22 +84,32 @@ export class ContactService {
     if (params.search) {
       const q = params.search.trim();
       where.OR = [
-        { name: { contains: q, mode: 'insensitive' } },
+        { firstName: { contains: q, mode: 'insensitive' } },
+        { lastName: { contains: q, mode: 'insensitive' } },
         { email: { contains: q, mode: 'insensitive' } },
-        { organization: { contains: q, mode: 'insensitive' } },
-        { title: { contains: q, mode: 'insensitive' } }
+        { affiliation: { contains: q, mode: 'insensitive' } },
+        { function: { contains: q, mode: 'insensitive' } }
       ];
     }
 
-    if (params.country) {
-      where.country = { equals: params.country, mode: 'insensitive' };
+    if (params.countryOfOrigin) {
+      where.countryOfOrigin = { equals: params.countryOfOrigin, mode: 'insensitive' };
     }
 
-    if (params.typeActeurId) {
-      where.OR = [
-        { actorTypeId: params.typeActeurId },
-        { actorType: { equals: params.typeActeurId, mode: 'insensitive' } }
-      ];
+    if (params.gender) {
+      where.gender = normalizeGender(params.gender);
+    }
+
+    if (params.careerStage) {
+      where.researchCareerStage = normalizeCareerStage(params.careerStage);
+    }
+
+    if (params.affiliation) {
+      where.affiliation = { contains: params.affiliation, mode: 'insensitive' };
+    }
+
+    if (params.tagId) {
+      where.tags = { some: { tagId: params.tagId } };
     }
 
     if (params.segmentId) {
@@ -103,9 +124,7 @@ export class ContactService {
         take: limit,
         orderBy: { createdAt: 'desc' },
         include: {
-          typeActeur: true,
           tags: { include: { tag: true } },
-          projects: { include: { project: true } },
           exchangeNotes: { orderBy: { createdAt: 'desc' } }
         }
       })
@@ -129,9 +148,7 @@ export class ContactService {
     const contact = await prisma.contact.findUnique({
       where: { id },
       include: {
-        typeActeur: true,
         tags: { include: { tag: true } },
-        projects: { include: { project: true } },
         exchangeNotes: { orderBy: { createdAt: 'desc' } }
       }
     });
@@ -163,6 +180,13 @@ export class ContactService {
     ]);
   }
 
+  private contactInclude() {
+    return {
+      tags: { include: { tag: true } },
+      exchangeNotes: { orderBy: { createdAt: 'desc' } }
+    } as const;
+  }
+
   public async createContact(payload: CreateContactPayload) {
     const emailClean = payload.email.toLowerCase().trim();
 
@@ -172,30 +196,21 @@ export class ContactService {
     }
 
     const name = buildName(payload);
-    const initials = buildInitials(name);
 
     const newContact = await prisma.contact.create({
       data: {
-        name,
-        initials,
-        title: payload.title || 'Membre Réseau',
-        organization: payload.organization || '',
+        firstName: (payload.firstName || '').trim() || name.split(' ')[0] || '',
+        lastName: (payload.lastName || '').trim() || name.split(' ').slice(1).join(' ') || '',
         email: emailClean,
+        gender: normalizeGender(payload.gender),
+        countryOfOrigin: payload.countryOfOrigin || '',
+        city: payload.city || '',
         phone: payload.phone || '',
-        linkedin: payload.linkedinUrl || payload.linkedin || '',
-        country: payload.country || 'Tunisie',
-        actorTypeId: payload.typeActeurId || null,
-        actorType: payload.actorType || 'PME',
-        expertise: payload.expertise?.length
-          ? payload.expertise
-          : payload.expertiseDomain
-          ? [payload.expertiseDomain]
-          : [],
-        interventionZones: payload.interventionZones?.length
-          ? payload.interventionZones
-          : payload.country
-          ? [payload.country]
-          : [],
+        affiliation: payload.affiliation || '',
+        function: payload.function || null,
+        experience: payload.experience || null,
+        facultyDepartment: payload.facultyDepartment || null,
+        researchCareerStage: normalizeCareerStage(payload.researchCareerStage),
         avatarUrl: payload.avatarUrl || null
       }
     });
@@ -206,12 +221,7 @@ export class ContactService {
 
     return prisma.contact.findUnique({
       where: { id: newContact.id },
-      include: {
-        typeActeur: true,
-        tags: { include: { tag: true } },
-        projects: { include: { project: true } },
-        exchangeNotes: true
-      }
+      include: this.contactInclude()
     });
   }
 
@@ -233,47 +243,31 @@ export class ContactService {
 
     const dataToUpdate: any = {};
 
-    const newName = buildName({ ...existing, ...payload } as CreateContactPayload);
-    if (newName !== existing.name) {
-      dataToUpdate.name = newName;
-      dataToUpdate.initials = buildInitials(newName);
-    }
-    if (payload.title !== undefined) dataToUpdate.title = payload.title;
+    if (payload.firstName !== undefined) dataToUpdate.firstName = payload.firstName.trim();
+    if (payload.lastName !== undefined) dataToUpdate.lastName = payload.lastName.trim();
     if (payload.email !== undefined) dataToUpdate.email = payload.email.toLowerCase().trim();
-    if (payload.organization !== undefined) dataToUpdate.organization = payload.organization;
-    if (payload.country !== undefined) dataToUpdate.country = payload.country;
+    if (payload.gender !== undefined) dataToUpdate.gender = normalizeGender(payload.gender);
+    if (payload.countryOfOrigin !== undefined) dataToUpdate.countryOfOrigin = payload.countryOfOrigin;
+    if (payload.city !== undefined) dataToUpdate.city = payload.city;
     if (payload.phone !== undefined) dataToUpdate.phone = payload.phone;
-    if (payload.linkedinUrl !== undefined || payload.linkedin !== undefined) {
-      dataToUpdate.linkedin = payload.linkedinUrl || payload.linkedin || '';
-    }
-    if (payload.typeActeurId !== undefined) dataToUpdate.actorTypeId = payload.typeActeurId;
-    if (payload.actorType !== undefined) dataToUpdate.actorType = payload.actorType;
-    if (payload.expertise !== undefined) dataToUpdate.expertise = payload.expertise;
-    if (payload.expertiseDomain !== undefined) dataToUpdate.expertise = [payload.expertiseDomain];
-    if (payload.interventionZones !== undefined) dataToUpdate.interventionZones = payload.interventionZones;
+    if (payload.affiliation !== undefined) dataToUpdate.affiliation = payload.affiliation;
+    if (payload.function !== undefined) dataToUpdate.function = payload.function || null;
+    if (payload.experience !== undefined) dataToUpdate.experience = payload.experience || null;
+    if (payload.facultyDepartment !== undefined) dataToUpdate.facultyDepartment = payload.facultyDepartment || null;
+    if (payload.researchCareerStage !== undefined) dataToUpdate.researchCareerStage = normalizeCareerStage(payload.researchCareerStage);
     if (payload.avatarUrl !== undefined) dataToUpdate.avatarUrl = payload.avatarUrl || null;
 
     const updatedContact = await prisma.contact.update({
       where: { id },
       data: dataToUpdate,
-      include: {
-        typeActeur: true,
-        tags: { include: { tag: true } },
-        projects: { include: { project: true } },
-        exchangeNotes: { orderBy: { createdAt: 'desc' } }
-      }
+      include: this.contactInclude()
     });
 
     if (Array.isArray(payload.tagIds)) {
       await this.setContactTags(id, payload.tagIds);
       return prisma.contact.findUnique({
         where: { id },
-        include: {
-          typeActeur: true,
-          tags: { include: { tag: true } },
-          projects: { include: { project: true } },
-          exchangeNotes: { orderBy: { createdAt: 'desc' } }
-        }
+        include: this.contactInclude()
       });
     }
 
@@ -337,20 +331,20 @@ export class ContactService {
         continue;
       }
       const name = buildName(payload);
-      const initials = buildInitials(name);
       await prisma.contact.create({
         data: {
-          name,
-          initials,
-          title: payload.title || 'Partenaire R&I',
-          organization: payload.organization || '',
+          firstName: (payload.firstName || '').trim() || name.split(' ')[0] || '',
+          lastName: (payload.lastName || '').trim() || name.split(' ').slice(1).join(' ') || '',
           email: emailClean,
+          gender: normalizeGender(payload.gender),
+          countryOfOrigin: payload.countryOfOrigin || '',
+          city: payload.city || '',
           phone: payload.phone || '',
-          linkedin: payload.linkedinUrl || payload.linkedin || '',
-          country: payload.country || 'Sénégal',
-          actorType: payload.actorType || 'Labo de recherche',
-          expertise: payload.expertise || [],
-          interventionZones: payload.interventionZones || [payload.country || 'Sénégal']
+          affiliation: payload.affiliation || '',
+          function: payload.function || null,
+          experience: payload.experience || null,
+          facultyDepartment: payload.facultyDepartment || null,
+          researchCareerStage: normalizeCareerStage(payload.researchCareerStage)
         }
       });
       createdCount++;
@@ -362,17 +356,18 @@ export class ContactService {
       if (!existing) continue;
 
       const dataToUpdate: any = {};
-      const newName = buildName({ ...existing, ...updateItem } as CreateContactPayload);
-      if (newName !== existing.name) {
-        dataToUpdate.name = newName;
-        dataToUpdate.initials = buildInitials(newName);
-      }
-      if (updateItem.title !== undefined) dataToUpdate.title = updateItem.title;
-      if (updateItem.organization !== undefined) dataToUpdate.organization = updateItem.organization;
-      if (updateItem.country !== undefined) dataToUpdate.country = updateItem.country;
+      if (updateItem.firstName !== undefined) dataToUpdate.firstName = updateItem.firstName.trim();
+      if (updateItem.lastName !== undefined) dataToUpdate.lastName = updateItem.lastName.trim();
+      if (updateItem.email !== undefined) dataToUpdate.email = updateItem.email.toLowerCase().trim();
+      if (updateItem.gender !== undefined) dataToUpdate.gender = normalizeGender(updateItem.gender);
+      if (updateItem.countryOfOrigin !== undefined) dataToUpdate.countryOfOrigin = updateItem.countryOfOrigin;
+      if (updateItem.city !== undefined) dataToUpdate.city = updateItem.city;
       if (updateItem.phone !== undefined) dataToUpdate.phone = updateItem.phone;
-      if (updateItem.actorType !== undefined) dataToUpdate.actorType = updateItem.actorType;
-      if (updateItem.expertise !== undefined) dataToUpdate.expertise = updateItem.expertise;
+      if (updateItem.affiliation !== undefined) dataToUpdate.affiliation = updateItem.affiliation;
+      if (updateItem.function !== undefined) dataToUpdate.function = updateItem.function || null;
+      if (updateItem.experience !== undefined) dataToUpdate.experience = updateItem.experience || null;
+      if (updateItem.facultyDepartment !== undefined) dataToUpdate.facultyDepartment = updateItem.facultyDepartment || null;
+      if (updateItem.researchCareerStage !== undefined) dataToUpdate.researchCareerStage = normalizeCareerStage(updateItem.researchCareerStage);
 
       await prisma.contact.update({
         where: { id: updateItem.id },

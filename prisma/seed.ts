@@ -1,317 +1,309 @@
-import { PrismaClient, Role, LogType, LogFormat, NoteType, ProjectStatus } from '@prisma/client';
+import { PrismaClient, Role, Gender, ResearchCareerStage, NoteType } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
-import bcrypt from 'bcryptjs';
 import 'dotenv/config';
+import bcrypt from 'bcryptjs';
 
-const adapter = new PrismaPg({
-  connectionString: process.env.DATABASE_URL!,
-});
-
-const prisma = new PrismaClient({
-  adapter,
-});
+const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL! });
+const prisma = new PrismaClient({ adapter });
 
 async function main() {
-  console.log('Seeding comprehensive database...');
+  console.log('Seeding EURAXESS Africa database...');
 
-  // 1. Seed Users
-  const adminPassword = await bcrypt.hash('arsii2026', 10);
-  const demoPassword = await bcrypt.hash('demo1234', 10);
-  const supervisorPassword = await bcrypt.hash('admin123', 10);
+  // ── Users ──────────────────────────────────────────────
+  const passwordHash = bcrypt.hashSync('admin123', 10);
+  const demoHash = bcrypt.hashSync('demo123', 10);
 
-  const admin = await prisma.user.upsert({
-    where: { email: 'admin@arsii.org' },
-    update: {},
-    create: {
-      email: 'admin@arsii.org',
-      name: 'Dr. Chokri Ben Amar',
-      passwordHash: adminPassword,
-      role: Role.ADMIN,
-      twoFactorEnabled: false
-    }
-  });
-
-  const demoUser = await prisma.user.upsert({
-    where: { email: 'demo@arsii.org' },
-    update: {},
-    create: {
-      email: 'demo@arsii.org',
-      name: 'Membre ARSII',
-      passwordHash: demoPassword,
-      role: Role.USER,
-      twoFactorEnabled: true,
-      twoFactorSecret: 'JBSWY3DPEHPK3PXP'
-    }
-  });
-
-  // Supervisor account — REAL production credentials (maalel.ahmed@gmail.com / admin123)
-  const supervisor = await prisma.user.upsert({
-    where: { email: 'maalel.ahmed@gmail.com' },
-    update: {
-      name: 'Ahmed Maalel',
-      passwordHash: supervisorPassword,
-      role: Role.ADMIN,
-      twoFactorEnabled: false
-    },
-    create: {
-      email: 'maalel.ahmed@gmail.com',
-      name: 'Ahmed Maalel',
-      passwordHash: supervisorPassword,
-      role: Role.ADMIN,
-      twoFactorEnabled: false
-    }
-  });
-
-  // 2. Seed Actor Types
-  const actorTypesData = [
-    { name: 'Labo de recherche', code: 'LABO', description: 'Laboratoire et centre de recherche académique ou privé' },
-    { name: 'PME', code: 'PME', description: 'Petite et Moyenne Entreprise du secteur d’innovation' },
-    { name: 'ONG', code: 'ONG', description: 'Organisation Non Gouvernementale' },
-    { name: 'Université', code: 'UNIV', description: 'Établissement d’enseignement supérieur' },
-    { name: 'Institutionnel', code: 'INST', description: 'Organisme public ou gouvernemental' }
-  ];
-
-  const createdActorTypes = [];
-  for (const at of actorTypesData) {
-    const created = await prisma.typeActeur.upsert({
-      where: { name: at.name },
+  const [supervisor] = await Promise.all([
+    prisma.user.upsert({
+      where: { email: 'maalel.ahmed@gmail.com' },
       update: {},
-      create: at
-    });
-    createdActorTypes.push(created);
-  }
-
-  // 3. Seed Tags / Segments
-  const tagsData = [
-    { name: 'Partenaire Stratégique', color: '#10B981', category: 'Priorité', description: 'Partenaire clé pour les appels à projets' },
-    { name: 'Projet Horizon Europe', color: '#3B82F6', category: 'Financement', description: 'Inscrit dans les programmes européens' },
-    { name: 'Membre Réseau ARSII', color: '#35B8B2', category: 'Statut', description: 'Membre actif du réseau ARSII' },
-    { name: 'Expert IA', color: '#8B5CF6', category: 'Compétence', description: 'Expertise avancée en Intelligence Artificielle' },
-    { name: 'Secteur Santé', color: '#EC4899', category: 'Domaine', description: 'Spécialisation dans les technologies de santé' }
-  ];
-
-  const createdTags = [];
-  for (const tag of tagsData) {
-    const created = await prisma.tag.upsert({
-      where: { name: tag.name },
-      update: {},
-      create: tag
-    });
-    createdTags.push(created);
-  }
-
-  // 4. Seed Projects
-  const projectsData = [
-    {
-      title: 'Euro-African Tech Exchange (EATE)',
-      code: 'EATE-2026',
-      description: 'Plateforme de coopération technologique entre l’Europe et l’Afrique.',
-      period: '2025 - 2028',
-      sector: 'R&I / Numérique',
-      status: ProjectStatus.EN_COURS
-    },
-    {
-      title: 'Green Horizons Horizon Europe',
-      code: 'GH-HE-04',
-      description: 'Programme de transition verte et hydrogène décarboné.',
-      period: '2026 - 2029',
-      sector: 'Environnement / Énergie',
-      status: ProjectStatus.PLANIFIE
-    },
-    {
-      title: 'Digital Health Sahel',
-      code: 'DHS-SAF-12',
-      description: 'Déploiement de solutions e-santé et télémédecine.',
-      period: '2024 - 2026',
-      sector: 'Santé Publique',
-      status: ProjectStatus.TERMINE
-    }
-  ];
-
-  const createdProjects = [];
-  for (const proj of projectsData) {
-    const created = await prisma.project.upsert({
-      where: { code: proj.code },
-      update: {},
-      create: proj
-    });
-    createdProjects.push(created);
-  }
-
-  // 5. Seed Contacts with relations
-  const contactsData = [
-    {
-      name: 'Amadou Diallo',
-      initials: 'AD',
-      title: 'Directeur de Recherche',
-      organization: 'Center for Energy Research',
-      email: 'a.diallo@research-network.org',
-      phone: '+221 33 800 00 00',
-      linkedin: 'https://linkedin.com/in/amadou-diallo-ri',
-      country: 'Sénégal',
-      flagEmoji: '🇸🇳',
-      interventionZones: ['Sénégal', 'Afrique de l’Ouest', 'Union Européenne'],
-      actorType: 'Labo de recherche',
-      actorTypeId: createdActorTypes[0]?.id,
-      expertise: ['Transition Énergétique', 'Hydrogène Vert', 'R&I'],
-      isVerified: true
-    },
-    {
-      name: 'Eva Schneider',
-      initials: 'ES',
-      title: 'Head of International Partnerships',
-      organization: 'EU AgriTech Platform',
-      email: 'e.schneider@eu-agri.tech',
-      phone: '+49 30 555 0123',
-      linkedin: 'https://linkedin.com/in/eva-schneider-agri',
-      country: 'Allemagne',
-      flagEmoji: '🇩🇪',
-      interventionZones: ['Allemagne', 'Union Européenne', 'Afrique du Nord'],
-      actorType: 'Réseau / Association',
-      actorTypeId: createdActorTypes[3]?.id,
-      expertise: ['AgriTech', 'Sécurité Alimentaire', 'Horizon Europe'],
-      isVerified: true
-    },
-    {
-      name: 'Fatou Diallo',
-      initials: 'FD',
-      title: 'Fondatrice & CTO',
-      organization: 'Dakar Tech Incubator',
-      email: 'fatou.diallo@dakar-tech.sn',
-      phone: '+221 77 123 45 67',
-      linkedin: 'https://linkedin.com/in/fatou-diallo-tech',
-      country: 'Sénégal',
-      flagEmoji: '🇸🇳',
-      interventionZones: ['Sénégal', 'Mali', 'Côte d’Ivoire'],
-      actorType: 'PME / Startup',
-      actorTypeId: createdActorTypes[1]?.id,
-      expertise: ['Intelligence Artificielle', 'Startups', 'Fintech'],
-      isVerified: true
-    },
-    {
-      name: 'Stefan Kovacs',
-      initials: 'SK',
-      title: 'Responsable Laboratoire',
-      organization: 'Budapest BioLab',
-      email: 's.kovacs@budapest-bio.hu',
-      phone: '+36 1 456 7890',
-      linkedin: 'https://linkedin.com/in/stefan-kovacs-bio',
-      country: 'Hongrie',
-      flagEmoji: '🇭🇺',
-      interventionZones: ['Hongrie', 'Europe Centrale'],
-      actorType: 'Labo de recherche',
-      actorTypeId: createdActorTypes[0]?.id,
-      expertise: ['Biotechnologies', 'Génomique', 'Diagnostic'],
-      isVerified: true
-    },
-    {
-      name: 'Sami Ben Ali',
-      initials: 'SB',
-      title: 'Professeur & Chercheur',
-      organization: 'Institut Pasteur de Tunis',
-      email: 'sami.benali@tunis-innovation.tn',
-      phone: '+216 71 888 999',
-      linkedin: 'https://linkedin.com/in/sami-benali-health',
-      country: 'Tunisie',
-      flagEmoji: '🇹🇳',
-      interventionZones: ['Tunisie', 'Maghreb', 'France'],
-      actorType: 'Labo de recherche',
-      actorTypeId: createdActorTypes[0]?.id,
-      expertise: ['Santé Globale', 'Immunologie', 'Santé Numérique'],
-      isVerified: true
-    }
-  ];
-
-  for (const c of contactsData) {
-    const contact = await prisma.contact.upsert({
-      where: { email: c.email },
-      update: {},
-      create: c
-    });
-
-    // Link Tags to Contact
-    if (createdTags.length > 0) {
-      await prisma.tagOnContact.createMany({
-        data: [
-          { contactId: contact.id, tagId: createdTags[0].id },
-          { contactId: contact.id, tagId: createdTags[1].id }
-        ],
-        skipDuplicates: true
-      });
-    }
-
-    // Link Projects to Contact
-    if (createdProjects.length > 0) {
-      await prisma.projectOnContact.createMany({
-        data: [
-          { contactId: contact.id, projectId: createdProjects[0].id }
-        ],
-        skipDuplicates: true
-      });
-    }
-
-    // Add Exchange Note
-    await prisma.exchangeNote.create({
-      data: {
-        contactId: contact.id,
-        date: '2026-07-20',
-        relativeTime: 'Il y a 2 semaines',
-        title: 'Meeting de cadrage R&I',
-        content: `Échange initial avec ${contact.name} concernant les opportunités de partenariat et projets européens.`,
-        author: 'Dr. Chokri Ben Amar',
-        authorInitials: 'CB',
-        projectName: 'Euro-African Tech Exchange (EATE)',
-        type: NoteType.MEETING
+      create: {
+        email: 'maalel.ahmed@gmail.com',
+        name: 'MAALEL.AHMED',
+        passwordHash,
+        role: Role.ADMIN
       }
-    });
-  }
-
-  // 6. Seed Saved Segments
-  await prisma.savedSegment.createMany({
-    data: [
-      {
-        name: 'Partenaires Horizon Europe',
-        description: 'Laboratoires et PME impliqués dans les projets UE',
-        icon: 'Euro',
-        filters: { actorTypes: ['Labo de recherche', 'PME'], tags: ['Projet Horizon Europe'] },
-        userId: admin.id
-      },
-      {
-        name: 'Experts IA & Santé',
-        description: 'Acteurs spécialisés en intelligence artificielle et santé globale',
-        icon: 'Activity',
-        filters: { expertises: ['Intelligence Artificielle', 'Santé Globale'] },
-        userId: demoUser.id
+    }),
+    prisma.user.upsert({
+      where: { email: 'admin@arsii.org' },
+      update: {},
+      create: {
+        email: 'admin@arsii.org',
+        name: 'Admin EURAXESS Africa',
+        passwordHash,
+        role: Role.ADMIN
       }
+    }),
+    prisma.user.upsert({
+      where: { email: 'demo@arsii.org' },
+      update: {},
+      create: {
+        email: 'demo@arsii.org',
+        name: 'Utilisateur Démo',
+        passwordHash: demoHash,
+        role: Role.USER
+      }
+    })
+  ]);
+  console.log(`Users ready: ${supervisor.email} (ADMIN), admin@arsii.org, demo@arsii.org`);
+
+  // ── Tags ───────────────────────────────────────────────
+  const tagData = [
+    { name: 'Membre EURAXESS Africa', color: '#005596', category: 'Réseau', description: 'Membre du réseau EURAXESS Africa' },
+    { name: 'Chercheur Senior', color: '#B8167C', category: 'Profil', description: 'Chercheur expérimenté (R3+)' },
+    { name: 'Doctorant', color: '#35B8B2', category: 'Profil', description: 'Chercheur en début de carrière (R1)' },
+    { name: 'Expert IA & Data', color: '#FFC20C', category: 'Expertise', description: 'Intelligence artificielle et science des données' },
+    { name: 'Climat & Énergie', color: '#35B8B2', category: 'Expertise', description: 'Changement climatique et énergies durables' },
+    { name: 'Santé & Biotech', color: '#B8167C', category: 'Expertise', description: 'Sciences de la santé et biotechnologies' },
+    { name: 'PME Innovante', color: '#8A98A1', category: "Type d'acteur", description: 'Entreprise innovante' },
+    { name: 'Université', color: '#005596', category: "Type d'acteur", description: 'Institution académique' },
+    { name: 'VIP / Prioritaire', color: '#FFC20C', category: 'Suivi', description: 'Contact à suivre en priorité' }
+  ];
+
+  const tags: Record<string, string> = {};
+  for (const t of tagData) {
+    const saved = await prisma.tag.upsert({
+      where: { name: t.name },
+      update: {},
+      create: t
+    });
+    tags[t.name] = saved.id;
+  }
+  console.log(`Tags ready: ${Object.keys(tags).length}`);
+
+  // ── Contacts ───────────────────────────────────────────
+  const contactData = [
+    {
+      firstName: 'Amina', lastName: 'Diallo',
+      email: 'amina.diallo@ucad.sn', gender: Gender.FEMALE,
+      countryOfOrigin: 'Sénégal', city: 'Dakar',
+      phone: '+221 77 123 45 67', affiliation: 'Université Cheikh Anta Diop',
+      function: 'Maître de conférences', experience: '12 ans en biologie marine',
+      facultyDepartment: 'Faculté des Sciences et Techniques', researchCareerStage: ResearchCareerStage.R3_ESTABLISHED,
+      tags: ['Membre EURAXESS Africa', 'Santé & Biotech']
+    },
+    {
+      firstName: 'Karim', lastName: 'Ben Salah',
+      email: 'karim.bensalah@euraxess-africa.org', gender: Gender.MALE,
+      countryOfOrigin: 'Tunisie', city: 'Tunis',
+      phone: '+216 22 987 65 43', affiliation: 'EURAXESS Africa Hub',
+      function: 'Coordinateur de projets R&I', experience: '8 ans de gestion de projets internationaux',
+      facultyDepartment: 'Direction de la Recherche', researchCareerStage: ResearchCareerStage.R3_ESTABLISHED,
+      tags: ['Membre EURAXESS Africa', 'Université']
+    },
+    {
+      firstName: 'Fatou', lastName: 'Ndiaye',
+      email: 'fatou.ndiaye@isep-dakar.sn', gender: Gender.FEMALE,
+      countryOfOrigin: 'Sénégal', city: 'Saint-Louis',
+      phone: '+221 76 555 44 33', affiliation: 'ISEP-Dakar',
+      function: 'Doctorante', experience: '3 ans en intelligence artificielle',
+      facultyDepartment: 'Département Informatique', researchCareerStage: ResearchCareerStage.R1_FIRST_STAGE,
+      tags: ['Doctorant', 'Expert IA & Data']
+    },
+    {
+      firstName: 'Yann', lastName: 'Kouassi',
+      email: 'yann.kouassi@csrs.ci', gender: Gender.MALE,
+      countryOfOrigin: "Côte d'Ivoire", city: 'Abidjan',
+      phone: '+225 07 77 88 99 00', affiliation: 'Centre Suisse de Recherches Scientifiques',
+      function: 'Chercheur postdoctoral', experience: '6 ans en énergie renouvelable',
+      facultyDepartment: 'Laboratoire Énergie', researchCareerStage: ResearchCareerStage.R2_RECOGNIZED,
+      tags: ['Climat & Énergie']
+    },
+    {
+      firstName: 'Mariam', lastName: 'Traoré',
+      email: 'mariam.traore@ub.ml', gender: Gender.FEMALE,
+      countryOfOrigin: 'Mali', city: 'Bamako',
+      phone: '+223 76 11 22 33', affiliation: 'Université de Bamako',
+      function: 'Professeure titulaire', experience: '20 ans en chimie',
+      facultyDepartment: 'Faculté des Sciences', researchCareerStage: ResearchCareerStage.R4_LEADING,
+      tags: ['Membre EURAXESS Africa', 'VIP / Prioritaire']
+    },
+    {
+      firstName: 'Jean-Luc', lastName: 'Mbarga',
+      email: 'jl.mbarga@greentech.cm', gender: Gender.MALE,
+      countryOfOrigin: 'Cameroun', city: 'Yaoundé',
+      phone: '+237 6 99 00 11 22', affiliation: 'GreenTech Afrique SARL',
+      function: 'CEO / Fondateur', experience: '15 ans en entrepreneuriat tech',
+      facultyDepartment: '', researchCareerStage: ResearchCareerStage.R3_ESTABLISHED,
+      tags: ['PME Innovante', 'Expert IA & Data']
+    },
+    {
+      firstName: 'Sophie', lastName: 'Mensah',
+      email: 'sophie.mensah@ug.edu.gh', gender: Gender.FEMALE,
+      countryOfOrigin: 'Ghana', city: 'Accra',
+      phone: '+233 24 555 67 78', affiliation: 'University of Ghana',
+      function: 'Senior Lecturer', experience: '11 ans en santé publique',
+      facultyDepartment: 'School of Public Health', researchCareerStage: ResearchCareerStage.R3_ESTABLISHED,
+      tags: ['Santé & Biotech', 'Chercheur Senior']
+    },
+    {
+      firstName: 'Ibrahim', lastName: 'Sow',
+      email: 'ibrahim.sow@irag-guinee.org', gender: Gender.MALE,
+      countryOfOrigin: 'Guinée', city: 'Conakry',
+      phone: '+224 62 345 67 89', affiliation: 'Institut de Recherche Agronomique',
+      function: 'Ingénieur agronome', experience: '7 ans en agriculture durable',
+      facultyDepartment: 'Département Agriculture', researchCareerStage: ResearchCareerStage.R2_RECOGNIZED,
+      tags: ['Climat & Énergie']
+    },
+    {
+      firstName: 'Nia', lastName: 'Kamara',
+      email: 'nia.kamara@njala.edu.sl', gender: Gender.FEMALE,
+      countryOfOrigin: 'Sierra Leone', city: 'Freetown',
+      phone: '+232 76 543 210', affiliation: 'Njala University',
+      function: 'Lecturer', experience: '9 ans en biotechnologie',
+      facultyDepartment: 'Faculty of Agriculture', researchCareerStage: ResearchCareerStage.R2_RECOGNIZED,
+      tags: ['Santé & Biotech']
+    },
+    {
+      firstName: 'Ahmed', lastName: 'Haddad',
+      email: 'ahmed.haddad@uss.tn', gender: Gender.MALE,
+      countryOfOrigin: 'Tunisie', city: 'Sfax',
+      phone: '+216 98 765 43 21', affiliation: 'Université de Sfax',
+      function: 'Professeur', experience: '18 ans en électronique',
+      facultyDepartment: "École Nationale d'Électronique", researchCareerStage: ResearchCareerStage.R4_LEADING,
+      tags: ['Membre EURAXESS Africa', 'Chercheur Senior']
+    },
+    {
+      firstName: 'Grace', lastName: 'Okafor',
+      email: 'grace.okafor@lagosinnovates.ng', gender: Gender.FEMALE,
+      countryOfOrigin: 'Nigeria', city: 'Lagos',
+      phone: '+234 803 555 44 22', affiliation: 'Lagos Innovates',
+      function: "Directrice de l'innovation", experience: '10 ans en innovation',
+      facultyDepartment: 'Pôle Innovation', researchCareerStage: ResearchCareerStage.R3_ESTABLISHED,
+      tags: ['PME Innovante']
+    },
+    {
+      firstName: 'Lucas', lastName: 'Moreau',
+      email: 'lucas.moreau@cnrs.fr', gender: Gender.MALE,
+      countryOfOrigin: 'France', city: 'Paris',
+      phone: '+33 6 12 34 56 78', affiliation: 'CNRS',
+      function: 'Chargé de recherche', experience: '14 ans en physique',
+      facultyDepartment: 'Institut de Physique', researchCareerStage: ResearchCareerStage.R3_ESTABLISHED,
+      tags: ['Université', 'Chercheur Senior']
+    },
+    {
+      firstName: 'Elena', lastName: 'Petrov',
+      email: 'elena.petrov@ens-lyon.fr', gender: Gender.FEMALE,
+      countryOfOrigin: 'France', city: 'Lyon',
+      phone: '+33 6 98 76 54 32', affiliation: 'ENS Lyon',
+      function: 'Doctorante', experience: '2 ans en neurosciences',
+      facultyDepartment: 'Département de Biologie', researchCareerStage: ResearchCareerStage.R1_FIRST_STAGE,
+      tags: ['Doctorant']
+    },
+    {
+      firstName: 'Kwame', lastName: 'Asante',
+      email: 'kwame.asante@knust.edu.gh', gender: Gender.MALE,
+      countryOfOrigin: 'Ghana', city: 'Kumasi',
+      phone: '+233 20 111 22 33', affiliation: 'KNUST',
+      function: 'Assistant Lecturer', experience: '4 ans en ingénierie',
+      facultyDepartment: 'College of Engineering', researchCareerStage: ResearchCareerStage.R1_FIRST_STAGE,
+      tags: ['Expert IA & Data']
+    },
+    {
+      firstName: 'Sofia', lastName: 'Ferreira',
+      email: 'sofia.ferreira@inrae.fr', gender: Gender.FEMALE,
+      countryOfOrigin: 'France', city: 'Bordeaux',
+      phone: '+33 7 55 44 33 22', affiliation: 'INRAE',
+      function: 'Directrice de recherche', experience: '22 ans en agroécologie',
+      facultyDepartment: 'UR Sols', researchCareerStage: ResearchCareerStage.R4_LEADING,
+      tags: ['Climat & Énergie', 'Chercheur Senior']
+    }
+  ];
+
+  const notesByEmail: Record<string, { title: string; content: string; type: NoteType }[]> = {
+    'amina.diallo@ucad.sn': [
+      { title: 'Réunion de lancement', content: 'Échange sur un projet de coopération en biologie marine entre le Sénégal et l\'Europe.', type: NoteType.MEETING },
+      { title: 'Demande de mentorat', content: 'Souhaite être mise en relation avec un laboratoire européen en océanographie.', type: NoteType.EMAIL }
     ],
-    skipDuplicates: true
-  });
-
-  // 7. Seed Import / Export Logs
-  await prisma.importExportLog.createMany({
-    data: [
-      {
-        type: LogType.IMPORT,
-        format: LogFormat.CSV,
-        fileName: 'contacts_import_mars_2026.csv',
-        recordCount: 24,
-        status: 'SUCCESS',
-        performedBy: admin.name,
-        userId: admin.id
-      },
-      {
-        type: LogType.EXPORT,
-        format: LogFormat.XLSX,
-        fileName: 'export_annuaire_arsii.xlsx',
-        recordCount: 48,
-        status: 'SUCCESS',
-        performedBy: demoUser.name,
-        userId: demoUser.id
-      }
+    'mariam.traore@ub.ml': [
+      { title: 'Visite officielle', content: 'Accueil au hub EURAXESS lors de sa mission à Bruxelles.', type: NoteType.MEETING },
+      { title: 'Suivi téléphonique', content: 'Confirmation de participation au programme de mobilité ERASMUS+.', type: NoteType.CALL }
+    ],
+    'ahmed.haddad@uss.tn': [
+      { title: 'Note interne', content: 'Profil retenu pour le comité scientifique du réseau.', type: NoteType.NOTE }
     ]
-  });
+  };
 
-  console.log('Comprehensive database seeding finished successfully.');
+  for (const data of contactData) {
+    const existing = await prisma.contact.findUnique({ where: { email: data.email } });
+    if (existing) continue;
+
+    const contact = await prisma.contact.create({
+      data: {
+        firstName: data.firstName,
+        lastName: data.lastName,
+        email: data.email,
+        gender: data.gender,
+        countryOfOrigin: data.countryOfOrigin,
+        city: data.city,
+        phone: data.phone,
+        affiliation: data.affiliation,
+        function: data.function,
+        experience: data.experience,
+        facultyDepartment: data.facultyDepartment || null,
+        researchCareerStage: data.researchCareerStage,
+        tags: {
+          create: data.tags
+            .map(name => tags[name])
+            .filter(Boolean)
+            .map(tagId => ({ tagId }))
+        }
+      }
+    });
+
+    const notes = notesByEmail[data.email] || [];
+    for (const n of notes) {
+      await prisma.exchangeNote.create({
+        data: {
+          contactId: contact.id,
+          title: n.title,
+          content: n.content,
+          type: n.type,
+          date: new Date(Date.now() - Math.floor(Math.random() * 90) * 86400000).toISOString().split('T')[0],
+          relativeTime: 'Il y a quelques semaines',
+          author: 'MAALEL.AHMED',
+          authorInitials: 'MA'
+        }
+      });
+    }
+  }
+  console.log(`Contacts ready: ${contactData.length}`);
+
+  // ── Segments ───────────────────────────────────────────
+  const segmentData = [
+    {
+      name: 'Chercheurs établis & leaders (R3+)',
+      description: 'Contacts aux stades R3 (établi) et R4 (leader)',
+      filters: { search: '', countries: [], genders: [], careerStages: ['R3_ESTABLISHED', 'R4_LEADING'], affiliations: '', tags: [] }
+    },
+    {
+      name: 'Chercheuses',
+      description: 'Contacts féminins du réseau',
+      filters: { search: '', countries: [], genders: ['FEMALE'], careerStages: [], affiliations: '', tags: [] }
+    },
+    {
+      name: 'Afrique de l\'Ouest',
+      description: 'Contacts basés en Afrique de l\'Ouest',
+      filters: { search: '', countries: ['Sénégal', 'Mali', "Côte d'Ivoire", 'Guinée', 'Sierra Leone', 'Nigeria', 'Ghana'], genders: [], careerStages: [], affiliations: '', tags: [] }
+    }
+  ];
+
+  for (const s of segmentData) {
+    const existing = await prisma.segment.findFirst({ where: { name: s.name } });
+    if (existing) continue;
+    await prisma.segment.create({
+      data: {
+        name: s.name,
+        description: s.description,
+        icon: 'Filter',
+        filters: s.filters as any,
+        userId: supervisor.id
+      }
+    });
+  }
+  console.log(`Segments ready: ${segmentData.length}`);
+
+  console.log('Seed completed successfully.');
 }
 
 main()

@@ -1,24 +1,24 @@
 import React, { useState, useMemo } from 'react';
-import { Contact, Tag, Segment, FilterState } from '../types';
-import { 
-  Layers, 
-  Tag as TagIcon, 
-  Plus, 
-  Edit3, 
-  Trash2, 
-  Copy, 
-  Check, 
-  Search, 
-  Filter, 
-  Users, 
-  ArrowRight, 
-  X, 
+import { Contact, Tag, Segment, FilterState, Gender, ResearchCareerStage, GENDER_LABELS, CAREER_STAGE_SHORT_LABELS } from '../types';
+import { Modal } from './Modal';
+import {
+  Layers,
+  Tag as TagIcon,
+  Plus,
+  Edit3,
+  Trash2,
+  Copy,
+  Check,
+  Search,
+  Filter,
+  Users,
+  ArrowRight,
+  X,
   Sparkles,
   Info,
   Globe,
   MapPin,
-  Brain,
-  Building
+  Bookmark
 } from 'lucide-react';
 
 interface SegmentationViewProps {
@@ -60,10 +60,10 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
   const [segDesc, setSegDesc] = useState('');
   const [segFilters, setSegFilters] = useState<FilterState>({
     search: '',
-    headquarters: 'Tous les pays',
-    zones: [],
-    expertises: [],
-    actorTypes: [],
+    countries: [],
+    genders: [],
+    careerStages: [],
+    affiliations: '',
     tags: []
   });
 
@@ -84,7 +84,8 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
   // Preset Colors for Tags
   const colorPresets = [
     { label: 'Émeraude / Vert', class: 'bg-emerald-100 text-emerald-800 border-emerald-300' },
-    { label: 'Teal / ARSII', class: 'bg-[#006a66]/15 text-[#006a66] border-[#006a66]/30' },
+    { label: 'Bleu / EURAXESS Africa', class: 'bg-[#005596]/15 text-[#005596] border-[#005596]/30' },
+    { label: 'Magenta / EURAXESS', class: 'bg-[#B8167C]/15 text-[#B8167C] border-[#B8167C]/30' },
     { label: 'Ambre / VIP', class: 'bg-amber-100 text-amber-800 border-amber-300' },
     { label: 'Rose / Santé', class: 'bg-rose-100 text-rose-800 border-rose-300' },
     { label: 'Bleu / UE', class: 'bg-blue-100 text-blue-800 border-blue-300' },
@@ -94,10 +95,14 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
   ];
 
   const categories = ['Secteur', 'Priorité', 'Rôle', 'Statut', 'Financement', 'Réseau'];
-  const countries = ['Tous les pays', 'France', 'Tunisie', 'Sénégal', 'Maroc', 'Allemagne', 'Belgique'];
-  const allZones = ['Afrique Subsaharienne', 'Afrique du Nord', 'Union Européenne'];
-  const allExpertises = ['Agriculture', 'Santé', 'Climat', 'IA & Data', 'Maladies Tropicales', 'Épidémiologie'];
-  const allActorTypes = ['Labo de recherche', 'ONG', 'Université', 'PME', 'Institutionnel'];
+  const allGenders = ['FEMALE', 'MALE', 'OTHER', 'PREFER_NOT_TO_SAY'] as Gender[];
+  const allCareerStages = ['R1_FIRST_STAGE', 'R2_RECOGNIZED', 'R3_ESTABLISHED', 'R4_LEADING'] as ResearchCareerStage[];
+
+  const countries = useMemo(() => {
+    const set = new Set<string>();
+    contacts.forEach(c => { if (c.countryOfOrigin) set.add(c.countryOfOrigin.trim()); });
+    return Array.from(set).sort();
+  }, [contacts]);
 
   // Helper to count contacts in segment
   const getSegmentCount = (seg: Segment) => {
@@ -105,19 +110,15 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
       const f = seg.filters;
       if (f.search) {
         const q = f.search.toLowerCase();
-        if (!contact.name.toLowerCase().includes(q) && 
-            !contact.organization.toLowerCase().includes(q)) return false;
+        if (!contact.name.toLowerCase().includes(q) &&
+            !contact.email.toLowerCase().includes(q) &&
+            !(contact.affiliation || '').toLowerCase().includes(q) &&
+            !(contact.function || '').toLowerCase().includes(q)) return false;
       }
-      if (f.headquarters && f.headquarters !== 'Tous les pays' && contact.country !== f.headquarters) return false;
-      if (f.actorTypes && f.actorTypes.length > 0 && !f.actorTypes.includes(contact.actorType)) return false;
-      if (f.zones && f.zones.length > 0) {
-        const hasZone = contact.interventionZones.some(z => f.zones.includes(z));
-        if (!hasZone) return false;
-      }
-      if (f.expertises && f.expertises.length > 0) {
-        const hasExp = contact.expertise.some(e => f.expertises.includes(e));
-        if (!hasExp) return false;
-      }
+      if (f.countries && f.countries.length > 0 && !f.countries.includes(contact.countryOfOrigin)) return false;
+      if (f.genders && f.genders.length > 0 && !f.genders.includes(contact.gender)) return false;
+      if (f.careerStages && f.careerStages.length > 0 && !f.careerStages.includes(contact.researchCareerStage)) return false;
+      if (f.affiliations && f.affiliations.trim() && !(contact.affiliation || '').toLowerCase().includes(f.affiliations.toLowerCase().trim())) return false;
       if (f.tags && f.tags.length > 0) {
         const hasTag = contact.tags?.some(t => f.tags.includes(t));
         if (!hasTag) return false;
@@ -144,10 +145,10 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
       setSegDesc('');
       setSegFilters({
         search: '',
-        headquarters: 'Tous les pays',
-        zones: [],
-        expertises: [],
-        actorTypes: [],
+        countries: [],
+        genders: [],
+        careerStages: [],
+        affiliations: '',
         tags: []
       });
     }
@@ -229,25 +230,25 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
       {/* Header Banner */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
         <div>
-          <div className="flex items-center gap-2 text-[#006a66] font-bold text-xs uppercase tracking-wider mb-1">
+          <div className="flex items-center gap-2 text-[#005596] font-bold text-xs uppercase tracking-wider mb-1">
             <Layers className="w-4 h-4" /> Organisation R&I
           </div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-[#071f1f] tracking-tight">
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-[#1C2529] tracking-tight">
             Segmentation & Gestion des Tags
           </h1>
-          <p className="text-sm text-[#3d4948] mt-1 max-w-2xl">
+          <p className="text-sm text-[#55636B] mt-1 max-w-2xl">
             Catégorisez et découpez votre réseau d'experts avec des filtres dynamiques sauvegardés et des étiquettes personnalisées.
           </p>
         </div>
 
         {/* Action Toggle Tabs */}
-        <div className="flex items-center bg-[#dff9f8] p-1.5 rounded-xl border border-[#bcc9c7]/40 shrink-0">
+        <div className="flex items-center bg-[#E8F1F8] p-1.5 rounded-xl border border-[#C9D4DE]/40 shrink-0">
           <button
             onClick={() => setActiveTab('segments')}
             className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-xs font-bold transition-all ${
               activeTab === 'segments'
-                ? 'bg-[#006a66] text-white shadow'
-                : 'text-[#3d4948] hover:text-[#006a66]'
+                ? 'bg-[#005596] text-white shadow'
+                : 'text-[#55636B] hover:text-[#005596]'
             }`}
           >
             <Layers className="w-4 h-4" />
@@ -257,8 +258,8 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
             onClick={() => setActiveTab('tags')}
             className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-xs font-bold transition-all ${
               activeTab === 'tags'
-                ? 'bg-[#006a66] text-white shadow'
-                : 'text-[#3d4948] hover:text-[#006a66]'
+                ? 'bg-[#005596] text-white shadow'
+                : 'text-[#55636B] hover:text-[#005596]'
             }`}
           >
             <TagIcon className="w-4 h-4" />
@@ -278,13 +279,13 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
                 value={segmentSearchQuery}
                 onChange={(e) => setSegmentSearchQuery(e.target.value)}
                 placeholder="Rechercher un segment..."
-                className="w-full pl-9 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-[#006a66]"
+                className="w-full pl-9 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-[#005596]"
               />
             </div>
 
             <button
               onClick={() => openSegmentModal()}
-              className="flex items-center gap-2 bg-[#35b8b2] hover:bg-[#2b958f] text-white px-5 py-2.5 rounded-xl text-xs font-bold shadow-sm transition-all active:scale-95 shrink-0"
+              className="flex items-center gap-2 bg-[#005596] hover:bg-[#004275] text-white px-5 py-2.5 rounded-xl text-xs font-bold shadow-sm transition-all active:scale-95 shrink-0"
             >
               <Plus className="w-4 h-4" />
               Créer un Nouveau Segment
@@ -301,17 +302,17 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
               return (
                 <div 
                   key={segment.id}
-                  className="bg-white rounded-2xl p-6 border border-slate-200 hover:border-[#006a66] shadow-sm hover:shadow-md transition-all flex flex-col justify-between relative group"
+                  className="bg-white rounded-2xl p-6 border border-slate-200 hover:border-[#005596] shadow-sm hover:shadow-md transition-all flex flex-col justify-between relative group"
                 >
                   <div>
                     <div className="flex justify-between items-start gap-2 mb-3">
                       <div className="flex items-center gap-2.5">
-                        <div className="w-10 h-10 rounded-xl bg-[#dff9f8] text-[#006a66] flex items-center justify-center font-bold">
+                        <div className="w-10 h-10 rounded-xl bg-[#E8F1F8] text-[#005596] flex items-center justify-center font-bold">
                           <Layers className="w-5 h-5" />
                         </div>
                         <div>
-                          <h3 className="font-bold text-base text-[#071f1f]">{segment.name}</h3>
-                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#006a66] bg-[#dff9f8] px-2 py-0.5 rounded-full mt-0.5">
+                          <h3 className="font-bold text-base text-[#1C2529]">{segment.name}</h3>
+                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#005596] bg-[#E8F1F8] px-2 py-0.5 rounded-full mt-0.5">
                             <Users className="w-3 h-3" /> {count} contacts
                           </span>
                         </div>
@@ -321,7 +322,7 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
                         <div className="flex items-center gap-1 opacity-80 group-hover:opacity-100 transition-opacity">
                           <button
                             onClick={() => openSegmentModal(segment)}
-                            className="p-1.5 text-slate-400 hover:text-[#006a66] hover:bg-slate-100 rounded-lg transition-colors"
+                            className="p-1.5 text-slate-400 hover:text-[#005596] hover:bg-slate-100 rounded-lg transition-colors"
                             title="Modifier le segment"
                           >
                             <Edit3 className="w-4 h-4" />
@@ -334,7 +335,7 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
                                 name: `${segment.name} (Copie)`
                               });
                             }}
-                            className="p-1.5 text-slate-400 hover:text-[#006a66] hover:bg-slate-100 rounded-lg transition-colors"
+                            className="p-1.5 text-slate-400 hover:text-[#005596] hover:bg-slate-100 rounded-lg transition-colors"
                             title="Dupliquer"
                           >
                             <Copy className="w-4 h-4" />
@@ -350,7 +351,7 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
                       )}
                     </div>
 
-                    <p className="text-xs text-[#3d4948] mb-4 line-clamp-2">
+                    <p className="text-xs text-[#55636B] mb-4 line-clamp-2">
                       {segment.description || 'Aucune description fournie.'}
                     </p>
 
@@ -362,26 +363,26 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
                           <span className="px-2 py-0.5 bg-slate-100 text-slate-600 rounded text-[11px]">Tous les filtres réinitialisés</span>
                         ) : (
                           <>
-                            {f.headquarters && f.headquarters !== 'Tous les pays' && (
-                              <span className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded font-medium flex items-center gap-1">
-                                <Globe className="w-3 h-3" /> Siège: {f.headquarters}
+                            {f.countries && f.countries.map(country => (
+                              <span key={country} className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded font-medium flex items-center gap-1">
+                                <Globe className="w-3 h-3" /> {country}
+                              </span>
+                            ))}
+                            {f.genders && f.genders.map(g => (
+                              <span key={g} className="px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded font-medium flex items-center gap-1">
+                                <Users className="w-3 h-3" /> {GENDER_LABELS[g]}
+                              </span>
+                            ))}
+                            {f.careerStages && f.careerStages.map(s => (
+                              <span key={s} className="px-2 py-0.5 bg-amber-50 text-amber-700 rounded font-medium flex items-center gap-1">
+                                <Bookmark className="w-3 h-3" /> {CAREER_STAGE_SHORT_LABELS[s]}
+                              </span>
+                            ))}
+                            {f.affiliations && (
+                              <span className="px-2 py-0.5 bg-teal-50 text-teal-700 rounded font-medium flex items-center gap-1">
+                                <MapPin className="w-3 h-3" /> Affiliation: {f.affiliations}
                               </span>
                             )}
-                            {f.actorTypes && f.actorTypes.map(type => (
-                              <span key={type} className="px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded font-medium flex items-center gap-1">
-                                <Building className="w-3 h-3" /> {type}
-                              </span>
-                            ))}
-                            {f.zones && f.zones.map(z => (
-                              <span key={z} className="px-2 py-0.5 bg-amber-50 text-amber-700 rounded font-medium flex items-center gap-1">
-                                <MapPin className="w-3 h-3" /> {z}
-                              </span>
-                            ))}
-                            {f.expertises && f.expertises.map(exp => (
-                              <span key={exp} className="px-2 py-0.5 bg-teal-50 text-teal-700 rounded font-medium flex items-center gap-1">
-                                <Brain className="w-3 h-3" /> {exp}
-                              </span>
-                            ))}
                             {f.tags && f.tags.map(t => (
                               <span key={t} className="px-2 py-0.5 bg-rose-50 text-rose-700 rounded font-medium flex items-center gap-1">
                                 <TagIcon className="w-3 h-3" /> Tag: {t}
@@ -396,7 +397,7 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
                   <div className="pt-4 mt-4 border-t border-slate-100">
                     <button
                       onClick={() => onApplySegment(segment)}
-                      className="w-full py-2.5 bg-[#006a66] hover:bg-[#256865] text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 shadow-sm transition-all active:scale-95"
+                      className="w-full py-2.5 bg-[#005596] hover:bg-[#004275] text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 shadow-sm transition-all active:scale-95"
                     >
                       Appliquer au répertoire de contacts
                       <ArrowRight className="w-4 h-4" />
@@ -416,13 +417,13 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
           {/* Top Bar for Tags */}
           <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
             <div>
-              <h2 className="text-lg font-bold text-[#071f1f]">Étiquettes & Catégories R&I</h2>
-              <p className="text-xs text-[#3d4948]">Créez des badges de couleur pour qualifier rapidement vos experts.</p>
+              <h2 className="text-lg font-bold text-[#1C2529]">Étiquettes & Catégories R&I</h2>
+              <p className="text-xs text-[#55636B]">Créez des badges de couleur pour qualifier rapidement vos experts.</p>
             </div>
 
             <button
               onClick={() => openTagModal()}
-              className="flex items-center gap-2 bg-[#35b8b2] hover:bg-[#2b958f] text-white px-5 py-2.5 rounded-xl text-xs font-bold shadow-sm transition-all active:scale-95 shrink-0"
+              className="flex items-center gap-2 bg-[#005596] hover:bg-[#004275] text-white px-5 py-2.5 rounded-xl text-xs font-bold shadow-sm transition-all active:scale-95 shrink-0"
             >
               <Plus className="w-4 h-4" />
               Créer un Nouveau Tag
@@ -437,7 +438,7 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
               return (
                 <div 
                   key={tag.id}
-                  className="bg-white p-5 rounded-2xl border border-slate-200 hover:border-[#35b8b2] shadow-sm transition-all flex flex-col justify-between group"
+                  className="bg-white p-5 rounded-2xl border border-slate-200 hover:border-[#005596] shadow-sm transition-all flex flex-col justify-between group"
                 >
                   <div>
                     <div className="flex justify-between items-start gap-2 mb-3">
@@ -449,7 +450,7 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
                       <div className="flex items-center gap-1 opacity-80 group-hover:opacity-100 transition-opacity">
                         <button
                           onClick={() => openTagModal(tag)}
-                          className="p-1 text-slate-400 hover:text-[#006a66] hover:bg-slate-100 rounded transition-colors"
+                          className="p-1 text-slate-400 hover:text-[#005596] hover:bg-slate-100 rounded transition-colors"
                           title="Modifier"
                         >
                           <Edit3 className="w-3.5 h-3.5" />
@@ -470,14 +471,14 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
                       </span>
                     )}
 
-                    <p className="text-xs text-[#3d4948] mt-2 line-clamp-2">
+                    <p className="text-xs text-[#55636B] mt-2 line-clamp-2">
                       {tag.description || 'Pas de description.'}
                     </p>
                   </div>
 
                   <div className="pt-4 mt-4 border-t border-slate-100 flex items-center justify-between text-xs">
                     <span className="font-semibold text-slate-600">
-                      <strong className="text-[#006a66] font-extrabold">{count}</strong> contact{count > 1 ? 's' : ''}
+                      <strong className="text-[#005596] font-extrabold">{count}</strong> contact{count > 1 ? 's' : ''}
                     </span>
 
                     <button
@@ -488,7 +489,7 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
                         setContactSearchInTagModal('');
                         setSelectedTagForDetail(tag);
                       }}
-                      className="text-[#006a66] font-bold hover:underline flex items-center gap-1 text-xs"
+                      className="text-[#005596] font-bold hover:underline flex items-center gap-1 text-xs"
                     >
                       Gérer les contacts <ArrowRight className="w-3 h-3" />
                     </button>
@@ -500,8 +501,8 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
 
           {/* Tag Assignment Drawer / Modal */}
           {selectedTagForDetail && (
-            <div className="fixed inset-0 z-50 flex justify-end bg-black/50 backdrop-blur-sm">
-              <div className="w-full max-w-lg bg-white h-full shadow-2xl p-6 flex flex-col justify-between overflow-y-auto animate-slide-left">
+            <Modal open={selectedTagForDetail !== null} onClose={() => setSelectedTagForDetail(null)} variant="drawer" noPadding>
+              <div className="p-6 flex flex-col justify-between min-h-full">
                 <div>
                   <div className="flex justify-between items-center mb-6 border-b border-slate-100 pb-4">
                     <div className="flex items-center gap-3">
@@ -532,7 +533,7 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
                         value={contactSearchInTagModal}
                         onChange={(e) => setContactSearchInTagModal(e.target.value)}
                         placeholder="Chercher un contact..."
-                        className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-[#006a66]"
+                        className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-[#005596]"
                       />
                     </div>
                   </div>
@@ -540,25 +541,26 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
                   {/* List of contacts with toggle checkboxes */}
                   <div className="divide-y divide-slate-100 max-h-[calc(100vh-280px)] overflow-y-auto pr-1">
                     {contacts
-                      .filter(c => 
+                      .filter(c =>
                         c.name.toLowerCase().includes(contactSearchInTagModal.toLowerCase()) ||
-                        c.organization.toLowerCase().includes(contactSearchInTagModal.toLowerCase())
+                        c.email.toLowerCase().includes(contactSearchInTagModal.toLowerCase()) ||
+                        (c.affiliation || '').toLowerCase().includes(contactSearchInTagModal.toLowerCase())
                       )
                       .map(contact => {
                         const hasTag = tagContactSelection.includes(contact.id);
 
                         return (
-                          <label 
-                            key={contact.id} 
+                          <label
+                            key={contact.id}
                             className="py-3 flex items-center justify-between hover:bg-slate-50 px-2 rounded-lg cursor-pointer transition-colors"
                           >
                             <div className="flex items-center gap-3">
-                              <div className="w-8 h-8 rounded-full bg-[#35b8b2]/20 flex items-center justify-center font-bold text-xs text-[#006a66] shrink-0">
+                              <div className="w-8 h-8 rounded-full bg-[#005596]/20 flex items-center justify-center font-bold text-xs text-[#005596] shrink-0">
                                 {contact.initials}
                               </div>
                               <div>
-                                <p className="font-bold text-xs text-[#071f1f]">{contact.name}</p>
-                                <p className="text-[11px] text-slate-500">{contact.organization}</p>
+                                <p className="font-bold text-xs text-[#1C2529]">{contact.name}</p>
+                                <p className="text-[11px] text-slate-500">{contact.affiliation || contact.email}</p>
                               </div>
                             </div>
 
@@ -570,7 +572,7 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
                                   ? prev.filter(id => id !== contact.id)
                                   : [...prev, contact.id]
                               )}
-                              className="rounded border-slate-300 text-[#006a66] focus:ring-[#006a66] w-4 h-4 cursor-pointer"
+                              className="rounded border-slate-300 text-[#005596] focus:ring-[#005596] w-4 h-4 cursor-pointer"
                             />
                           </label>
                         );
@@ -592,7 +594,7 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
                         setIsSavingTagContacts(false);
                       }
                     }}
-                    className="w-full py-2.5 bg-[#006a66] hover:bg-[#256865] text-white font-bold text-xs rounded-xl shadow flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
+                    className="w-full py-2.5 bg-[#005596] hover:bg-[#004275] text-white font-bold text-xs rounded-xl shadow flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
                   >
                     {isSavingTagContacts ? (
                       <>
@@ -614,7 +616,7 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
                   </button>
                 </div>
               </div>
-            </div>
+            </Modal>
           )}
 
         </div>
@@ -622,22 +624,19 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
 
       {/* SEGMENT CREATE / EDIT MODAL */}
       {isSegmentModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full p-6 space-y-6 max-h-[90vh] overflow-y-auto animate-fade-in">
-            <div className="flex justify-between items-center border-b border-slate-100 pb-4">
-              <div className="flex items-center gap-2">
-                <Layers className="w-5 h-5 text-[#006a66]" />
-                <h3 className="font-extrabold text-lg text-[#071f1f]">
-                  {editingSegment ? 'Modifier le segment' : 'Créer un nouveau segment'}
-                </h3>
-              </div>
-              <button 
-                onClick={() => setIsSegmentModalOpen(false)}
-                className="p-1 hover:bg-slate-100 rounded-full text-slate-400"
-              >
-                <X className="w-5 h-5" />
-              </button>
+        <Modal
+          open={isSegmentModalOpen}
+          onClose={() => setIsSegmentModalOpen(false)}
+          maxWidth="max-w-2xl"
+          title={
+            <div className="flex items-center gap-2">
+              <Layers className="w-5 h-5 text-[#005596]" />
+              <h3 className="font-extrabold text-lg text-[#1C2529]">
+                {editingSegment ? 'Modifier le segment' : 'Créer un nouveau segment'}
+              </h3>
             </div>
+          }
+        >
 
             <form onSubmit={handleSaveSegment} className="space-y-4 text-xs">
               <div>
@@ -648,7 +647,7 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
                   value={segName}
                   onChange={(e) => setSegName(e.target.value)}
                   placeholder="ex: Experts Santé Afrique de l'Ouest"
-                  className="w-full p-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#006a66]"
+                  className="w-full p-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#005596]"
                 />
               </div>
 
@@ -659,86 +658,113 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
                   value={segDesc}
                   onChange={(e) => setSegDesc(e.target.value)}
                   placeholder="Objectif de ce groupe ou critères d'inclusion..."
-                  className="w-full p-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#006a66]"
+                  className="w-full p-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#005596]"
                 />
               </div>
 
               {/* Criteria builders */}
-              <div className="bg-[#dff9f8]/40 p-4 rounded-xl space-y-4 border border-[#bcc9c7]/30">
-                <span className="font-bold text-[#006a66] uppercase text-[10px] tracking-wider block">
+              <div className="bg-[#E8F1F8]/40 p-4 rounded-xl space-y-4 border border-[#C9D4DE]/30">
+                <span className="font-bold text-[#005596] uppercase text-[10px] tracking-wider block">
                   Configuration des filtres automatiques
                 </span>
 
-                {/* HQ Country */}
+                {/* Country of origin */}
                 <div>
-                  <label className="font-semibold text-slate-700 block mb-1">Siège social (Pays)</label>
-                  <select
-                    value={segFilters.headquarters}
-                    onChange={(e) => setSegFilters({ ...segFilters, headquarters: e.target.value })}
+                  <label className="font-semibold text-slate-700 block mb-1">Pays d'origine</label>
+                  <div className="flex flex-wrap gap-2">
+                    {countries.map(country => {
+                      const active = segFilters.countries.includes(country);
+                      return (
+                        <button
+                          type="button"
+                          key={country}
+                          onClick={() => {
+                            setSegFilters({
+                              ...segFilters,
+                              countries: active
+                                ? segFilters.countries.filter(c => c !== country)
+                                : [...segFilters.countries, country]
+                            });
+                          }}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
+                            active ? 'bg-[#005596] text-white' : 'bg-white text-slate-700 border border-slate-200'
+                          }`}
+                        >
+                          {country}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Genders */}
+                <div>
+                  <label className="font-semibold text-slate-700 block mb-1">Genres inclus</label>
+                  <div className="flex flex-wrap gap-2">
+                    {allGenders.map(g => {
+                      const active = segFilters.genders.includes(g);
+                      return (
+                        <button
+                          type="button"
+                          key={g}
+                          onClick={() => {
+                            setSegFilters({
+                              ...segFilters,
+                              genders: active
+                                ? segFilters.genders.filter(x => x !== g)
+                                : [...segFilters.genders, g]
+                            });
+                          }}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
+                            active ? 'bg-[#005596] text-white' : 'bg-white text-slate-700 border border-slate-200'
+                          }`}
+                        >
+                          {GENDER_LABELS[g]}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Career stages */}
+                <div>
+                  <label className="font-semibold text-slate-700 block mb-1">Stades de carrière</label>
+                  <div className="flex flex-wrap gap-2">
+                    {allCareerStages.map(s => {
+                      const active = segFilters.careerStages.includes(s);
+                      return (
+                        <button
+                          type="button"
+                          key={s}
+                          onClick={() => {
+                            setSegFilters({
+                              ...segFilters,
+                              careerStages: active
+                                ? segFilters.careerStages.filter(x => x !== s)
+                                : [...segFilters.careerStages, s]
+                            });
+                          }}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
+                            active ? 'bg-[#005596] text-white' : 'bg-white text-slate-700 border border-slate-200'
+                          }`}
+                        >
+                          {CAREER_STAGE_SHORT_LABELS[s]}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Affiliation keyword */}
+                <div>
+                  <label className="font-semibold text-slate-700 block mb-1">Affiliation (mot-clé)</label>
+                  <input
+                    type="text"
+                    value={segFilters.affiliations}
+                    onChange={(e) => setSegFilters({ ...segFilters, affiliations: e.target.value })}
+                    placeholder="ex: Université, CNRS, IRD..."
                     className="w-full p-2 bg-white border border-slate-200 rounded-lg"
-                  >
-                    {countries.map(c => (
-                      <option key={c} value={c}>{c}</option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Actor types */}
-                <div>
-                  <label className="font-semibold text-slate-700 block mb-1">Types d'acteur inclus</label>
-                  <div className="flex flex-wrap gap-2">
-                    {allActorTypes.map(type => {
-                      const active = segFilters.actorTypes.includes(type);
-                      return (
-                        <button
-                          type="button"
-                          key={type}
-                          onClick={() => {
-                            setSegFilters({
-                              ...segFilters,
-                              actorTypes: active 
-                                ? segFilters.actorTypes.filter(t => t !== type)
-                                : [...segFilters.actorTypes, type]
-                            });
-                          }}
-                          className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
-                            active ? 'bg-[#006a66] text-white' : 'bg-white text-slate-700 border border-slate-200'
-                          }`}
-                        >
-                          {type}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* Zones */}
-                <div>
-                  <label className="font-semibold text-slate-700 block mb-1">Zones d'action</label>
-                  <div className="flex flex-wrap gap-2">
-                    {allZones.map(zone => {
-                      const active = segFilters.zones.includes(zone);
-                      return (
-                        <button
-                          type="button"
-                          key={zone}
-                          onClick={() => {
-                            setSegFilters({
-                              ...segFilters,
-                              zones: active 
-                                ? segFilters.zones.filter(z => z !== zone)
-                                : [...segFilters.zones, zone]
-                            });
-                          }}
-                          className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
-                            active ? 'bg-[#006a66] text-white' : 'bg-white text-slate-700 border border-slate-200'
-                          }`}
-                        >
-                          {zone}
-                        </button>
-                      );
-                    })}
-                  </div>
+                  />
                 </div>
 
                 {/* Tags filter */}
@@ -760,7 +786,7 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
                             });
                           }}
                           className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
-                            active ? 'bg-[#006a66] text-white' : 'bg-white text-slate-700 border border-slate-200'
+                            active ? 'bg-[#005596] text-white' : 'bg-white text-slate-700 border border-slate-200'
                           }`}
                         >
                           {tag.name}
@@ -782,34 +808,30 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-[#006a66] hover:bg-[#256865] text-white font-bold rounded-xl shadow"
+                  className="px-5 py-2 bg-[#005596] hover:bg-[#004275] text-white font-bold rounded-xl shadow"
                 >
                   Sauvegarder le Segment
                 </button>
               </div>
             </form>
-          </div>
-        </div>
+        </Modal>
       )}
 
       {/* TAG CREATE / EDIT MODAL */}
       {isTagModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 space-y-5 animate-fade-in">
-            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-              <div className="flex items-center gap-2">
-                <TagIcon className="w-5 h-5 text-[#006a66]" />
-                <h3 className="font-extrabold text-base text-[#071f1f]">
-                  {editingTag ? 'Modifier le Tag' : 'Créer un nouveau Tag'}
-                </h3>
-              </div>
-              <button 
-                onClick={() => setIsTagModalOpen(false)}
-                className="p-1 hover:bg-slate-100 rounded-full text-slate-400"
-              >
-                <X className="w-5 h-5" />
-              </button>
+        <Modal
+          open={isTagModalOpen}
+          onClose={() => setIsTagModalOpen(false)}
+          maxWidth="max-w-md"
+          title={
+            <div className="flex items-center gap-2">
+              <TagIcon className="w-5 h-5 text-[#005596]" />
+              <h3 className="font-extrabold text-base text-[#1C2529]">
+                {editingTag ? 'Modifier le Tag' : 'Créer un nouveau Tag'}
+              </h3>
             </div>
+          }
+        >
 
             <form onSubmit={handleSaveTag} className="space-y-4 text-xs">
               <div>
@@ -820,7 +842,7 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
                   value={tagNameInput}
                   onChange={(e) => setTagNameInput(e.target.value)}
                   placeholder="ex: Leader R&I, Financement 2025"
-                  className="w-full p-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#006a66]"
+                  className="w-full p-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#005596]"
                 />
               </div>
 
@@ -829,7 +851,7 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
                 <select
                   value={tagCategoryInput}
                   onChange={(e) => setTagCategoryInput(e.target.value)}
-                  className="w-full p-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#006a66]"
+                  className="w-full p-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#005596]"
                 >
                   {categories.map(cat => (
                     <option key={cat} value={cat}>{cat}</option>
@@ -847,7 +869,7 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
                       onClick={() => setTagColorInput(preset.class)}
                       className={`p-2 rounded-xl text-left text-xs font-semibold border flex items-center justify-between ${
                         preset.class
-                      } ${tagColorInput === preset.class ? 'ring-2 ring-[#006a66]' : ''}`}
+                      } ${tagColorInput === preset.class ? 'ring-2 ring-[#005596]' : ''}`}
                     >
                       <span>{preset.label}</span>
                       {tagColorInput === preset.class && <Check className="w-3.5 h-3.5" />}
@@ -863,7 +885,7 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
                   value={tagDescInput}
                   onChange={(e) => setTagDescInput(e.target.value)}
                   placeholder="Explication courte..."
-                  className="w-full p-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#006a66]"
+                  className="w-full p-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#005596]"
                 />
               </div>
 
@@ -877,14 +899,13 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-[#006a66] hover:bg-[#256865] text-white font-bold rounded-xl shadow"
+                  className="px-5 py-2 bg-[#005596] hover:bg-[#004275] text-white font-bold rounded-xl shadow"
                 >
                   Enregistrer
                 </button>
               </div>
             </form>
-          </div>
-        </div>
+        </Modal>
       )}
 
     </div>

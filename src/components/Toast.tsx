@@ -49,7 +49,7 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               text-sm font-semibold max-w-sm animate-slide-in-right
               ${toast.type === 'success' ? 'bg-emerald-600 text-white' : ''}
               ${toast.type === 'error' ? 'bg-rose-600 text-white' : ''}
-              ${toast.type === 'info' ? 'bg-[#006a66] text-white' : ''}
+              ${toast.type === 'info' ? 'bg-[#005596] text-white' : ''}
             `}
           >
             <span className="mt-0.5 shrink-0">

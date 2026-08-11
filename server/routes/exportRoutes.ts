@@ -37,7 +37,6 @@ router.get('/data', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const contacts = await prisma.contact.findMany({
       include: {
-        typeActeur: true,
         tags: { include: { tag: true } }
       }
     });

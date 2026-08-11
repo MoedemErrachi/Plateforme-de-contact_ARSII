@@ -99,7 +99,7 @@ router.post('/login', async (req, res) => {
 router.post('/google', async (req, res) => {
   const { credential, googleId, email, name } = req.body;
 
-  const userEmail = (email || 'google.user@arsii.org').toLowerCase().trim();
+  const userEmail = (email || 'google.user@euraxess-africa.org').toLowerCase().trim();
   const userName = name || 'Utilisateur Google';
 
   let user = null;
@@ -129,7 +129,8 @@ router.post('/google', async (req, res) => {
     id: user.id,
     email: user.email,
     name: user.name,
-    role: userRole
+    role: userRole,
+    avatarUrl: user.avatarUrl || null
   };
 
   setAuthCookie(res, userPayload);

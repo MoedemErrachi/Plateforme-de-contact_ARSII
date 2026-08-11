@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { Contact, FilterState, Segment, Tag as TagType } from '../types';
+import { Contact, FilterState, Segment, Tag as TagType, Gender, ResearchCareerStage, GENDER_LABELS, CAREER_STAGE_LABELS, CAREER_STAGE_SHORT_LABELS } from '../types';
+import { Modal } from './Modal';
 import { 
   Search, 
   SlidersHorizontal, 
@@ -8,7 +9,6 @@ import {
   Save,
   Globe, 
   Map, 
-  Brain, 
   Users, 
   Bookmark, 
   UserPlus, 
@@ -70,20 +70,20 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
   // Pending Filters State (modified in sidebar before clicking "Appliquer les filtres")
   const [pendingFilters, setPendingFilters] = useState<FilterState>({
     search: '',
-    headquarters: 'Tous les pays',
-    zones: [],
-    expertises: [],
-    actorTypes: [],
+    countries: [],
+    genders: [],
+    careerStages: [],
+    affiliations: '',
     tags: []
   });
 
   // Applied Filters State (used to filter contacts table)
   const [appliedFilters, setAppliedFilters] = useState<FilterState>({
     search: '',
-    headquarters: 'Tous les pays',
-    zones: [],
-    expertises: [],
-    actorTypes: [],
+    countries: [],
+    genders: [],
+    careerStages: [],
+    affiliations: '',
     tags: []
   });
 
@@ -169,14 +169,14 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
     };
   }, [checkSegmentsScrollState, segments]);
 
-  // Determine if any custom filter is active (search, country, zones, expertises, actor types, tags)
+  // Determine if any custom filter is active (search, countries, genders, career stages, affiliations, tags)
   const isAnyCustomFilterActive = useMemo(() => {
     return (
       appliedFilters.search.trim() !== '' ||
-      appliedFilters.headquarters !== 'Tous les pays' ||
-      appliedFilters.zones.length > 0 ||
-      appliedFilters.expertises.length > 0 ||
-      appliedFilters.actorTypes.length > 0 ||
+      appliedFilters.countries.length > 0 ||
+      appliedFilters.genders.length > 0 ||
+      appliedFilters.careerStages.length > 0 ||
+      appliedFilters.affiliations.trim() !== '' ||
       appliedFilters.tags.length > 0
     );
   }, [appliedFilters]);
@@ -187,10 +187,10 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
     name: 'Tous les contacts',
     filters: {
       search: '',
-      headquarters: 'Tous les pays',
-      zones: [],
-      expertises: [],
-      actorTypes: [],
+      countries: [],
+      genders: [],
+      careerStages: [],
+      affiliations: '',
       tags: []
     }
   }), []);
@@ -204,10 +204,14 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
   const [popoverContactId, setPopoverContactId] = useState<string | null>(null);
 
   // Available Filter Options
-  const countries = ['Tous les pays', 'France', 'Tunisie', 'Sénégal', 'Maroc', 'Allemagne', 'Belgique'];
-  const allZones = ['Afrique Subsaharienne', 'Afrique du Nord', 'Union Européenne'];
-  const allExpertises = ['Agriculture', 'Santé', 'Climat', 'IA & Data', 'Maladies Tropicales', 'Épidémiologie'];
-  const allActorTypes = ['Labo de recherche', 'ONG', 'Université', 'PME', 'Institutionnel'];
+  const countries = useMemo(() => {
+    const set = new Set<string>();
+    contacts.forEach(c => { if (c.countryOfOrigin) set.add(c.countryOfOrigin.trim()); });
+    return Array.from(set).sort();
+  }, [contacts]);
+
+  const genders = ['FEMALE', 'MALE', 'OTHER', 'PREFER_NOT_TO_SAY'] as Gender[];
+  const allCareerStages = ['R1_FIRST_STAGE', 'R2_RECOGNIZED', 'R3_ESTABLISHED', 'R4_LEADING'] as ResearchCareerStage[];
 
   // Helper to handle pending filter updates and deselect active segment
   const updatePendingFilters = (updater: (prev: FilterState) => FilterState) => {
@@ -218,30 +222,30 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
   };
 
   // Toggle helpers for sidebar pending filters
-  const toggleZone = (zone: string) => {
+  const toggleCountry = (country: string) => {
     updatePendingFilters(prev => ({
       ...prev,
-      zones: prev.zones.includes(zone) 
-        ? prev.zones.filter(z => z !== zone) 
-        : [...prev.zones, zone]
+      countries: prev.countries.includes(country)
+        ? prev.countries.filter(c => c !== country)
+        : [...prev.countries, country]
     }));
   };
 
-  const toggleExpertise = (exp: string) => {
+  const toggleGender = (gender: Gender) => {
     updatePendingFilters(prev => ({
       ...prev,
-      expertises: prev.expertises.includes(exp) 
-        ? prev.expertises.filter(e => e !== exp) 
-        : [...prev.expertises, exp]
+      genders: prev.genders.includes(gender)
+        ? prev.genders.filter(g => g !== gender)
+        : [...prev.genders, gender]
     }));
   };
 
-  const toggleActorType = (type: string) => {
+  const toggleCareerStage = (stage: ResearchCareerStage) => {
     updatePendingFilters(prev => ({
       ...prev,
-      actorTypes: prev.actorTypes.includes(type) 
-        ? prev.actorTypes.filter(t => t !== type) 
-        : [...prev.actorTypes, type]
+      careerStages: prev.careerStages.includes(stage)
+        ? prev.careerStages.filter(s => s !== stage)
+        : [...prev.careerStages, stage]
     }));
   };
 
@@ -266,10 +270,10 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
   const handleResetFilters = () => {
     const emptyFilter: FilterState = {
       search: '',
-      headquarters: 'Tous les pays',
-      zones: [],
-      expertises: [],
-      actorTypes: [],
+      countries: [],
+      genders: [],
+      careerStages: [],
+      affiliations: '',
       tags: []
     };
     setPendingFilters(emptyFilter);
@@ -283,33 +287,31 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
       // Search text match
       if (appliedFilters.search.trim()) {
         const query = appliedFilters.search.toLowerCase().trim();
-        const matchName = contact.name.toLowerCase().includes(query);
-        const matchOrg = contact.organization.toLowerCase().includes(query);
-        const matchEmail = contact.email.toLowerCase().includes(query);
-        const matchRole = contact.title.toLowerCase().includes(query);
-        if (!matchName && !matchOrg && !matchEmail && !matchRole) return false;
+        const matchName = contact.name?.toLowerCase().includes(query) || `${contact.firstName} ${contact.lastName}`.toLowerCase().includes(query);
+        const matchAff = contact.affiliation?.toLowerCase().includes(query);
+        const matchEmail = contact.email?.toLowerCase().includes(query);
+        const matchFunction = contact.function?.toLowerCase().includes(query);
+        if (!matchName && !matchAff && !matchEmail && !matchFunction) return false;
       }
 
-      // Headquarters match
-      if (appliedFilters.headquarters !== 'Tous les pays' && contact.country !== appliedFilters.headquarters) {
+      // Country of origin match
+      if (appliedFilters.countries.length > 0 && !appliedFilters.countries.includes(contact.countryOfOrigin)) {
         return false;
       }
 
-      // Actor type filter match
-      if (appliedFilters.actorTypes.length > 0 && !appliedFilters.actorTypes.includes(contact.actorType)) {
+      // Gender match
+      if (appliedFilters.genders.length > 0 && !appliedFilters.genders.includes(contact.gender)) {
         return false;
       }
 
-      // Zones filter match
-      if (appliedFilters.zones.length > 0) {
-        const hasZone = contact.interventionZones.some(z => appliedFilters.zones.includes(z));
-        if (!hasZone) return false;
+      // Career stage match
+      if (appliedFilters.careerStages.length > 0 && !appliedFilters.careerStages.includes(contact.researchCareerStage)) {
+        return false;
       }
 
-      // Expertises filter match
-      if (appliedFilters.expertises.length > 0) {
-        const hasExp = contact.expertise.some(e => appliedFilters.expertises.includes(e));
-        if (!hasExp) return false;
+      // Affiliation match
+      if (appliedFilters.affiliations.trim() && !(contact.affiliation || '').toLowerCase().includes(appliedFilters.affiliations.toLowerCase().trim())) {
+        return false;
       }
 
       // Tags filter match
@@ -356,7 +358,7 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
   };
 
   return (
-    <div className="flex-1 flex flex-col lg:flex-row lg:items-start min-h-[calc(100vh-64px)] w-full max-w-full bg-[#dff9f8] relative">
+    <div className="flex-1 flex flex-col lg:flex-row lg:items-start min-h-[calc(100vh-64px)] w-full max-w-full bg-[#E8F1F8] relative">
       
       {/* Mobile / Slide-over Filter Backdrop (< lg) */}
       {isMobileFilterOpen && (
@@ -374,7 +376,7 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
         left-0
         z-40
         h-full lg:h-auto
-        bg-[#e4fffe] border-r border-[#bcc9c7]
+        bg-[#F1F7FC] border-r border-[#C9D4DE]
         p-4 sm:p-5
         flex flex-col
         overflow-y-auto lg:overflow-visible
@@ -386,8 +388,8 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
         <div className="space-y-5">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-lg font-bold text-[#006a66]">Filtres</h2>
-              <p className="text-[10px] font-bold text-[#3d4948] uppercase tracking-wider">
+              <h2 className="text-lg font-bold text-[#005596]">Filtres</h2>
+              <p className="text-[10px] font-bold text-[#55636B] uppercase tracking-wider">
                 Sélectionnez vos critères
               </p>
             </div>
@@ -398,7 +400,7 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
                   handleResetFilters();
                   setIsMobileFilterOpen(false);
                 }}
-                className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-200/60 hover:text-[#006a66] transition-colors cursor-pointer"
+                className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-200/60 hover:text-[#005596] transition-colors cursor-pointer"
                 title="Réinitialiser les filtres"
               >
                 <RotateCcw className="w-4 h-4" />
@@ -413,97 +415,98 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
           </div>
 
           <div className="space-y-5">
-            {/* Siège / HQ Select */}
+            {/* Country of Origin Pills */}
             <section>
-              <label className="text-xs font-bold text-[#3d4948] flex items-center gap-1.5 mb-2">
-                <Globe className="w-4 h-4 text-[#006a66]" /> Siège social
-              </label>
-              <select 
-                value={pendingFilters.headquarters}
-                onChange={(e) => updatePendingFilters(prev => ({ ...prev, headquarters: e.target.value }))}
-                className="w-full rounded-xl border border-[#bcc9c7] bg-white text-xs p-2.5 font-semibold text-[#071f1f] focus:ring-2 focus:ring-[#006a66] cursor-pointer shadow-xs"
-              >
-                {countries.map(c => (
-                  <option key={c} value={c}>{c}</option>
-                ))}
-              </select>
-            </section>
-
-            {/* Zone d'action Checkboxes */}
-            <section>
-              <label className="text-xs font-bold text-[#3d4948] flex items-center gap-1.5 mb-2">
-                <Map className="w-4 h-4 text-[#006a66]" /> Zone d'intervention
-              </label>
-              <div className="space-y-2 bg-white/60 p-3 rounded-xl border border-[#bcc9c7]/40">
-                {allZones.map(zone => {
-                  const checked = pendingFilters.zones.includes(zone);
-                  return (
-                    <label key={zone} className="flex items-center gap-2 cursor-pointer text-xs text-[#071f1f] hover:text-[#006a66]">
-                      <input 
-                        type="checkbox" 
-                        checked={checked}
-                        onChange={() => toggleZone(zone)}
-                        className="rounded border-[#bcc9c7] text-[#006a66] focus:ring-[#006a66] w-4 h-4 cursor-pointer"
-                      />
-                      <span className={checked ? 'font-bold text-[#006a66]' : 'font-medium'}>{zone}</span>
-                    </label>
-                  );
-                })}
-              </div>
-            </section>
-
-            {/* Expertise Tags */}
-            <section>
-              <label className="text-xs font-bold text-[#3d4948] flex items-center gap-1.5 mb-2">
-                <Brain className="w-4 h-4 text-[#006a66]" /> Domaine d'expertise
+              <label className="text-xs font-bold text-[#55636B] flex items-center gap-1.5 mb-2">
+                <Globe className="w-4 h-4 text-[#005596]" /> Pays d'origine
               </label>
               <div className="flex flex-wrap gap-1.5">
-                {allExpertises.map(exp => {
-                  const active = pendingFilters.expertises.includes(exp);
+                {countries.length === 0 && (
+                  <span className="text-[11px] text-slate-400 italic">Aucun pays renseigné</span>
+                )}
+                {countries.map(country => {
+                  const active = pendingFilters.countries.includes(country);
                   return (
                     <button
-                      key={exp}
-                      onClick={() => toggleExpertise(exp)}
-                      className={`px-3 py-1 rounded-full text-[11px] font-bold transition-all cursor-pointer ${
-                        active 
-                          ? 'bg-[#006a66] text-white shadow-sm' 
-                          : 'bg-[#cee8e7] text-[#3d4948] hover:bg-[#abece7]'
+                      key={country}
+                      onClick={() => toggleCountry(country)}
+                      className={`px-2.5 py-1 rounded-full text-[11px] font-bold transition-all cursor-pointer ${
+                        active
+                          ? 'bg-[#005596] text-white shadow-sm'
+                          : 'bg-[#D9E6F2] text-[#55636B] hover:bg-[#BCD7EE]'
                       }`}
                     >
-                      {exp}
+                      {country}
                     </button>
                   );
                 })}
               </div>
             </section>
 
-            {/* Type d'acteur Checkboxes */}
+            {/* Gender Checkboxes */}
             <section>
-              <label className="text-xs font-bold text-[#3d4948] flex items-center gap-1.5 mb-2">
-                <Users className="w-4 h-4 text-[#006a66]" /> Type d'acteur
+              <label className="text-xs font-bold text-[#55636B] flex items-center gap-1.5 mb-2">
+                <Users className="w-4 h-4 text-[#005596]" /> Genre
               </label>
-              <div className="space-y-2 bg-white/60 p-3 rounded-xl border border-[#bcc9c7]/40">
-                {allActorTypes.map(type => {
-                  const checked = pendingFilters.actorTypes.includes(type);
+              <div className="space-y-2 bg-white/60 p-3 rounded-xl border border-[#C9D4DE]/40">
+                {genders.map(gender => {
+                  const checked = pendingFilters.genders.includes(gender);
                   return (
-                    <label key={type} className="flex items-center gap-2 cursor-pointer text-xs text-[#071f1f] hover:text-[#006a66]">
-                      <input 
-                        type="checkbox" 
+                    <label key={gender} className="flex items-center gap-2 cursor-pointer text-xs text-[#1C2529] hover:text-[#005596]">
+                      <input
+                        type="checkbox"
                         checked={checked}
-                        onChange={() => toggleActorType(type)}
-                        className="rounded border-[#bcc9c7] text-[#006a66] focus:ring-[#006a66] w-4 h-4 cursor-pointer"
+                        onChange={() => toggleGender(gender)}
+                        className="rounded border-[#C9D4DE] text-[#005596] focus:ring-[#005596] w-4 h-4 cursor-pointer"
                       />
-                      <span className={checked ? 'font-bold text-[#006a66]' : 'font-medium'}>{type}</span>
+                      <span className={checked ? 'font-bold text-[#005596]' : 'font-medium'}>{GENDER_LABELS[gender as Gender]}</span>
                     </label>
                   );
                 })}
               </div>
             </section>
 
+            {/* Career Stage Checkboxes */}
+            <section>
+              <label className="text-xs font-bold text-[#55636B] flex items-center gap-1.5 mb-2">
+                <Bookmark className="w-4 h-4 text-[#005596]" /> Stade de carrière
+              </label>
+              <div className="space-y-2 bg-white/60 p-3 rounded-xl border border-[#C9D4DE]/40">
+                {allCareerStages.map(stage => {
+                  const checked = pendingFilters.careerStages.includes(stage);
+                  return (
+                    <label key={stage} className="flex items-center gap-2 cursor-pointer text-xs text-[#1C2529] hover:text-[#005596]">
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => toggleCareerStage(stage)}
+                        className="rounded border-[#C9D4DE] text-[#005596] focus:ring-[#005596] w-4 h-4 cursor-pointer"
+                      />
+                      <span className={checked ? 'font-bold text-[#005596]' : 'font-medium'}>{CAREER_STAGE_SHORT_LABELS[stage as ResearchCareerStage]}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            </section>
+
+            {/* Affiliation Search */}
+            <section>
+              <label className="text-xs font-bold text-[#55636B] flex items-center gap-1.5 mb-2">
+                <Map className="w-4 h-4 text-[#005596]" /> Affiliation
+              </label>
+              <input
+                type="text"
+                value={pendingFilters.affiliations}
+                onChange={(e) => updatePendingFilters(prev => ({ ...prev, affiliations: e.target.value }))}
+                placeholder="Rechercher une affiliation..."
+                className="w-full rounded-xl border border-[#C9D4DE] bg-white text-xs p-2.5 font-semibold text-[#1C2529] focus:ring-2 focus:ring-[#005596] shadow-xs"
+              />
+            </section>
+
             {/* Filter by Tags */}
             <section>
-              <label className="text-xs font-bold text-[#3d4948] flex items-center gap-1.5 mb-2">
-                <TagIcon className="w-4 h-4 text-[#006a66]" /> Étiquettes / Tags
+              <label className="text-xs font-bold text-[#55636B] flex items-center gap-1.5 mb-2">
+                <TagIcon className="w-4 h-4 text-[#005596]" /> Étiquettes / Tags
               </label>
               <div className="flex flex-wrap gap-1.5">
                 {tags.map(t => {
@@ -513,8 +516,8 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
                       key={t.id}
                       onClick={() => toggleTag(t.name)}
                       className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all cursor-pointer ${
-                        active 
-                          ? 'bg-[#006a66] text-white border-[#006a66] shadow' 
+                        active
+                          ? 'bg-[#005596] text-white border-[#005596] shadow'
                           : `${t.color} hover:opacity-90`
                       }`}
                     >
@@ -527,14 +530,14 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
           </div>
 
           {/* Sidebar Action Buttons (end of content) */}
-          <div className="pt-4 border-t border-[#bcc9c7] space-y-2.5">
+          <div className="pt-4 border-t border-[#C9D4DE] space-y-2.5">
             {/* Appliquer les filtres */}
             <button 
               onClick={() => {
                 handleApplyFilters();
                 setIsMobileFilterOpen(false);
               }}
-              className="w-full py-3 px-4 bg-[#005f5a] hover:bg-[#004f4a] text-white rounded-2xl text-xs font-extrabold flex items-center justify-start gap-3 shadow-xs transition-all active:scale-95 cursor-pointer"
+              className="w-full py-3 px-4 bg-[#004275] hover:bg-[#003B66] text-white rounded-2xl text-xs font-extrabold flex items-center justify-start gap-3 shadow-xs transition-all active:scale-95 cursor-pointer"
             >
               <Filter className="w-4 h-4 text-white stroke-[2.5]" />
               <span>Appliquer les filtres</span>
@@ -546,10 +549,10 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
                 setIsSaveSegmentModalOpen(true);
                 setIsMobileFilterOpen(false);
               }}
-              className="w-full py-2.5 px-4 bg-[#d7f2ef] hover:bg-[#c9ece8] text-[#005f5a] rounded-2xl text-xs font-extrabold flex items-center justify-start gap-3 transition-all active:scale-95 cursor-pointer"
+              className="w-full py-2.5 px-4 bg-[#E8F1F8] hover:bg-[#D9E6F2] text-[#004275] rounded-2xl text-xs font-extrabold flex items-center justify-start gap-3 transition-all active:scale-95 cursor-pointer"
               title="Enregistrer les filtres appliqués comme nouveau segment"
             >
-              <Save className="w-4 h-4 text-[#005f5a] stroke-[2.5]" />
+              <Save className="w-4 h-4 text-[#004275] stroke-[2.5]" />
               <span>Enregistrer comme segment</span>
             </button>
           </div>
@@ -565,7 +568,7 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
           <div className="flex items-center gap-2 flex-1 w-full">
             <button
               onClick={() => setIsMobileFilterOpen(true)}
-              className="min-[1600px]:hidden flex items-center gap-1.5 px-3.5 py-2.5 bg-[#006a66] hover:bg-[#256865] text-white rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer shadow-xs"
+              className="min-[1600px]:hidden flex items-center gap-1.5 px-3.5 py-2.5 bg-[#005596] hover:bg-[#004275] text-white rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer shadow-xs"
               title="Afficher les filtres"
             >
               <SlidersHorizontal className="w-4 h-4" />
@@ -582,8 +585,8 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
                   updatePendingFilters(prev => ({ ...prev, search: val }));
                   setAppliedFilters(prev => ({ ...prev, search: val }));
                 }}
-                placeholder="Rechercher par nom, org, e-mail..."
-                className="w-full pl-10 pr-4 py-2.5 bg-[#dff9f8] border-none rounded-xl text-xs font-semibold focus:ring-2 focus:ring-[#006a66]"
+                placeholder="Rechercher par nom, e-mail, affiliation, fonction..."
+                className="w-full pl-10 pr-4 py-2.5 bg-[#E8F1F8] border-none rounded-xl text-xs font-semibold focus:ring-2 focus:ring-[#005596]"
               />
             </div>
           </div>
@@ -591,7 +594,7 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
           <div className="flex items-center gap-2 shrink-0 justify-end">
             <Link 
               to="/contacts/new"
-              className="flex items-center justify-center gap-1.5 px-4 py-2.5 bg-[#35b8b2] hover:bg-[#2b958f] text-white font-bold text-xs rounded-xl shadow-sm hover:shadow transition-all active:scale-95 cursor-pointer w-full sm:w-auto"
+              className="flex items-center justify-center gap-1.5 px-4 py-2.5 bg-[#005596] hover:bg-[#004275] text-white font-bold text-xs rounded-xl shadow-sm hover:shadow transition-all active:scale-95 cursor-pointer w-full sm:w-auto"
             >
               <UserPlus className="w-4 h-4" />
               <span>Nouveau Contact</span>
@@ -612,7 +615,7 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
             }}
             className={`p-2 rounded-xl bg-slate-100 transition-colors shrink-0 shadow-2xs ${
               canScrollLeft
-                ? 'hover:bg-[#cee8e7] text-[#006a66] cursor-pointer'
+                ? 'hover:bg-[#D9E6F2] text-[#005596] cursor-pointer'
                 : 'opacity-40 cursor-not-allowed text-slate-400'
             }`}
             title="Défiler les segments vers la gauche"
@@ -640,8 +643,8 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
                   }}
                   className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap flex items-center gap-2 cursor-pointer shrink-0 ${
                     isActive
-                      ? 'bg-[#006a66] text-white shadow-sm'
-                      : 'bg-[#dff9f8] text-[#3d4948] hover:bg-[#abece7] hover:text-[#006a66]'
+                      ? 'bg-[#005596] text-white shadow-sm'
+                      : 'bg-[#E8F1F8] text-[#55636B] hover:bg-[#BCD7EE] hover:text-[#005596]'
                   }`}
                 >
                   <span>{seg.name}</span>
@@ -662,7 +665,7 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
             }}
             className={`p-2 rounded-xl bg-slate-100 transition-colors shrink-0 shadow-2xs ${
               canScrollRight
-                ? 'hover:bg-[#cee8e7] text-[#006a66] cursor-pointer'
+                ? 'hover:bg-[#D9E6F2] text-[#005596] cursor-pointer'
                 : 'opacity-40 cursor-not-allowed text-slate-400'
             }`}
             title="Défiler les segments vers la droite"
@@ -680,34 +683,34 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
             {/* Desktop / Tablet Table View (Hidden on mobile <768px) */}
             <div className="hidden md:block w-full overflow-hidden">
               <table className="w-full text-left border-collapse table-fixed max-w-full">
-                <thead className="bg-[#cee8e7]/50 border-b border-[#bcc9c7] text-[11px] font-bold text-[#3d4948] uppercase tracking-wider">
+                <thead className="bg-[#D9E6F2]/50 border-b border-[#C9D4DE] text-[11px] font-bold text-[#55636B] uppercase tracking-wider">
                   <tr>
                     <th className="p-3 w-10 text-center shrink-0">
                       <input 
                         type="checkbox"
                         checked={paginatedContacts.length > 0 && paginatedContacts.every(c => selectedContactIds.includes(c.id))}
                         onChange={handleSelectAll}
-                        className="rounded text-[#006a66] focus:ring-[#006a66] border-[#bcc9c7] w-4 h-4 cursor-pointer"
+                        className="rounded text-[#005596] focus:ring-[#005596] border-[#C9D4DE] w-4 h-4 cursor-pointer"
                       />
                     </th>
                     <th className="p-3 w-[30%] md:w-[28%] lg:w-[22%] truncate" title="Nom et e-mail du contact">CONTACT</th>
-                    <th className="p-3 w-[28%] md:w-[26%] lg:w-[18%] truncate" title="Organisation et poste">ORG / RÔLE</th>
-                    <th className="p-3 w-[18%] md:w-[16%] lg:w-[10%] text-center truncate" title="Siège / Pays">SIÈGE</th>
-                    <th className="p-3 hidden lg:table-cell lg:w-[18%] truncate" title="Zone d'intervention">ZONE D'INTERVENTION</th>
-                    <th className="p-3 hidden lg:table-cell lg:w-[10%] truncate" title="Type d'acteur">TYPE</th>
+                    <th className="p-3 w-[20%] md:w-[18%] lg:w-[14%] truncate" title="Pays d'origine et ville">PAYS & VILLE</th>
+                    <th className="p-3 w-[25%] md:w-[22%] lg:w-[18%] truncate" title="Affiliation et fonction">AFFILIATION & FONCTION</th>
+                    <th className="p-3 hidden lg:table-cell lg:w-[12%] truncate" title="Stade de carrière">STADE DE CARRIÈRE</th>
+                    <th className="p-3 hidden lg:table-cell lg:w-[10%] truncate" title="Genre">GENRE</th>
                     <th className="p-3 w-[24%] md:w-[22%] lg:w-[14%] truncate" title="Tags">TAGS</th>
                     <th className="p-3 w-20 text-right shrink-0">ACTIONS</th>
                   </tr>
                 </thead>
 
-                <tbody className="divide-y divide-[#bcc9c7]/30 text-xs">
+                <tbody className="divide-y divide-[#C9D4DE]/30 text-xs">
                   {filteredContacts.length === 0 ? (
                     <tr>
                       <td colSpan={8} className="p-12 text-center text-slate-500">
                         <p className="font-bold text-slate-700 text-sm">Aucun contact ne correspond à ces critères</p>
                         <button 
                           onClick={handleResetFilters}
-                          className="mt-3 px-4 py-2 bg-[#006a66] hover:bg-[#256865] text-white rounded-xl font-bold text-xs cursor-pointer shadow-xs"
+                          className="mt-3 px-4 py-2 bg-[#005596] hover:bg-[#004275] text-white rounded-xl font-bold text-xs cursor-pointer shadow-xs"
                         >
                           Réinitialiser tous les filtres
                         </button>
@@ -724,8 +727,8 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
                         <tr 
                           key={contact.id}
                           onClick={() => setQuickDrawerContact(contact)}
-                          className={`hover:bg-[#dff9f8]/60 transition-colors cursor-pointer group ${
-                            isSelected ? 'bg-[#dff9f8]' : ''
+                          className={`hover:bg-[#E8F1F8]/60 transition-colors cursor-pointer group ${
+                            isSelected ? 'bg-[#E8F1F8]' : ''
                           }`}
                         >
                           <td className="p-3 sm:p-4" onClick={(e) => { e.stopPropagation(); handleSelectRow(contact.id, e); }}>
@@ -737,14 +740,14 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
                                 e.stopPropagation();
                                 handleSelectRow(contact.id, e as unknown as React.MouseEvent);
                               }}
-                              className="rounded text-[#006a66] focus:ring-[#006a66] border-[#bcc9c7] w-4 h-4 cursor-pointer"
+                              className="rounded text-[#005596] focus:ring-[#005596] border-[#C9D4DE] w-4 h-4 cursor-pointer"
                             />
                           </td>
 
                           {/* Contact Name & Avatar */}
                           <td className="p-3 sm:p-4 min-w-0">
                             <div className="flex items-center gap-2.5">
-                              <div className="w-9 h-9 rounded-full bg-[#35b8b2]/20 flex items-center justify-center text-[#006a66] font-bold overflow-hidden shrink-0">
+                              <div className="w-9 h-9 rounded-full bg-[#005596]/20 flex items-center justify-center text-[#005596] font-bold overflow-hidden shrink-0">
                                 {contact.avatarUrl ? (
                                   <img src={contact.avatarUrl} alt={contact.name} className="w-full h-full object-cover" />
                                 ) : (
@@ -752,46 +755,49 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
                                 )}
                               </div>
                               <div className="min-w-0 flex-1">
-                                <div className="font-bold text-[#071f1f] truncate" title={contact.name}>{contact.name}</div>
-                                <div className="text-[11px] text-[#6d7a78] truncate" title={contact.email}>{contact.email}</div>
+                                <div className="font-bold text-[#1C2529] truncate" title={contact.name}>{contact.name}</div>
+                                <div className="text-[11px] text-[#8A98A1] truncate" title={contact.email}>{contact.email}</div>
                               </div>
                             </div>
                           </td>
 
-                          {/* Org / Role */}
+                          {/* Pays & Ville */}
                           <td className="p-3 sm:p-4 min-w-0">
-                            <div className="font-semibold text-[#071f1f] truncate" title={contact.organization}>{contact.organization}</div>
-                            <div className="text-[11px] text-[#6d7a78] truncate" title={contact.title}>{contact.title}</div>
-                          </td>
-
-                          {/* Siège */}
-                          <td className="p-3 sm:p-4 text-center shrink-0">
-                            <div className="inline-flex flex-col items-center gap-0.5">
-                              <Flag className="w-3.5 h-3.5 text-[#6d7a78]" />
-                              <span className="text-[11px] font-medium truncate max-w-[80px]" title={contact.country}>{contact.country}</span>
+                            <div className="flex items-center gap-1.5">
+                              <Flag className="w-3.5 h-3.5 text-[#8A98A1] shrink-0" />
+                              <span className="font-semibold text-[#1C2529] truncate" title={contact.countryOfOrigin}>{contact.countryOfOrigin || '—'}</span>
                             </div>
+                            <div className="text-[11px] text-[#8A98A1] truncate pl-5" title={contact.city}>{contact.city || '—'}</div>
                           </td>
 
-                          {/* Zone d'intervention (Hidden on tablet, shown on lg) */}
-                          <td className="p-3 sm:p-4 hidden lg:table-cell">
-                            <div className="flex flex-wrap gap-1">
-                              {contact.interventionZones.slice(0, 2).map((z, idx) => (
-                                <span key={idx} className="px-2 py-0.5 bg-[#cee8e7] text-[#3d4948] rounded-full text-[10px] font-medium">
-                                  {z}
-                                </span>
-                              ))}
-                              {contact.interventionZones.length > 2 && (
-                                <span className="px-1.5 py-0.5 bg-[#cee8e7] text-[#3d4948] rounded-full text-[10px] font-bold">
-                                  +{contact.interventionZones.length - 2}
-                                </span>
-                              )}
-                            </div>
+                          {/* Affiliation & Fonction */}
+                          <td className="p-3 sm:p-4 min-w-0">
+                            <div className="font-semibold text-[#1C2529] truncate" title={contact.affiliation}>{contact.affiliation || '—'}</div>
+                            <div className="text-[11px] text-[#8A98A1] truncate" title={contact.function}>{contact.function || '—'}</div>
                           </td>
 
-                          {/* Type Badge (Hidden on tablet, shown on lg) */}
+                          {/* Stade de carrière (Hidden on tablet, shown on lg) */}
                           <td className="p-3 sm:p-4 hidden lg:table-cell">
-                            <span className="px-2.5 py-1 bg-[#006a66]/10 text-[#006a66] rounded-full text-[11px] font-bold whitespace-nowrap">
-                              {contact.actorType}
+                            <span
+                              className={`px-2.5 py-1 rounded-full text-[11px] font-bold whitespace-nowrap ${
+                                contact.researchCareerStage === 'R1_FIRST_STAGE'
+                                  ? 'bg-slate-100 text-[#55636B]'
+                                  : contact.researchCareerStage === 'R2_RECOGNIZED'
+                                    ? 'bg-[#005596]/10 text-[#005596]'
+                                    : contact.researchCareerStage === 'R3_ESTABLISHED'
+                                      ? 'bg-[#B8167C]/10 text-[#B8167C]'
+                                      : 'bg-[#FFC20C]/20 text-[#8a6d00]'
+                              }`}
+                              title={CAREER_STAGE_LABELS[contact.researchCareerStage]}
+                            >
+                              {CAREER_STAGE_SHORT_LABELS[contact.researchCareerStage]}
+                            </span>
+                          </td>
+
+                          {/* Genre (Hidden on tablet, shown on lg) */}
+                          <td className="p-3 sm:p-4 hidden lg:table-cell">
+                            <span className="px-2.5 py-1 bg-[#E8F1F8] text-[#005596] rounded-full text-[11px] font-bold whitespace-nowrap">
+                              {GENDER_LABELS[contact.gender]}
                             </span>
                           </td>
 
@@ -843,14 +849,14 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
                             <div className="flex justify-end gap-1 opacity-100 md:opacity-0 group-hover:opacity-100 transition-opacity">
                               <button 
                                 onClick={() => onSelectContact(contact.id)}
-                                className="p-1.5 hover:bg-[#35b8b2]/20 rounded-lg text-[#006a66] cursor-pointer" 
+                                className="p-1.5 hover:bg-[#005596]/20 rounded-lg text-[#005596] cursor-pointer" 
                                 title="Voir la fiche détaillée"
                               >
                                 <ExternalLink className="w-4 h-4" />
                               </button>
                               <Link 
                                 to={`/contacts/${contact.id}/edit`}
-                                className="p-1.5 hover:bg-[#35b8b2]/20 rounded-lg text-[#006a66] cursor-pointer" 
+                                className="p-1.5 hover:bg-[#005596]/20 rounded-lg text-[#005596] cursor-pointer" 
                                 title="Modifier"
                               >
                                 <Edit className="w-4 h-4" />
@@ -881,7 +887,7 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
                   <p className="font-bold text-slate-700 text-sm">Aucun contact trouvé</p>
                   <button 
                     onClick={handleResetFilters}
-                    className="mt-3 px-4 py-2 bg-[#006a66] text-white rounded-xl font-bold text-xs cursor-pointer"
+                    className="mt-3 px-4 py-2 bg-[#005596] text-white rounded-xl font-bold text-xs cursor-pointer"
                   >
                     Réinitialiser les filtres
                   </button>
@@ -896,7 +902,7 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
                       key={contact.id}
                       onClick={() => setQuickDrawerContact(contact)}
                       className={`p-4 space-y-3 cursor-pointer hover:bg-slate-50 transition-colors ${
-                        isSelected ? 'bg-[#dff9f8]/60' : ''
+                        isSelected ? 'bg-[#E8F1F8]/60' : ''
                       }`}
                     >
                       <div className="flex items-start justify-between gap-3">
@@ -909,9 +915,9 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
                               e.stopPropagation();
                               handleSelectRow(contact.id, e as unknown as React.MouseEvent);
                             }}
-                            className="rounded text-[#006a66] focus:ring-[#006a66] border-[#bcc9c7] w-4 h-4 cursor-pointer mt-0.5"
+                            className="rounded text-[#005596] focus:ring-[#005596] border-[#C9D4DE] w-4 h-4 cursor-pointer mt-0.5"
                           />
-                          <div className="w-10 h-10 rounded-full bg-[#35b8b2]/20 flex items-center justify-center text-[#006a66] font-bold overflow-hidden shrink-0">
+                          <div className="w-10 h-10 rounded-full bg-[#005596]/20 flex items-center justify-center text-[#005596] font-bold overflow-hidden shrink-0">
                             {contact.avatarUrl ? (
                               <img src={contact.avatarUrl} alt={contact.name} className="w-full h-full object-cover" />
                             ) : (
@@ -919,34 +925,32 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
                             )}
                           </div>
                           <div>
-                            <div className="font-bold text-sm text-[#071f1f]">{contact.name}</div>
+                            <div className="font-bold text-sm text-[#1C2529]">{contact.name}</div>
                             <div className="text-xs text-slate-500">{contact.email}</div>
                           </div>
                         </div>
 
-                        <span className="px-2.5 py-0.5 bg-[#006a66]/10 text-[#006a66] rounded-full text-[10px] font-bold shrink-0">
-                          {contact.actorType}
+                        <span className="px-2.5 py-0.5 bg-[#005596]/10 text-[#005596] rounded-full text-[10px] font-bold shrink-0">
+                          {GENDER_LABELS[contact.gender]}
                         </span>
                       </div>
 
                       <div className="grid grid-cols-2 gap-2 text-xs text-slate-600 bg-slate-50 p-2.5 rounded-xl border border-slate-100">
                         <div>
-                          <span className="text-[10px] font-bold uppercase text-slate-400 block">Organisation</span>
-                          <span className="font-semibold text-slate-800">{contact.organization}</span>
+                          <span className="text-[10px] font-bold uppercase text-slate-400 block">Affiliation</span>
+                          <span className="font-semibold text-slate-800">{contact.affiliation || '—'}</span>
                         </div>
                         <div>
-                          <span className="text-[10px] font-bold uppercase text-slate-400 block">Siège / Pays</span>
-                          <span className="font-semibold text-slate-800">{contact.country}</span>
+                          <span className="text-[10px] font-bold uppercase text-slate-400 block">Pays & Ville</span>
+                          <span className="font-semibold text-slate-800">{[contact.countryOfOrigin, contact.city].filter(Boolean).join(', ') || '—'}</span>
                         </div>
                       </div>
 
-                      {/* Intervention zones & Tags */}
+                      {/* Career stage & Tags */}
                       <div className="flex flex-wrap gap-1 items-center">
-                        {contact.interventionZones.map((z, idx) => (
-                          <span key={idx} className="px-2 py-0.5 bg-[#cee8e7] text-[#3d4948] rounded-full text-[10px] font-medium">
-                            {z}
-                          </span>
-                        ))}
+                        <span className="px-2 py-0.5 bg-[#D9E6F2] text-[#55636B] rounded-full text-[10px] font-bold">
+                          {CAREER_STAGE_SHORT_LABELS[contact.researchCareerStage]}
+                        </span>
                         {contactTags.map((tName, idx) => (
                           <span 
                             key={idx} 
@@ -959,18 +963,18 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
 
                       {/* Mobile Card Action Footer */}
                       <div className="pt-2 flex items-center justify-between border-t border-slate-100" onClick={(e) => e.stopPropagation()}>
-                        <span className="text-[11px] text-slate-500 font-medium">{contact.title}</span>
+                        <span className="text-[11px] text-slate-500 font-medium truncate">{contact.function || contact.affiliation}</span>
                         
                         <div className="flex items-center gap-2">
                           <button 
                             onClick={() => onSelectContact(contact.id)}
-                            className="px-2.5 py-1 bg-[#dff9f8] text-[#006a66] rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer"
+                            className="px-2.5 py-1 bg-[#E8F1F8] text-[#005596] rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer"
                           >
                             <ExternalLink className="w-3.5 h-3.5" /> Voir
                           </button>
                           <Link 
                             to={`/contacts/${contact.id}/edit`}
-                            className="p-1.5 hover:bg-slate-100 rounded-lg text-[#006a66] cursor-pointer" 
+                            className="p-1.5 hover:bg-slate-100 rounded-lg text-[#005596] cursor-pointer" 
                           >
                             <Edit className="w-4 h-4" />
                           </Link>
@@ -991,13 +995,13 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
             </div>
 
           {/* Pagination */}
-          <div className="px-6 py-3 bg-[#d9f3f2] border-t border-[#bcc9c7] flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-[#3d4948]">
+          <div className="px-6 py-3 bg-[#E8F1F8] border-t border-[#C9D4DE] flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-[#55636B]">
             <div>
-              Affichage de <span className="font-bold text-[#006a66]">
+              Affichage de <span className="font-bold text-[#005596]">
                 {filteredContacts.length === 0 ? 0 : (validCurrentPage - 1) * itemsPerPage + 1} - {Math.min(validCurrentPage * itemsPerPage, filteredContacts.length)}
-              </span> sur <span className="font-bold text-[#006a66]">{filteredContacts.length}</span> contacts
+              </span> sur <span className="font-bold text-[#005596]">{filteredContacts.length}</span> contacts
               {filteredContacts.length !== contacts.length && (
-                <span className="text-[#6d7a78] ml-1">({contacts.length} au total)</span>
+                <span className="text-[#8A98A1] ml-1">({contacts.length} au total)</span>
               )}
             </div>
 
@@ -1013,7 +1017,7 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
                     }
                     setCurrentPage(1);
                   }}
-                  className="px-2 py-1 border border-[#bcc9c7] rounded-lg text-xs bg-white cursor-pointer font-bold text-[#006a66]"
+                  className="px-2 py-1 border border-[#C9D4DE] rounded-lg text-xs bg-white cursor-pointer font-bold text-[#005596]"
                 >
                   <option value={10}>10</option>
                   <option value={20}>20</option>
@@ -1026,7 +1030,7 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
                 <button 
                   onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                   disabled={validCurrentPage === 1}
-                  className="p-1 hover:bg-[#d3eded] rounded disabled:opacity-30 cursor-pointer disabled:cursor-not-allowed transition-colors"
+                  className="p-1 hover:bg-[#E8F1F8] rounded disabled:opacity-30 cursor-pointer disabled:cursor-not-allowed transition-colors"
                   title="Page précédente"
                 >
                   <ChevronLeft className="w-4 h-4" />
@@ -1038,8 +1042,8 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
                     onClick={() => setCurrentPage(pageNum)}
                     className={`w-7 h-7 rounded-lg font-bold text-xs transition-colors cursor-pointer ${
                       pageNum === validCurrentPage
-                        ? 'bg-[#006a66] text-white shadow-xs'
-                        : 'hover:bg-[#bcdedc] text-[#3d4948]'
+                        ? 'bg-[#005596] text-white shadow-xs'
+                        : 'hover:bg-[#D9E6F2] text-[#55636B]'
                     }`}
                   >
                     {pageNum}
@@ -1049,7 +1053,7 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
                 <button 
                   onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
                   disabled={validCurrentPage >= totalPages}
-                  className="p-1 hover:bg-[#d3eded] rounded disabled:opacity-30 cursor-pointer disabled:cursor-not-allowed transition-colors"
+                  className="p-1 hover:bg-[#E8F1F8] rounded disabled:opacity-30 cursor-pointer disabled:cursor-not-allowed transition-colors"
                   title="Page suivante"
                 >
                   <ChevronRight className="w-4 h-4" />
@@ -1062,12 +1066,12 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
 
         {/* Floating Selection Action Bar */}
         {selectedContactIds.length > 0 && (
-          <div className="fixed bottom-8 left-1/2 -translate-x-1/2 bg-[#1d3434] text-white px-6 py-3 rounded-2xl shadow-2xl flex items-center gap-6 z-40 animate-slide-up">
+          <div className="fixed bottom-8 left-1/2 -translate-x-1/2 bg-[#1C2529] text-white px-6 py-3 rounded-2xl shadow-2xl flex items-center gap-6 z-40 animate-slide-up">
             <div className="flex items-center gap-2">
-              <span className="bg-[#006a66] px-2.5 py-0.5 rounded-full text-xs font-bold">
+              <span className="bg-[#005596] px-2.5 py-0.5 rounded-full text-xs font-bold">
                 {selectedContactIds.length}
               </span>
-              <span className="text-xs font-medium text-[#dcf6f5]">Contacts sélectionnés</span>
+              <span className="text-xs font-medium text-[#E8F1F8]">Contacts sélectionnés</span>
             </div>
 
             <div className="h-5 w-px bg-white/20" />
@@ -1075,13 +1079,13 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
             <div className="flex items-center gap-4 text-xs font-bold">
               <Link 
                 to="/export"
-                className="flex items-center gap-1.5 hover:text-[#7df6ef] transition-colors"
+                className="flex items-center gap-1.5 hover:text-[#FFC20C] transition-colors"
               >
                 <Download className="w-4 h-4" /> Exporter
               </Link>
               <Link 
                 to="/segments"
-                className="flex items-center gap-1.5 hover:text-[#7df6ef] transition-colors"
+                className="flex items-center gap-1.5 hover:text-[#FFC20C] transition-colors"
               >
                 <TagIcon className="w-4 h-4" /> Ajouter des tags
               </Link>
@@ -1100,35 +1104,32 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
 
       {/* Slide-over Profile Quick Drawer */}
       {quickDrawerContact && (
-        <div 
-          onClick={() => setQuickDrawerContact(null)}
-          className="fixed inset-0 z-50 flex justify-end bg-black/50 backdrop-blur-sm cursor-pointer"
-        >
-          <div 
-            onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-[480px] bg-white h-full shadow-2xl border-l border-[#bcc9c7] flex flex-col justify-between animate-slide-left p-6 overflow-y-auto cursor-default"
-          >
+        <Modal open={quickDrawerContact !== null} onClose={() => setQuickDrawerContact(null)} variant="drawer" noPadding>
+          <div className="p-6 flex flex-col justify-between min-h-full cursor-default">
             
             <div>
               <div className="flex justify-between items-start mb-6">
                 <div className="flex flex-col items-center text-center w-full">
-                  <div className="w-24 h-24 rounded-full bg-[#35b8b2]/20 p-1 mb-3 relative">
+                  <div className="w-24 h-24 rounded-full bg-[#005596]/20 p-1 mb-3 relative">
                     {quickDrawerContact.avatarUrl ? (
                       <img src={quickDrawerContact.avatarUrl} alt={quickDrawerContact.name} className="w-full h-full object-cover rounded-full" />
                     ) : (
-                      <div className="w-full h-full rounded-full bg-[#35b8b2] text-white flex items-center justify-center font-bold text-xl">
+                      <div className="w-full h-full rounded-full bg-[#005596] text-white flex items-center justify-center font-bold text-xl">
                         {quickDrawerContact.initials}
                       </div>
                     )}
                   </div>
-                  <h2 className="text-xl font-bold text-[#071f1f]">{quickDrawerContact.name}</h2>
-                  <p className="text-xs text-[#006a66] font-bold mt-0.5">{quickDrawerContact.title}</p>
-                  <p className="text-xs text-[#3d4948]">{quickDrawerContact.organization}</p>
+                  <h2 className="text-xl font-bold text-[#1C2529]">{quickDrawerContact.name}</h2>
+                  <p className="text-xs text-[#005596] font-bold mt-0.5">{quickDrawerContact.function || '—'}</p>
+                  <p className="text-xs text-[#55636B]">{quickDrawerContact.affiliation || '—'}</p>
+                  <span className="inline-block mt-2 px-2.5 py-1 bg-[#D9E6F2] text-[#005596] rounded-full text-[11px] font-bold">
+                    {CAREER_STAGE_LABELS[quickDrawerContact.researchCareerStage]}
+                  </span>
                 </div>
 
                 <button 
                   onClick={() => setQuickDrawerContact(null)}
-                  className="p-1.5 hover:bg-[#d3eded] rounded-full text-slate-500 transition-colors absolute right-4 top-4"
+                  className="p-1.5 hover:bg-[#E8F1F8] rounded-full text-slate-500 transition-colors absolute right-4 top-4"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -1136,32 +1137,36 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
 
               <div className="space-y-6">
                 {/* Contact Details */}
-                <section className="bg-[#dff9f8]/50 p-4 rounded-xl">
-                  <h3 className="text-xs font-bold text-[#006a66] uppercase tracking-wider mb-3">Coordonnées</h3>
+                <section className="bg-[#E8F1F8]/50 p-4 rounded-xl">
+                  <h3 className="text-xs font-bold text-[#005596] uppercase tracking-wider mb-3">Coordonnées</h3>
                   <div className="space-y-2 text-xs">
-                    <div className="flex items-center gap-3 text-[#3d4948]">
-                      <Mail className="w-4 h-4 text-[#006a66]" />
+                    <div className="flex items-center gap-3 text-[#55636B]">
+                      <Mail className="w-4 h-4 text-[#005596]" />
                       <span>{quickDrawerContact.email}</span>
                     </div>
-                    <div className="flex items-center gap-3 text-[#3d4948]">
-                      <Phone className="w-4 h-4 text-[#006a66]" />
-                      <span>{quickDrawerContact.phone}</span>
+                    <div className="flex items-center gap-3 text-[#55636B]">
+                      <Phone className="w-4 h-4 text-[#005596]" />
+                      <span>{quickDrawerContact.phone || '—'}</span>
                     </div>
-                    <div className="flex items-center gap-3 text-[#3d4948]">
-                      <Globe className="w-4 h-4 text-[#006a66]" />
-                      <span>Siège: {quickDrawerContact.country}</span>
+                    <div className="flex items-center gap-3 text-[#55636B]">
+                      <Globe className="w-4 h-4 text-[#005596]" />
+                      <span>Pays: {quickDrawerContact.countryOfOrigin || '—'}{quickDrawerContact.city ? ` · ${quickDrawerContact.city}` : ''}</span>
+                    </div>
+                    <div className="flex items-center gap-3 text-[#55636B]">
+                      <Users className="w-4 h-4 text-[#005596]" />
+                      <span>Genre: {GENDER_LABELS[quickDrawerContact.gender]}</span>
                     </div>
                   </div>
                 </section>
 
                 {/* Tags Section */}
                 <section>
-                  <h3 className="text-xs font-bold text-[#071f1f] mb-2 flex items-center justify-between">
+                  <h3 className="text-xs font-bold text-[#1C2529] mb-2 flex items-center justify-between">
                     <span>Étiquettes / Tags</span>
                     <Link 
                       to="/segments"
                       onClick={() => setQuickDrawerContact(null)}
-                      className="text-[11px] text-[#006a66] hover:underline font-bold"
+                      className="text-[11px] text-[#005596] hover:underline font-bold"
                     >
                       Gérer
                     </Link>
@@ -1179,25 +1184,32 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
                   </div>
                 </section>
 
-                {/* R&I Profile Tags */}
+                {/* R&I Profile Details */}
                 <section>
-                  <h3 className="text-xs font-bold text-[#071f1f] mb-3">Profil R&I & Expertise</h3>
-                  <div className="flex flex-wrap gap-2">
-                    {quickDrawerContact.expertise.map((exp, idx) => (
-                      <span key={idx} className="px-3 py-1 bg-[#abece7] text-[#2b6c6a] rounded-full text-xs font-semibold">
-                        {exp}
-                      </span>
-                    ))}
+                  <h3 className="text-xs font-bold text-[#1C2529] mb-3">Profil R&I</h3>
+                  <div className="space-y-2 text-xs text-[#55636B] bg-[#F4F6F8] p-4 rounded-xl border border-[#C9D4DE]/40">
+                    <div className="flex justify-between gap-2">
+                      <span className="font-bold text-[#1C2529]">Stade de carrière:</span>
+                      <span className="text-right">{CAREER_STAGE_LABELS[quickDrawerContact.researchCareerStage]}</span>
+                    </div>
+                    <div className="flex justify-between gap-2">
+                      <span className="font-bold text-[#1C2529]">Expérience:</span>
+                      <span className="text-right">{quickDrawerContact.experience || '—'}</span>
+                    </div>
+                    <div className="flex justify-between gap-2">
+                      <span className="font-bold text-[#1C2529]">Faculté / Dépt:</span>
+                      <span className="text-right">{quickDrawerContact.facultyDepartment || '—'}</span>
+                    </div>
                   </div>
                 </section>
               </div>
             </div>
 
-            <div className="pt-6 border-t border-[#bcc9c7] mt-6 flex gap-2">
+            <div className="pt-6 border-t border-[#C9D4DE] mt-6 flex gap-2">
               <Link 
                 to={`/contacts/${quickDrawerContact.id}/edit`}
                 onClick={() => setQuickDrawerContact(null)}
-                className="px-4 py-3 bg-[#abece7] text-[#006a66] hover:bg-[#86e2dc] font-bold text-xs rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer shrink-0"
+                className="px-4 py-3 bg-[#BCD7EE] text-[#005596] hover:bg-[#3F88C4] font-bold text-xs rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer shrink-0"
               >
                 <Edit className="w-4 h-4" />
                 Modifier
@@ -1208,40 +1220,31 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
                   setQuickDrawerContact(null);
                   onSelectContact(id);
                 }}
-                className="flex-1 py-3 bg-[#006a66] hover:bg-[#256865] text-white font-bold text-xs rounded-xl shadow transition-all active:scale-95 cursor-pointer"
+                className="flex-1 py-3 bg-[#005596] hover:bg-[#004275] text-white font-bold text-xs rounded-xl shadow transition-all active:scale-95 cursor-pointer"
               >
                 Voir la fiche complète
               </button>
             </div>
 
           </div>
-        </div>
+        </Modal>
       )}
 
       {/* SAVE SEGMENT MODAL */}
       {isSaveSegmentModalOpen && (
-        <div 
-          onClick={() => setIsSaveSegmentModalOpen(false)}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 cursor-pointer"
-        >
-          <div 
-            onClick={(e) => e.stopPropagation()}
-            className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 space-y-5 animate-fade-in cursor-default"
-          >
-            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-              <div className="flex items-center gap-2">
-                <Bookmark className="w-5 h-5 text-[#006a66]" />
-                <h3 className="font-extrabold text-base text-[#071f1f]">
-                  Enregistrer les filtres comme segment
-                </h3>
-              </div>
-              <button 
-                onClick={() => setIsSaveSegmentModalOpen(false)}
-                className="p-1 hover:bg-slate-100 rounded-full text-slate-400"
-              >
-                <X className="w-5 h-5" />
-              </button>
+        <Modal
+          open={isSaveSegmentModalOpen}
+          onClose={() => setIsSaveSegmentModalOpen(false)}
+          maxWidth="max-w-md"
+          title={
+            <div className="flex items-center gap-2">
+              <Bookmark className="w-5 h-5 text-[#005596]" />
+              <h3 className="font-extrabold text-base text-[#1C2529]">
+                Enregistrer les filtres comme segment
+              </h3>
             </div>
+          }
+        >
 
             <form onSubmit={handleSaveSegmentSubmit} className="space-y-4 text-xs">
               <div>
@@ -1252,21 +1255,21 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
                   value={newSegmentNameInput}
                   onChange={(e) => setNewSegmentNameInput(e.target.value)}
                   placeholder="ex: Experts Santé Afrique 2024"
-                  className="w-full p-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#006a66] font-semibold text-[#071f1f]"
+                  className="w-full p-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#005596] font-semibold text-[#1C2529]"
                   autoFocus
                 />
               </div>
 
-              <div className="bg-[#dff9f8]/50 p-3.5 rounded-xl border border-[#bcc9c7]/30 text-slate-600">
-                <p className="font-bold text-[#006a66] mb-1.5 text-xs">Filtres actuellement appliqués:</p>
+              <div className="bg-[#E8F1F8]/50 p-3.5 rounded-xl border border-[#C9D4DE]/30 text-slate-600">
+                <p className="font-bold text-[#005596] mb-1.5 text-xs">Filtres actuellement appliqués:</p>
                 <ul className="list-disc list-inside space-y-1 text-[11px] font-medium">
                   {appliedFilters.search && <li>Recherche: "{appliedFilters.search}"</li>}
-                  {appliedFilters.headquarters !== 'Tous les pays' && <li>Siège: {appliedFilters.headquarters}</li>}
-                  {appliedFilters.zones.length > 0 && <li>Zones: {appliedFilters.zones.join(', ')}</li>}
-                  {appliedFilters.actorTypes.length > 0 && <li>Types d'acteur: {appliedFilters.actorTypes.join(', ')}</li>}
-                  {appliedFilters.expertises.length > 0 && <li>Expertises: {appliedFilters.expertises.join(', ')}</li>}
+                  {appliedFilters.countries.length > 0 && <li>Pays d'origine: {appliedFilters.countries.join(', ')}</li>}
+                  {appliedFilters.genders.length > 0 && <li>Genres: {appliedFilters.genders.map(g => GENDER_LABELS[g as Gender]).join(', ')}</li>}
+                  {appliedFilters.careerStages.length > 0 && <li>Stades de carrière: {appliedFilters.careerStages.map(s => CAREER_STAGE_SHORT_LABELS[s as ResearchCareerStage]).join(', ')}</li>}
+                  {appliedFilters.affiliations && <li>Affiliation: {appliedFilters.affiliations}</li>}
                   {appliedFilters.tags.length > 0 && <li>Tags: {appliedFilters.tags.join(', ')}</li>}
-                  {!appliedFilters.search && appliedFilters.headquarters === 'Tous les pays' && appliedFilters.zones.length === 0 && appliedFilters.actorTypes.length === 0 && appliedFilters.expertises.length === 0 && appliedFilters.tags.length === 0 && (
+                  {!appliedFilters.search && appliedFilters.countries.length === 0 && appliedFilters.genders.length === 0 && appliedFilters.careerStages.length === 0 && !appliedFilters.affiliations && appliedFilters.tags.length === 0 && (
                     <li className="italic text-slate-500">Tous les contacts (aucun filtre restreint)</li>
                   )}
                 </ul>
@@ -1282,14 +1285,13 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-[#006a66] hover:bg-[#256865] text-white font-bold rounded-xl shadow transition-all active:scale-95 cursor-pointer"
+                  className="px-5 py-2 bg-[#005596] hover:bg-[#004275] text-white font-bold rounded-xl shadow transition-all active:scale-95 cursor-pointer"
                 >
                   Enregistrer
                 </button>
               </div>
             </form>
-          </div>
-        </div>
+        </Modal>
       )}
 
     </div>

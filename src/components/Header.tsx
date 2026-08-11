@@ -1,6 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Link, NavLink } from 'react-router-dom';
-import { ArsiiLogo } from './ArsiiLogo';
 import { 
   Bell, 
   HelpCircle, 
@@ -68,7 +67,7 @@ export const Header: React.FC<HeaderProps> = ({
   ];
 
   return (
-    <header className={`fixed top-0 left-0 right-0 z-50 h-16 w-full bg-gradient-to-r from-[#35B8B2] to-[#256865] shadow-md text-white transition-transform duration-300 ${
+    <header className={`fixed top-0 left-0 right-0 z-50 h-16 w-full bg-gradient-to-r from-[#005596] via-[#005596] to-[#B8167C] shadow-md text-white transition-transform duration-300 ${
       isHeaderVisible ? 'translate-y-0' : '-translate-y-full'
     }`}>
       <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-10 h-16 flex items-center justify-between">
@@ -87,8 +86,16 @@ export const Header: React.FC<HeaderProps> = ({
             to="/dashboard"
             className="flex items-center gap-2.5 cursor-pointer group"
           >
-            <ArsiiLogo className="w-9 h-9 sm:w-10 sm:h-10 group-hover:scale-105 transition-transform" />
-            <span className="font-extrabold text-xl tracking-tight hidden sm:inline-block text-white">ARSII</span>
+            <span className="bg-white rounded-md px-3 py-1 shadow-sm flex items-center">
+              <img 
+                src="/euraxess-africa-logo.png" 
+                alt="EURAXESS Africa" 
+                className="h-7 sm:h-8 w-auto object-contain group-hover:scale-105 transition-transform"
+              />
+            </span>
+            <span className="font-extrabold text-lg tracking-tight hidden sm:inline-block text-white">
+              EURAXESS <span className="text-[#FFC20C]">Africa</span>
+            </span>
           </Link>
         </div>
 
@@ -100,7 +107,7 @@ export const Header: React.FC<HeaderProps> = ({
               to={link.to}
               className={({ isActive }) => `py-1 text-sm font-medium transition-all relative cursor-pointer ${
                 isActive 
-                  ? 'text-white font-bold border-b-2 border-white' 
+                  ? 'text-white font-semibold border-b-2 border-white' 
                   : 'text-white/80 hover:text-white'
               }`}
             >
@@ -127,15 +134,15 @@ export const Header: React.FC<HeaderProps> = ({
               title="Notifications"
             >
               <Bell className="w-5 h-5" />
-              <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-[#34fcec] animate-ping" />
-              <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-[#34fcec]" />
+              <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-[#FFC20C] animate-ping" />
+              <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-[#FFC20C]" />
             </button>
 
             {notificationsOpen && (
               <div className="absolute right-0 top-full mt-2 w-80 bg-white rounded-xl shadow-2xl border border-slate-200 py-3 text-slate-800 z-[100] animate-in fade-in slide-in-from-top-1 duration-150">
                 <div className="px-4 py-2 border-b border-slate-100 flex justify-between items-center">
                   <span className="font-bold text-sm">Notifications R&I</span>
-                  <span className="text-xs text-[#006a66] font-semibold bg-[#dff9f8] px-2 py-0.5 rounded-full">3 nouvelles</span>
+                  <span className="text-xs text-[#005596] font-semibold bg-[#E8F1F8] px-2 py-0.5 rounded-full">3 nouvelles</span>
                 </div>
                 <div className="divide-y divide-slate-100 max-h-64 overflow-y-auto">
                   <div className="px-4 py-2.5 hover:bg-slate-50 transition-colors text-xs">
@@ -155,7 +162,7 @@ export const Header: React.FC<HeaderProps> = ({
                   <Link 
                     to="/import"
                     onClick={() => setNotificationsOpen(false)}
-                    className="text-xs text-[#006a66] font-bold hover:underline cursor-pointer"
+                    className="text-xs text-[#005596] font-bold hover:underline cursor-pointer"
                   >
                     Voir l'importation en cours
                   </Link>
@@ -196,7 +203,7 @@ export const Header: React.FC<HeaderProps> = ({
               {profileDropdownOpen && (
                 <div className="absolute right-0 top-full mt-2 w-56 bg-white rounded-xl shadow-2xl border border-slate-200 py-2 text-slate-800 z-[100] animate-in fade-in slide-in-from-top-1 duration-150">
                   <div className="px-4 py-3 border-b border-slate-100">
-                    <p className="font-bold text-sm text-slate-900">{user?.name || 'Utilisateur ARSII'}</p>
+                    <p className="font-bold text-sm text-slate-900">{user?.name || 'Utilisateur EURAXESS'}</p>
                     <p className="text-xs text-slate-500">{user?.email || ''}</p>
                   </div>
 
@@ -204,7 +211,7 @@ export const Header: React.FC<HeaderProps> = ({
                     <Link
                       to="/profile"
                       onClick={() => setProfileDropdownOpen(false)}
-                      className="w-full px-4 py-2 text-left text-xs text-slate-700 hover:bg-[#dff9f8] hover:text-[#006a66] flex items-center gap-2 transition-colors cursor-pointer"
+                      className="w-full px-4 py-2 text-left text-xs text-slate-700 hover:bg-[#005596]/10 hover:text-[#005596] flex items-center gap-2 transition-colors cursor-pointer"
                     >
                       <UserCircle className="w-4 h-4" />
                       Mon profil
@@ -212,7 +219,7 @@ export const Header: React.FC<HeaderProps> = ({
                     <Link
                       to="/contacts/new"
                       onClick={() => setProfileDropdownOpen(false)}
-                      className="w-full px-4 py-2 text-left text-xs text-slate-700 hover:bg-[#dff9f8] hover:text-[#006a66] flex items-center gap-2 transition-colors cursor-pointer"
+                      className="w-full px-4 py-2 text-left text-xs text-slate-700 hover:bg-[#005596]/10 hover:text-[#005596] flex items-center gap-2 transition-colors cursor-pointer"
                     >
                       <PlusCircle className="w-4 h-4" />
                       Nouveau contact
@@ -220,7 +227,7 @@ export const Header: React.FC<HeaderProps> = ({
                     <Link
                       to="/export"
                       onClick={() => setProfileDropdownOpen(false)}
-                      className="w-full px-4 py-2 text-left text-xs text-slate-700 hover:bg-[#dff9f8] hover:text-[#006a66] flex items-center gap-2 transition-colors cursor-pointer"
+                      className="w-full px-4 py-2 text-left text-xs text-slate-700 hover:bg-[#005596]/10 hover:text-[#005596] flex items-center gap-2 transition-colors cursor-pointer"
                     >
                       <Download className="w-4 h-4" />
                       Exporter les données
@@ -242,7 +249,7 @@ export const Header: React.FC<HeaderProps> = ({
           ) : (
             <Link
               to="/login"
-              className="px-4 py-1.5 rounded-lg bg-white/20 hover:bg-white text-white hover:text-[#006a66] font-semibold text-xs transition-all shadow-sm cursor-pointer"
+              className="px-4 py-1.5 rounded-lg bg-white/20 hover:bg-white text-white hover:text-[#005596] font-semibold text-xs transition-all shadow-sm cursor-pointer"
             >
               Se connecter
             </Link>
@@ -253,7 +260,7 @@ export const Header: React.FC<HeaderProps> = ({
 
       {/* Mobile Drawer Menu - Positioned Absolute so it floats over page content */}
       {mobileMenuOpen && (
-        <div className="md:hidden absolute top-full left-0 right-0 w-full bg-[#006a66] border-t border-white/10 px-4 py-4 space-y-2 shadow-2xl z-[100] animate-in fade-in slide-in-from-top-2 duration-150">
+        <div className="md:hidden absolute top-full left-0 right-0 w-full bg-gradient-to-r from-[#005596] to-[#B8167C] border-t border-white/10 px-4 py-4 space-y-2 shadow-2xl z-[100] animate-in fade-in slide-in-from-top-2 duration-150">
           {navLinks.map((link) => (
             <NavLink
               key={link.to}
@@ -270,7 +277,7 @@ export const Header: React.FC<HeaderProps> = ({
             <Link
               to="/contacts/new"
               onClick={() => setMobileMenuOpen(false)}
-              className="w-full text-left py-2 px-3 rounded-lg text-xs bg-[#35b8b2] font-semibold flex items-center gap-2 cursor-pointer"
+              className="w-full text-left py-2 px-3 rounded-lg text-xs bg-[#FFC20C] text-[#1C2529] font-bold flex items-center gap-2 cursor-pointer"
             >
               <PlusCircle className="w-4 h-4" /> Ajouter un expert
             </Link>

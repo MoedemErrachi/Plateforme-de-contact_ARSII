@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { User, Lock, Eye, EyeOff, ShieldCheck, Sparkles, CheckCircle2, ArrowRight, HelpCircle, X, Mail, Building2 } from 'lucide-react';
-import { ArsiiLogo } from './ArsiiLogo';
+import { Modal } from './Modal';
 import { User as AuthUser } from '../types';
 
 interface AuthViewProps {
@@ -52,12 +52,13 @@ export const AuthView: React.FC<AuthViewProps> = ({ onLoginSuccess }) => {
         return;
       }
 
+      const u = data.user || data.data?.user;
       onLoginSuccess({
-        id: data.data?.user?.id,
-        name: data.data?.user?.name || email.split('@')[0].toUpperCase(),
-        email: data.data?.user?.email || email,
-        role: data.data?.user?.role || 'user',
-        avatarUrl: data.data?.user?.avatarUrl || null
+        id: u?.id,
+        name: u?.name || email.split('@')[0].toUpperCase(),
+        email: u?.email || email,
+        role: u?.role || 'user',
+        avatarUrl: u?.avatarUrl || null
       });
     } catch (err) {
       setErrorMessage('Erreur réseau. Vérifiez que le serveur est démarré sur le port 5000.');
@@ -68,33 +69,39 @@ export const AuthView: React.FC<AuthViewProps> = ({ onLoginSuccess }) => {
 
 
   return (
-    <div className="min-h-screen w-full flex flex-col items-center justify-center p-4 sm:p-6 relative overflow-hidden bg-[#e4fffe]">
+    <div className="min-h-screen w-full flex flex-col items-center justify-center p-4 sm:p-6 relative overflow-hidden bg-[#F1F7FC]">
       {/* Mesh Background Gradients */}
       <div 
         className="absolute inset-0 pointer-events-none opacity-80"
         style={{
           background: `
-            radial-gradient(at 0% 0%, #e4fffe 0%, transparent 50%),
-            radial-gradient(at 100% 0%, #cee8e7 0%, transparent 50%),
-            radial-gradient(at 100% 100%, #dff9f8 0%, transparent 50%),
+            radial-gradient(at 0% 0%, #F1F7FC 0%, transparent 50%),
+            radial-gradient(at 100% 0%, #D9E6F2 0%, transparent 50%),
+            radial-gradient(at 100% 100%, #E8F1F8 0%, transparent 50%),
             radial-gradient(at 0% 100%, #ffffff 0%, transparent 50%)
           `
         }}
       />
 
       {/* Floating Decorative Elements */}
-      <div className="absolute top-10 left-10 w-48 h-48 bg-[#35b8b2]/10 rounded-full blur-3xl pointer-events-none" />
-      <div className="absolute bottom-10 right-10 w-64 h-64 bg-[#006a66]/10 rounded-full blur-3xl pointer-events-none" />
+      <div className="absolute top-10 left-10 w-48 h-48 bg-[#005596]/10 rounded-full blur-3xl pointer-events-none" />
+      <div className="absolute bottom-10 right-10 w-64 h-64 bg-[#005596]/10 rounded-full blur-3xl pointer-events-none" />
 
       {/* Main Authentication Card Container */}
       <main className="w-full max-w-[440px] z-10 animate-fade-in my-auto">
         
         {/* Auth Card */}
-        <div className="bg-white rounded-[16px] p-8 sm:p-10 shadow-xl border border-[#bcc9c7]/40 flex flex-col items-center relative">
+        <div className="bg-white rounded-[16px] p-8 sm:p-10 shadow-xl border border-[#C9D4DE]/40 flex flex-col items-center relative">
           
           {/* Logo Badge */}
           <div className="mb-6 relative">
-            <ArsiiLogo className="w-24 h-24 drop-shadow-md" />
+            <span className="block w-24 h-24 rounded-full bg-white shadow-md p-1.5 border border-[#C9D4DE]/40">
+              <img
+                src="/euraxess-africa-logo.png"
+                alt="EURAXESS Africa"
+                className="w-full h-full object-contain"
+              />
+            </span>
             <div className="absolute -bottom-1 -right-1 bg-emerald-500 text-white rounded-full p-1 shadow-sm" title="Réseau Sécurisé SSL/TLS">
               <ShieldCheck className="w-3.5 h-3.5" />
             </div>
@@ -102,10 +109,10 @@ export const AuthView: React.FC<AuthViewProps> = ({ onLoginSuccess }) => {
 
           {/* Header Text */}
           <div className="text-center mb-8">
-            <h1 className="text-2xl font-black text-[#071f1f] tracking-tight mb-1">
-              Bienvenue sur ARSII
+            <h1 className="text-2xl font-black text-[#1C2529] tracking-tight mb-1">
+              Bienvenue sur EURAXESS Africa
             </h1>
-            <p className="text-xs font-semibold text-[#3d4948]">
+            <p className="text-xs font-semibold text-[#55636B]">
               Écosystème de contacts R&I Europe-Afrique
             </p>
           </div>
@@ -123,30 +130,30 @@ export const AuthView: React.FC<AuthViewProps> = ({ onLoginSuccess }) => {
             
             {/* Email Field */}
             <div className="flex flex-col gap-1.5">
-              <label htmlFor="email" className="text-[11px] font-extrabold text-[#3d4948] uppercase tracking-wider">
+              <label htmlFor="email" className="text-[11px] font-extrabold text-[#55636B] uppercase tracking-wider">
                 IDENTIFIANT / E-MAIL
               </label>
               <div className="relative group">
-                <User className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-[#6d7a78] group-focus-within:text-[#006a66] transition-colors" />
+                <User className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-[#8A98A1] group-focus-within:text-[#005596] transition-colors" />
                 <input
                   id="email"
                   type="email"
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="votre.nom@arsii.org"
-                  className="w-full pl-10 pr-4 py-3 bg-[#dff9f8]/60 focus:bg-white border border-[#bcc9c7] focus:border-[#006a66] rounded-xl text-xs font-bold text-[#071f1f] placeholder-[#6d7a78]/60 focus:outline-none focus:ring-2 focus:ring-[#006a66]/20 transition-all"
+                    placeholder="votre.nom@euraxess-africa.org"
+                  className="w-full pl-10 pr-4 py-3 bg-[#E8F1F8]/60 focus:bg-white border border-[#C9D4DE] focus:border-[#005596] rounded-xl text-xs font-bold text-[#1C2529] placeholder-[#8A98A1]/60 focus:outline-none focus:ring-2 focus:ring-[#005596]/20 transition-all"
                 />
               </div>
             </div>
 
             {/* Password Field */}
             <div className="flex flex-col gap-1.5">
-              <label htmlFor="password" className="text-[11px] font-extrabold text-[#3d4948] uppercase tracking-wider">
+              <label htmlFor="password" className="text-[11px] font-extrabold text-[#55636B] uppercase tracking-wider">
                 MOT DE PASSE
               </label>
               <div className="relative group">
-                <Lock className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-[#6d7a78] group-focus-within:text-[#006a66] transition-colors" />
+                <Lock className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-[#8A98A1] group-focus-within:text-[#005596] transition-colors" />
                 <input
                   id="password"
                   type={showPassword ? 'text' : 'password'}
@@ -154,12 +161,12 @@ export const AuthView: React.FC<AuthViewProps> = ({ onLoginSuccess }) => {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
-                  className="w-full pl-10 pr-11 py-3 bg-[#dff9f8]/60 focus:bg-white border border-[#bcc9c7] focus:border-[#006a66] rounded-xl text-xs font-bold text-[#071f1f] placeholder-[#6d7a78]/60 focus:outline-none focus:ring-2 focus:ring-[#006a66]/20 transition-all"
+                  className="w-full pl-10 pr-11 py-3 bg-[#E8F1F8]/60 focus:bg-white border border-[#C9D4DE] focus:border-[#005596] rounded-xl text-xs font-bold text-[#1C2529] placeholder-[#8A98A1]/60 focus:outline-none focus:ring-2 focus:ring-[#005596]/20 transition-all"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[#6d7a78] hover:text-[#006a66] transition-colors focus:outline-none cursor-pointer p-1"
+                  className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[#8A98A1] hover:text-[#005596] transition-colors focus:outline-none cursor-pointer p-1"
                   title={showPassword ? 'Masquer' : 'Afficher'}
                 >
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -174,9 +181,9 @@ export const AuthView: React.FC<AuthViewProps> = ({ onLoginSuccess }) => {
                   type="checkbox"
                   checked={rememberMe}
                   onChange={(e) => setRememberMe(e.target.checked)}
-                  className="w-4 h-4 rounded border-[#bcc9c7] text-[#006a66] focus:ring-[#006a66] cursor-pointer"
+                  className="w-4 h-4 rounded border-[#C9D4DE] text-[#005596] focus:ring-[#005596] cursor-pointer"
                 />
-                <span className="text-xs font-semibold text-[#3d4948] group-hover:text-[#071f1f] transition-colors">
+                <span className="text-xs font-semibold text-[#55636B] group-hover:text-[#1C2529] transition-colors">
                   Se souvenir de moi
                 </span>
               </label>
@@ -184,7 +191,7 @@ export const AuthView: React.FC<AuthViewProps> = ({ onLoginSuccess }) => {
               <button
                 type="button"
                 onClick={() => setIsForgotPasswordOpen(true)}
-                className="text-xs font-bold text-[#006a66] hover:underline decoration-2 underline-offset-4 transition-all cursor-pointer"
+                className="text-xs font-bold text-[#005596] hover:underline decoration-2 underline-offset-4 transition-all cursor-pointer"
               >
                 Mot de passe oublié ?
               </button>
@@ -194,7 +201,7 @@ export const AuthView: React.FC<AuthViewProps> = ({ onLoginSuccess }) => {
             <button
               type="submit"
               disabled={isLoading}
-              className="w-full py-3.5 px-4 bg-gradient-to-r from-[#35b8b2] to-[#256865] hover:from-[#2ca39d] hover:to-[#1d5351] text-white font-extrabold rounded-xl text-sm shadow-md hover:shadow-lg transition-all active:scale-[0.98] flex items-center justify-center gap-2 mt-2 cursor-pointer disabled:opacity-75"
+              className="w-full py-3.5 px-4 bg-gradient-to-r from-[#005596] to-[#004275] hover:from-[#004275] hover:to-[#003B66] text-white font-extrabold rounded-xl text-sm shadow-md hover:shadow-lg transition-all active:scale-[0.98] flex items-center justify-center gap-2 mt-2 cursor-pointer disabled:opacity-75"
             >
               {isLoading ? (
                 <>
@@ -213,11 +220,11 @@ export const AuthView: React.FC<AuthViewProps> = ({ onLoginSuccess }) => {
 
           {/* Footer Access Request Link */}
           <div className="mt-6 text-center flex items-center gap-1.5 text-xs">
-            <span className="text-[#3d4948] font-medium">Nouveau membre ?</span>
+            <span className="text-[#55636B] font-medium">Nouveau membre ?</span>
             <button
               type="button"
               onClick={() => setIsRequestAccessOpen(true)}
-              className="font-bold text-[#006a66] hover:underline decoration-2 underline-offset-4 cursor-pointer"
+              className="font-bold text-[#005596] hover:underline decoration-2 underline-offset-4 cursor-pointer"
             >
               Demander un accès
             </button>
@@ -226,24 +233,21 @@ export const AuthView: React.FC<AuthViewProps> = ({ onLoginSuccess }) => {
         </div>
 
         {/* Network Copyright Anchor */}
-        <p className="text-center mt-6 text-xs font-semibold text-[#3d4948]/70">
-          © 2024 Réseau ARSII Recherche & Innovation
+        <p className="text-center mt-6 text-xs font-semibold text-[#55636B]/70">
+          © 2024 EURAXESS Africa Recherche & Innovation
         </p>
 
       </main>
 
       {/* FORGOT PASSWORD MODAL */}
       {isForgotPasswordOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 space-y-4 animate-fade-in relative">
-            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-              <h3 className="font-extrabold text-base text-[#071f1f]">Réinitialisation du mot de passe</h3>
-              <button onClick={() => { setIsForgotPasswordOpen(false); setResetSent(false); }} className="p-1 hover:bg-slate-100 rounded-full text-slate-400">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {resetSent ? (
+        <Modal
+          open={isForgotPasswordOpen}
+          onClose={() => { setIsForgotPasswordOpen(false); setResetSent(false); }}
+          maxWidth="max-w-md"
+          title={<h3 className="font-extrabold text-base text-[#1C2529]">Réinitialisation du mot de passe</h3>}
+        >
+          {resetSent ? (
               <div className="py-4 text-center space-y-3">
                 <div className="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto">
                   <CheckCircle2 className="w-6 h-6" />
@@ -254,7 +258,7 @@ export const AuthView: React.FC<AuthViewProps> = ({ onLoginSuccess }) => {
                 </p>
                 <button
                   onClick={() => { setIsForgotPasswordOpen(false); setResetSent(false); }}
-                  className="px-5 py-2 bg-[#006a66] text-white font-bold text-xs rounded-xl shadow cursor-pointer mt-2"
+                  className="px-5 py-2 bg-[#005596] text-white font-bold text-xs rounded-xl shadow cursor-pointer mt-2"
                 >
                   Fermer
                 </button>
@@ -268,17 +272,17 @@ export const AuthView: React.FC<AuthViewProps> = ({ onLoginSuccess }) => {
                 className="space-y-4 text-xs"
               >
                 <p className="text-slate-600 text-xs">
-                  Saisissez l'adresse e-mail associée à votre compte ARSII. Un lien sécurisé vous sera transmis immédiatement.
+                  Saisissez l'adresse e-mail associée à votre compte EURAXESS Africa. Un lien sécurisé vous sera transmis immédiatement.
                 </p>
                 <div>
-                  <label className="font-bold text-slate-700 block mb-1">E-mail professionnel ARSII *</label>
+                  <label className="font-bold text-slate-700 block mb-1">E-mail professionnel EURAXESS Africa *</label>
                   <input
                     type="email"
                     required
                     value={resetEmail}
                     onChange={(e) => setResetEmail(e.target.value)}
-                    placeholder="votre.nom@arsii.org"
-                    className="w-full p-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#006a66]"
+                  placeholder="votre.nom@euraxess-africa.org"
+                    className="w-full p-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#005596]"
                   />
                 </div>
                 <div className="flex justify-end gap-2 pt-2">
@@ -291,40 +295,36 @@ export const AuthView: React.FC<AuthViewProps> = ({ onLoginSuccess }) => {
                   </button>
                   <button
                     type="submit"
-                    className="px-5 py-2 bg-[#006a66] text-white font-bold rounded-xl shadow"
+                    className="px-5 py-2 bg-[#005596] text-white font-bold rounded-xl shadow"
                   >
                     Envoyer le lien
                   </button>
                 </div>
               </form>
             )}
-          </div>
-        </div>
+        </Modal>
       )}
 
       {/* REQUEST ACCESS MODAL */}
       {isRequestAccessOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 space-y-4 animate-fade-in relative">
-            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-              <h3 className="font-extrabold text-base text-[#071f1f]">Demande d'accès au réseau ARSII</h3>
-              <button onClick={() => { setIsRequestAccessOpen(false); setRequestSubmitted(false); }} className="p-1 hover:bg-slate-100 rounded-full text-slate-400">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {requestSubmitted ? (
+        <Modal
+          open={isRequestAccessOpen}
+          onClose={() => { setIsRequestAccessOpen(false); setRequestSubmitted(false); }}
+          maxWidth="max-w-md"
+          title={<h3 className="font-extrabold text-base text-[#1C2529]">Demande d'accès au réseau EURAXESS Africa</h3>}
+        >
+          {requestSubmitted ? (
               <div className="py-4 text-center space-y-3">
                 <div className="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto">
                   <CheckCircle2 className="w-6 h-6" />
                 </div>
                 <p className="text-xs font-bold text-slate-800">Demande transmise avec succès !</p>
                 <p className="text-[11px] text-slate-500">
-                  L'administration du Réseau ARSII examinera vos informations sous 24h ouvrées.
+                  L'administration d'EURAXESS Africa examinera vos informations sous 24h ouvrées.
                 </p>
                 <button
                   onClick={() => { setIsRequestAccessOpen(false); setRequestSubmitted(false); }}
-                  className="px-5 py-2 bg-[#006a66] text-white font-bold text-xs rounded-xl shadow cursor-pointer mt-2"
+                  className="px-5 py-2 bg-[#005596] text-white font-bold text-xs rounded-xl shadow cursor-pointer mt-2"
                 >
                   Compris
                 </button>
@@ -390,15 +390,14 @@ export const AuthView: React.FC<AuthViewProps> = ({ onLoginSuccess }) => {
                   </button>
                   <button
                     type="submit"
-                    className="px-5 py-2 bg-[#006a66] text-white font-bold rounded-xl shadow cursor-pointer"
+                    className="px-5 py-2 bg-[#005596] text-white font-bold rounded-xl shadow cursor-pointer"
                   >
                     Envoyer ma demande
                   </button>
                 </div>
               </form>
             )}
-          </div>
-        </div>
+        </Modal>
       )}
 
     </div>

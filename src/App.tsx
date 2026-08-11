@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
-import { Contact, ImportConflict, ExchangeNote, Tag, Segment, FilterState, User } from './types';
-import { INITIAL_IMPORT_CONFLICTS } from './data/mockData';
+import { Contact, ExchangeNote, Tag, Segment, FilterState, User } from './types';
 import { useToast } from './components/Toast';
 import { Header } from './components/Header';
 import { Footer } from './components/Footer';
@@ -17,16 +16,22 @@ import { AuthView } from './components/AuthView';
 
 // --- API helper ---
 function mapContactFromApi(c: any): Contact {
+  const firstName = c.firstName || '';
+  const lastName = c.lastName || '';
   return {
     ...c,
-    actorType: c.actorType || c.typeActeur?.name || 'PME',
-    interventionZones: c.interventionZones || [],
-    expertise: c.expertise || [],
+    firstName,
+    lastName,
+    name: `${firstName} ${lastName}`.trim() || c.name || 'Nouveau Contact',
+    initials: `${(firstName[0] || '')}${(lastName[0] || '')}`.toUpperCase() || c.initials || 'NC',
+    gender: c.gender || 'PREFER_NOT_TO_SAY',
+    researchCareerStage: c.researchCareerStage || 'R1_FIRST_STAGE',
+    countryOfOrigin: c.countryOfOrigin || '',
+    city: c.city || '',
+    phone: c.phone || '',
+    affiliation: c.affiliation || '',
     tags: Array.isArray(c.tags)
       ? c.tags.map((t: any) => t.tag?.name ?? t.name ?? t)
-      : [],
-    projects: Array.isArray(c.projects)
-      ? c.projects.map((p: any) => p.project ?? p)
       : [],
     exchangeNotes: Array.isArray(c.exchangeNotes)
       ? c.exchangeNotes.map((n: any) => ({
@@ -56,7 +61,6 @@ export default function App() {
   const location = useLocation();
 
   const [contacts, setContacts] = useState<Contact[]>([]);
-  const [conflicts, setConflicts] = useState<ImportConflict[]>(INITIAL_IMPORT_CONFLICTS);
   const [isLoadingData, setIsLoadingData] = useState<boolean>(true);
 
   // Selected contacts in directory for bulk actions & export
@@ -65,7 +69,7 @@ export default function App() {
   // Pagination limit state across view switches (persisted locally)
   const [itemsPerPage, setItemsPerPage] = useState<number>(() => {
     try {
-      const saved = localStorage.getItem('arsii_contacts_items_per_page');
+      const saved = localStorage.getItem('euraxess_contacts_items_per_page');
       const n = saved ? Number(saved) : NaN;
       return [10, 20, 50, 100].includes(n) ? n : 10;
     } catch {
@@ -75,7 +79,7 @@ export default function App() {
 
   useEffect(() => {
     try {
-      localStorage.setItem('arsii_contacts_items_per_page', String(itemsPerPage));
+      localStorage.setItem('euraxess_contacts_items_per_page', String(itemsPerPage));
     } catch {
       // ignore
     }
@@ -115,9 +119,9 @@ export default function App() {
         if (Array.isArray(data.data.tags)) {
           setTags(data.data.tags);
         }
-        if (Array.isArray(data.data.savedSegments)) {
+        if (Array.isArray(data.data.segments)) {
           setSegments(
-            data.data.savedSegments.map((s: any) => ({
+            data.data.segments.map((s: any) => ({
               id: s.id,
               name: s.name,
               description: s.description,
@@ -184,16 +188,18 @@ export default function App() {
       const res = await apiFetch(`/api/contacts/${updatedContact.id}`, {
         method: 'PUT',
         body: JSON.stringify({
-          name: updatedContact.name,
-          title: updatedContact.title,
+          firstName: updatedContact.firstName,
+          lastName: updatedContact.lastName,
           email: updatedContact.email,
+          gender: updatedContact.gender,
+          countryOfOrigin: updatedContact.countryOfOrigin,
+          city: updatedContact.city,
           phone: updatedContact.phone,
-          organization: updatedContact.organization,
-          country: updatedContact.country,
-          actorType: updatedContact.actorType,
-          expertise: updatedContact.expertise,
-          interventionZones: updatedContact.interventionZones,
-          linkedin: updatedContact.linkedin,
+          affiliation: updatedContact.affiliation,
+          function: updatedContact.function,
+          experience: updatedContact.experience,
+          facultyDepartment: updatedContact.facultyDepartment,
+          researchCareerStage: updatedContact.researchCareerStage,
           avatarUrl: updatedContact.avatarUrl,
           tagIds: (updatedContact.tags || [])
             .map(name => tags.find(t => t.name.toLowerCase() === name.toLowerCase())?.id)
@@ -218,16 +224,18 @@ export default function App() {
       const res = await apiFetch('/api/contacts', {
         method: 'POST',
         body: JSON.stringify({
-          name: newContact.name,
-          title: newContact.title,
+          firstName: newContact.firstName,
+          lastName: newContact.lastName,
           email: newContact.email,
+          gender: newContact.gender,
+          countryOfOrigin: newContact.countryOfOrigin,
+          city: newContact.city,
           phone: newContact.phone,
-          organization: newContact.organization,
-          country: newContact.country,
-          actorType: newContact.actorType,
-          expertise: newContact.expertise,
-          interventionZones: newContact.interventionZones,
-          linkedin: newContact.linkedin,
+          affiliation: newContact.affiliation,
+          function: newContact.function,
+          experience: newContact.experience,
+          facultyDepartment: newContact.facultyDepartment,
+          researchCareerStage: newContact.researchCareerStage,
           avatarUrl: newContact.avatarUrl,
           tagIds: (newContact.tags || [])
             .map(name => tags.find(t => t.name.toLowerCase() === name.toLowerCase())?.id)
@@ -289,46 +297,66 @@ export default function App() {
   // ──────────────────────────────────────────────
   // IMPORT
   // ──────────────────────────────────────────────
-  const handleResolveConflict = (conflictId: string, status: 'resolved_merged' | 'ignored' | 'forced_new') => {
-    setConflicts(prev => prev.map(c => c.id === conflictId ? { ...c, status } : c));
-  };
-
   const handleImportContacts = async (newContacts: Contact[], updatedContacts: Contact[] = []) => {
+    let res: Response;
     try {
-      const res = await apiFetch('/api/contacts/bulk', {
+      res = await fetch('/api/contacts/bulk', {
         method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           newContacts: newContacts.map(c => ({
-            name: c.name,
+            firstName: c.firstName,
+            lastName: c.lastName,
             email: c.email,
+            gender: c.gender,
+            countryOfOrigin: c.countryOfOrigin,
+            city: c.city,
             phone: c.phone,
-            organization: c.organization,
-            title: c.title,
-            country: c.country,
-            actorType: c.actorType,
-            expertise: c.expertise,
-            interventionZones: c.interventionZones
+            affiliation: c.affiliation,
+            function: c.function,
+            experience: c.experience,
+            facultyDepartment: c.facultyDepartment,
+            researchCareerStage: c.researchCareerStage
           })),
           updatedContacts: updatedContacts.map(c => ({
             id: c.id,
-            name: c.name,
+            firstName: c.firstName,
+            lastName: c.lastName,
             email: c.email,
+            gender: c.gender,
+            countryOfOrigin: c.countryOfOrigin,
+            city: c.city,
             phone: c.phone,
-            organization: c.organization,
-            title: c.title,
-            country: c.country,
-            actorType: c.actorType,
-            expertise: c.expertise
+            affiliation: c.affiliation,
+            function: c.function,
+            experience: c.experience,
+            facultyDepartment: c.facultyDepartment,
+            researchCareerStage: c.researchCareerStage
           }))
         })
       });
-      showToast(`Importation réussie : ${res.data?.createdCount || 0} créés, ${res.data?.updatedCount || 0} mis à jour.`, 'success');
-      await loadContacts();
-      return true;
     } catch (err: any) {
-      showToast(`Erreur lors de l'importation : ${err.message}`, 'error');
-      return false;
+      showToast(`Erreur réseau lors de l'importation : ${err.message}`, 'error');
+      return { ok: false, httpStatus: 0, status: 'FAILED', errorMessage: err.message, data: null };
     }
+
+    let body: any = null;
+    try {
+      body = await res.json();
+    } catch {
+      body = null;
+    }
+
+    if (!res.ok || body?.status !== 'SUCCESS') {
+      const errorMessage = body?.errorMessage || body?.message || body?.error || `Erreur serveur (HTTP ${res.status})`;
+      showToast(`Échec de l'importation : ${errorMessage}`, 'error');
+      return { ok: false, httpStatus: res.status, status: body?.status || 'FAILED', errorMessage, data: null };
+    }
+
+    showToast(`Importation réussie : ${body.data?.createdCount || 0} créés, ${body.data?.updatedCount || 0} mis à jour.`, 'success');
+    await loadContacts();
+    return { ok: true, httpStatus: res.status, status: body.status, errorMessage: '', data: body.data };
   };
 
   // ──────────────────────────────────────────────
@@ -552,7 +580,7 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#F4F6F8] text-[#071f1f] font-sans selection:bg-[#35b8b2] selection:text-white w-full max-w-full overflow-x-hidden">
+    <div className="min-h-screen flex flex-col bg-[#F4F6F8] text-[#1C2529] font-sans selection:bg-[#005596] selection:text-white w-full max-w-full overflow-x-hidden">
       <Header
         isAuthenticated={isAuthenticated}
         user={user}
@@ -569,6 +597,7 @@ export default function App() {
           element={
             <DashboardView
               contacts={contacts}
+              tags={tags}
               onSelectContact={handleSelectContact}
               isLoading={isLoadingData}
             />

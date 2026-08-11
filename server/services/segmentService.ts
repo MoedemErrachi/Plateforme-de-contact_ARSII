@@ -3,14 +3,14 @@ import { AppError } from '../utils/AppError';
 
 export class SegmentService {
   public async getSegments() {
-    const [savedSegments, tags] = await Promise.all([
-      prisma.savedSegment.findMany({ orderBy: { createdAt: 'desc' } }),
+    const [segments, tags] = await Promise.all([
+      prisma.segment.findMany({ orderBy: { createdAt: 'desc' } }),
       prisma.tag.findMany({
         orderBy: { name: 'asc' },
         include: { _count: { select: { contacts: true } } }
       })
     ]);
-    return { savedSegments, tags };
+    return { segments, tags };
   }
 
   public async setTagContacts(tagId: string, contactIds: string[]) {
@@ -51,7 +51,7 @@ export class SegmentService {
     if (!data.name) {
       throw new AppError('Le nom du segment est requis', 400);
     }
-    const segment = await prisma.savedSegment.create({
+    const segment = await prisma.segment.create({
       data: {
         name: data.name,
         description: data.description || null,
@@ -64,12 +64,12 @@ export class SegmentService {
   }
 
   public async updateSegment(id: string, data: { name?: string; description?: string; icon?: string; filters?: any }) {
-    const existing = await prisma.savedSegment.findUnique({ where: { id } });
+    const existing = await prisma.segment.findUnique({ where: { id } });
     if (!existing) {
       throw new AppError(`Segment avec l'ID ${id} non trouvé`, 404);
     }
 
-    const updated = await prisma.savedSegment.update({
+    const updated = await prisma.segment.update({
       where: { id },
       data: {
         ...(data.name && { name: data.name }),
@@ -82,11 +82,11 @@ export class SegmentService {
   }
 
   public async deleteSegment(id: string) {
-    const existing = await prisma.savedSegment.findUnique({ where: { id } });
+    const existing = await prisma.segment.findUnique({ where: { id } });
     if (!existing) {
       throw new AppError(`Segment avec l'ID ${id} non trouvé`, 404);
     }
-    await prisma.savedSegment.delete({ where: { id } });
+    await prisma.segment.delete({ where: { id } });
     return { success: true };
   }
 }
