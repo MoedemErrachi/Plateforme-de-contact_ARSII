@@ -1,10 +1,20 @@
-import { PrismaClient, Role, Gender, ResearchCareerStage, NoteType } from '@prisma/client';
+import { PrismaClient, Role, Gender, ResearchCareerStage } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import 'dotenv/config';
 import bcrypt from 'bcryptjs';
 
 const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL! });
 const prisma = new PrismaClient({ adapter });
+
+// Sanitize text values so corrupted/mis-encoded characters (e.g. U+FFFD from
+// pasted or wrongly-decoded strings) never reach the database as-is.
+function sanitizeText(value: string): string {
+  return value
+    .replace(/\uFFFD/g, '')
+    .replace(/\u2018|\u2019/g, "'")
+    .replace(/\u00A0/g, ' ')
+    .trim();
+}
 
 async function main() {
   console.log('Seeding EURAXESS Africa database...');
@@ -49,15 +59,15 @@ async function main() {
 
   // ── Tags ───────────────────────────────────────────────
   const tagData = [
-    { name: 'Membre EURAXESS Africa', color: '#005596', category: 'Réseau', description: 'Membre du réseau EURAXESS Africa' },
-    { name: 'Chercheur Senior', color: '#B8167C', category: 'Profil', description: 'Chercheur expérimenté (R3+)' },
-    { name: 'Doctorant', color: '#35B8B2', category: 'Profil', description: 'Chercheur en début de carrière (R1)' },
-    { name: 'Expert IA & Data', color: '#FFC20C', category: 'Expertise', description: 'Intelligence artificielle et science des données' },
-    { name: 'Climat & Énergie', color: '#35B8B2', category: 'Expertise', description: 'Changement climatique et énergies durables' },
-    { name: 'Santé & Biotech', color: '#B8167C', category: 'Expertise', description: 'Sciences de la santé et biotechnologies' },
-    { name: 'PME Innovante', color: '#8A98A1', category: "Type d'acteur", description: 'Entreprise innovante' },
-    { name: 'Université', color: '#005596', category: "Type d'acteur", description: 'Institution académique' },
-    { name: 'VIP / Prioritaire', color: '#FFC20C', category: 'Suivi', description: 'Contact à suivre en priorité' }
+    { name: 'Membre EURAXESS Africa', color: '#005596', description: 'Membre du réseau EURAXESS Africa' },
+    { name: 'Chercheur Senior', color: '#B8167C', description: 'Chercheur expérimenté (R3+)' },
+    { name: 'Doctorant', color: '#35B8B2', description: 'Chercheur en début de carrière (R1)' },
+    { name: 'Expert IA & Data', color: '#FFC20C', description: 'Intelligence artificielle et science des données' },
+    { name: 'Climat & Énergie', color: '#35B8B2', description: 'Changement climatique et énergies durables' },
+    { name: 'Santé & Biotech', color: '#B8167C', description: 'Sciences de la santé et biotechnologies' },
+    { name: 'PME Innovante', color: '#8A98A1', description: 'Entreprise innovante' },
+    { name: 'Université', color: '#005596', description: 'Institution académique' },
+    { name: 'VIP / Prioritaire', color: '#FFC20C', description: 'Contact à suivre en priorité' }
   ];
 
   const tags: Record<string, string> = {};
@@ -210,37 +220,23 @@ async function main() {
     }
   ];
 
-  const notesByEmail: Record<string, { title: string; content: string; type: NoteType }[]> = {
-    'amina.diallo@ucad.sn': [
-      { title: 'Réunion de lancement', content: 'Échange sur un projet de coopération en biologie marine entre le Sénégal et l\'Europe.', type: NoteType.MEETING },
-      { title: 'Demande de mentorat', content: 'Souhaite être mise en relation avec un laboratoire européen en océanographie.', type: NoteType.EMAIL }
-    ],
-    'mariam.traore@ub.ml': [
-      { title: 'Visite officielle', content: 'Accueil au hub EURAXESS lors de sa mission à Bruxelles.', type: NoteType.MEETING },
-      { title: 'Suivi téléphonique', content: 'Confirmation de participation au programme de mobilité ERASMUS+.', type: NoteType.CALL }
-    ],
-    'ahmed.haddad@uss.tn': [
-      { title: 'Note interne', content: 'Profil retenu pour le comité scientifique du réseau.', type: NoteType.NOTE }
-    ]
-  };
-
   for (const data of contactData) {
     const existing = await prisma.contact.findUnique({ where: { email: data.email } });
     if (existing) continue;
 
-    const contact = await prisma.contact.create({
+    await prisma.contact.create({
       data: {
-        firstName: data.firstName,
-        lastName: data.lastName,
-        email: data.email,
+        firstName: sanitizeText(data.firstName),
+        lastName: sanitizeText(data.lastName),
+        email: sanitizeText(data.email),
         gender: data.gender,
-        countryOfOrigin: data.countryOfOrigin,
-        city: data.city,
-        phone: data.phone,
-        affiliation: data.affiliation,
-        function: data.function,
-        experience: data.experience,
-        facultyDepartment: data.facultyDepartment || null,
+        countryOfOrigin: sanitizeText(data.countryOfOrigin),
+        city: sanitizeText(data.city),
+        phone: sanitizeText(data.phone),
+        affiliation: sanitizeText(data.affiliation),
+        function: sanitizeText(data.function),
+        experience: sanitizeText(data.experience),
+        facultyDepartment: data.facultyDepartment ? sanitizeText(data.facultyDepartment) : null,
         researchCareerStage: data.researchCareerStage,
         tags: {
           create: data.tags
@@ -250,22 +246,6 @@ async function main() {
         }
       }
     });
-
-    const notes = notesByEmail[data.email] || [];
-    for (const n of notes) {
-      await prisma.exchangeNote.create({
-        data: {
-          contactId: contact.id,
-          title: n.title,
-          content: n.content,
-          type: n.type,
-          date: new Date(Date.now() - Math.floor(Math.random() * 90) * 86400000).toISOString().split('T')[0],
-          relativeTime: 'Il y a quelques semaines',
-          author: 'MAALEL.AHMED',
-          authorInitials: 'MA'
-        }
-      });
-    }
   }
   console.log(`Contacts ready: ${contactData.length}`);
 
@@ -296,7 +276,10 @@ async function main() {
         name: s.name,
         description: s.description,
         icon: 'Filter',
-        filters: s.filters as any,
+        filters: {
+          ...s.filters,
+          countries: (s.filters.countries || []).map(c => sanitizeText(c))
+        } as any,
         userId: supervisor.id
       }
     });

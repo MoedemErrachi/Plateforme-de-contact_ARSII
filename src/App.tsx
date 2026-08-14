@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
-import { Contact, ExchangeNote, Tag, Segment, FilterState, User } from './types';
+import { Contact, Tag, Segment, FilterState, User } from './types';
+import { formatFullName } from './utils/format';
 import { useToast } from './components/Toast';
 import { Header } from './components/Header';
 import { Footer } from './components/Footer';
@@ -13,31 +14,29 @@ import { ExportView } from './components/ExportView';
 import { SegmentationView } from './components/SegmentationView';
 import { ProfileView } from './components/ProfileView';
 import { AuthView } from './components/AuthView';
+import { ChatWidget } from './components/chat/ChatWidget';
 
 // --- API helper ---
 function mapContactFromApi(c: any): Contact {
-  const firstName = c.firstName || '';
-  const lastName = c.lastName || '';
+  const firstName = (c.firstName || '').trim();
+  const lastName = (c.lastName || '').trim();
+  const name = formatFullName(firstName, lastName);
+  const firstInit = firstName && firstName !== 'N/A' ? firstName[0] : '';
+  const lastInit = lastName && lastName !== 'N/A' ? lastName[0] : '';
   return {
     ...c,
     firstName,
     lastName,
-    name: `${firstName} ${lastName}`.trim() || c.name || 'Nouveau Contact',
-    initials: `${(firstName[0] || '')}${(lastName[0] || '')}`.toUpperCase() || c.initials || 'NC',
-    gender: c.gender || 'PREFER_NOT_TO_SAY',
+    name,
+    initials: `${firstInit}${lastInit}`.toUpperCase() || c.initials || 'NC',
+    gender: c.gender === 'MALE' ? 'MALE' : c.gender === 'FEMALE' ? 'FEMALE' : 'NOT_SPECIFIED',
     researchCareerStage: c.researchCareerStage || 'R1_FIRST_STAGE',
     countryOfOrigin: c.countryOfOrigin || '',
-    city: c.city || '',
-    phone: c.phone || '',
+    city: c.city ?? null,
+    phone: c.phone ?? null,
     affiliation: c.affiliation || '',
     tags: Array.isArray(c.tags)
       ? c.tags.map((t: any) => t.tag?.name ?? t.name ?? t)
-      : [],
-    exchangeNotes: Array.isArray(c.exchangeNotes)
-      ? c.exchangeNotes.map((n: any) => ({
-          ...n,
-          type: (n.type || 'NOTE').toLowerCase() as ExchangeNote['type']
-        }))
       : []
   };
 }
@@ -55,6 +54,15 @@ async function apiFetch(path: string, options?: RequestInit) {
   return json;
 }
 
+function readStoredToken(): string | null {
+  try {
+    const value = localStorage.getItem('euraxess_token');
+    return value && value.trim() ? value.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
 export default function App() {
   const { showToast } = useToast();
   const navigate = useNavigate();
@@ -64,7 +72,18 @@ export default function App() {
   const [isLoadingData, setIsLoadingData] = useState<boolean>(true);
 
   // Selected contacts in directory for bulk actions & export
-  const [selectedContactIds, setSelectedContactIds] = useState<string[]>([]);
+  const [selectedContactIds, setSelectedContactIds] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('euraxess_contacts_selected_ids');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return Array.isArray(parsed) ? parsed.filter(id => typeof id === 'string') : [];
+      }
+    } catch {
+      // ignore corrupted storage
+    }
+    return [];
+  });
 
   // Pagination limit state across view switches (persisted locally)
   const [itemsPerPage, setItemsPerPage] = useState<number>(() => {
@@ -85,6 +104,19 @@ export default function App() {
     }
   }, [itemsPerPage]);
 
+  // Persist selected contact ids across page refreshes (survives reload of /export)
+  useEffect(() => {
+    try {
+      if (selectedContactIds.length > 0) {
+        localStorage.setItem('euraxess_contacts_selected_ids', JSON.stringify(selectedContactIds));
+      } else {
+        localStorage.removeItem('euraxess_contacts_selected_ids');
+      }
+    } catch {
+      // ignore
+    }
+  }, [selectedContactIds]);
+
   // Tags & Segments State
   const [tags, setTags] = useState<Tag[]>([]);
   const [segments, setSegments] = useState<Segment[]>([]);
@@ -93,6 +125,8 @@ export default function App() {
   // Authentication State (defaults to true for smooth start, can toggle to auth page)
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(true);
   const [user, setUser] = useState<User | null>(null);
+  const [authToken, setAuthToken] = useState<string | null>(readStoredToken);
+  const [isSessionReady, setIsSessionReady] = useState(false);
 
   // ──────────────────────────────────────────────
   // Load contacts from database on mount
@@ -150,11 +184,33 @@ export default function App() {
         if (!cancelled && data?.authenticated && data?.user) {
           setUser(data.user);
           setIsAuthenticated(true);
+          const token = typeof data.token === 'string' && data.token ? data.token : readStoredToken();
+          setAuthToken(token);
+          if (token) {
+            try {
+              localStorage.setItem('euraxess_token', token);
+            } catch {
+              // ignore storage failures
+            }
+          }
+        } else if (!cancelled) {
+          setAuthToken(null);
         }
-      } catch {
+      } catch (err) {
         if (!cancelled) {
+          console.warn('[App] /api/auth/me failed. Clearing auth state and removing token.', err);
           setUser(null);
           setIsAuthenticated(false);
+          setAuthToken(null);
+          try {
+            localStorage.removeItem('euraxess_token');
+          } catch {
+            // ignore storage failures
+          }
+        }
+      } finally {
+        if (!cancelled) {
+          setIsSessionReady(true);
         }
       }
     })();
@@ -167,14 +223,24 @@ export default function App() {
   const handleLoginSuccess = (userData: User) => {
     setUser(userData);
     setIsAuthenticated(true);
+    setAuthToken(readStoredToken());
+    setIsSessionReady(true);
     navigate('/dashboard');
   };
 
   const handleLogout = () => {
     setUser(null);
     setIsAuthenticated(false);
+    setAuthToken(null);
+    try {
+      localStorage.removeItem('euraxess_token');
+    } catch {
+      // ignore storage failures
+    }
     navigate('/login');
   };
+
+  const getChatToken = useCallback(() => authToken, [authToken]);
 
   const handleUserUpdate = (updatedUser: User) => {
     setUser(updatedUser);
@@ -219,6 +285,11 @@ export default function App() {
     navigate(`/contacts/${contactId}`);
   };
 
+  const handleExportAll = () => {
+    setSelectedContactIds(contacts.map(c => c.id));
+    navigate('/export', { state: { fromDashboard: true } });
+  };
+
   const handleAddContact = async (newContact: Contact) => {
     try {
       const res = await apiFetch('/api/contacts', {
@@ -258,39 +329,6 @@ export default function App() {
       showToast('Contact supprimé.', 'success');
     } catch (err: any) {
       showToast(`Erreur suppression : ${err.message}`, 'error');
-    }
-  };
-
-  // ──────────────────────────────────────────────
-  // EXCHANGE NOTES — persisted to DB
-  // ──────────────────────────────────────────────
-  const handleAddNote = async (contactId: string, note: Omit<ExchangeNote, 'id'>) => {
-    try {
-      const res = await apiFetch(`/api/contacts/${contactId}/notes`, {
-        method: 'POST',
-        body: JSON.stringify({
-          title: note.title,
-          content: note.content,
-          type: (note.type || 'note').toUpperCase(),
-          date: note.date,
-          relativeTime: note.relativeTime,
-          author: note.author,
-          authorInitials: note.authorInitials,
-          projectName: note.projectName
-        })
-      });
-      const savedNote: ExchangeNote = {
-        ...res.data.note,
-        type: (res.data.note.type || 'note').toLowerCase() as ExchangeNote['type']
-      };
-      setContacts(prev => prev.map(c =>
-        c.id === contactId
-          ? { ...c, exchangeNotes: [savedNote, ...c.exchangeNotes] }
-          : c
-      ));
-      showToast('Note enregistrée.', 'success');
-    } catch (err: any) {
-      showToast(`Erreur note : ${err.message}`, 'error');
     }
   };
 
@@ -457,7 +495,6 @@ export default function App() {
         body: JSON.stringify({
           name: newTag.name,
           color: newTag.color,
-          category: newTag.category,
           description: newTag.description
         })
       });
@@ -562,6 +599,18 @@ export default function App() {
     lastScrollY.current = 0;
   }, [isContactsPage]);
 
+  // Clear bulk-selection when returning to the directory (export scope lock)
+  useEffect(() => {
+    if (location.pathname === '/contacts') {
+      setSelectedContactIds([]);
+      try {
+        localStorage.removeItem('euraxess_contacts_selected_ids');
+      } catch {
+        // ignore
+      }
+    }
+  }, [location.pathname]);
+
   // Scroll to top on route change
   useEffect(() => {
     window.scrollTo({ top: 0 });
@@ -598,7 +647,7 @@ export default function App() {
             <DashboardView
               contacts={contacts}
               tags={tags}
-              onSelectContact={handleSelectContact}
+              onExportAll={handleExportAll}
               isLoading={isLoadingData}
             />
           }
@@ -665,7 +714,6 @@ export default function App() {
           element={
             <ContactDetailView
               contacts={contacts}
-              onAddNote={handleAddNote}
             />
           }
         />
@@ -714,6 +762,10 @@ export default function App() {
       </main>
 
       <Footer />
+
+      {isSessionReady && (
+        <ChatWidget contacts={contacts} getToken={getChatToken} />
+      )}
     </div>
   );
 }

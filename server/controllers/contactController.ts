@@ -1,7 +1,10 @@
 import { Request, Response, NextFunction } from 'express';
 import { ContactService } from '../services/contactService';
+import { LogService } from '../services/logService';
+import { AuthenticatedRequest } from '../middleware/authenticateJWT';
 
 const contactService = new ContactService();
+const logService = new LogService();
 
 export const getContacts = async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -66,20 +69,20 @@ export const deleteContact = async (req: Request, res: Response, next: NextFunct
   }
 };
 
-export const addNote = async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const { id } = req.params;
-    const note = await contactService.addNote(id, req.body);
-    res.status(201).json({ status: 'success', data: { note } });
-  } catch (error) {
-    next(error);
-  }
-};
-
-export const bulkSaveContacts = async (req: Request, res: Response, next: NextFunction) => {
+export const bulkSaveContacts = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const { newContacts = [], updatedContacts = [] } = req.body;
     const result = await contactService.bulkSave(newContacts, updatedContacts);
+
+    await logService.createLog({
+      type: 'IMPORT',
+      format: 'CSV',
+      fileName: 'import_contacts.csv',
+      recordCount: result.createdCount,
+      performedBy: req.user?.name,
+      userId: req.user?.id
+    });
+
     res.status(200).json({ status: 'SUCCESS', data: result });
   } catch (error: any) {
     res.status(500).json({ status: 'FAILED', errorMessage: extractBulkErrorMessage(error) });

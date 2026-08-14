@@ -20,21 +20,14 @@ enum LogType {
 enum LogFormat {
   CSV
   XLSX
+  PDF
   JSON
 }
 
-enum NoteType {
-  MEETING
-  EMAIL
-  CALL
-  NOTE
-}
-
 enum Gender {
-  FEMALE
   MALE
-  OTHER
-  PREFER_NOT_TO_SAY
+  FEMALE
+  NOT_SPECIFIED
 }
 
 enum ResearchCareerStage {
@@ -63,8 +56,7 @@ model User {
 model Tag {
   id          String         @id @default(uuid())
   name        String         @unique
-  color       String         @default("#35B8B2")
-  category    String?
+  color       String?
   description String?
   contacts    TagOnContact[]
   createdAt   DateTime       @default(now())
@@ -76,19 +68,17 @@ model Contact {
   email                 String               @unique
   firstName             String
   lastName              String
-  gender                Gender
+  gender                Gender               @default(NOT_SPECIFIED)
   countryOfOrigin       String
-  city                  String
-  phone                 String               @default("")
+  city                  String?
+  phone                 String?
   affiliation           String
   function              String?
   experience            String?
   facultyDepartment     String?
   researchCareerStage   ResearchCareerStage
   avatarUrl             String?
-  isVerified            Boolean              @default(true)
   tags                  TagOnContact[]
-  exchangeNotes         ExchangeNote[]
   createdAt             DateTime             @default(now())
   updatedAt             DateTime             @updatedAt
 }
@@ -100,21 +90,6 @@ model TagOnContact {
   tag       Tag     @relation(fields: [tagId], references: [id], onDelete: Cascade)
 
   @@id([contactId, tagId])
-}
-
-model ExchangeNote {
-  id             String   @id @default(uuid())
-  contactId      String
-  contact        Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
-  date           String
-  relativeTime   String?
-  title          String
-  content        String
-  author         String?
-  authorInitials String?
-  projectName    String?
-  type           NoteType @default(NOTE)
-  createdAt      DateTime @default(now())
 }
 
 model Segment {

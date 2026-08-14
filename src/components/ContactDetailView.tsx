@@ -1,21 +1,14 @@
 import React, { useState } from 'react';
 import { Link, useParams, Navigate } from 'react-router-dom';
-import { Contact, ExchangeNote, GENDER_LABELS, CAREER_STAGE_LABELS } from '../types';
-import { Modal } from './Modal';
+import { Contact, GENDER_LABELS, CAREER_STAGE_LABELS } from '../types';
 import {
   ChevronRight,
-  CheckCircle2,
   Building2,
   Edit3,
   Share2,
   Mail,
   Phone,
-  Globe,
-  History,
-  PlusCircle,
-  MessageSquare,
   Check,
-  X,
   MapPin,
   GraduationCap,
   Users
@@ -23,43 +16,18 @@ import {
 
 interface ContactDetailViewProps {
   contacts: Contact[];
-  onAddNote: (contactId: string, note: Omit<ExchangeNote, 'id'>) => void;
 }
 
 export const ContactDetailView: React.FC<ContactDetailViewProps> = ({
-  contacts,
-  onAddNote
+  contacts
 }) => {
   const { id } = useParams<{ id: string }>();
   const contact = contacts.find(c => c.id === id);
-  const [quickNoteModalOpen, setQuickNoteModalOpen] = useState(false);
-  const [newNoteTitle, setNewNoteTitle] = useState('');
-  const [newNoteContent, setNewNoteContent] = useState('');
-  const [newNoteType, setNewNoteType] = useState<'meeting' | 'email' | 'call' | 'note'>('meeting');
   const [copiedToast, setCopiedToast] = useState(false);
 
   if (!contact) {
     return <Navigate to="/contacts" replace />;
   }
-
-  const handleCreateNote = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newNoteTitle.trim() || !newNoteContent.trim()) return;
-
-    onAddNote(contact.id, {
-      date: new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' }),
-      relativeTime: 'À l\'instant',
-      title: newNoteTitle,
-      content: newNoteContent,
-      author: 'Marie Curie',
-      authorInitials: 'MC',
-      type: newNoteType
-    });
-
-    setNewNoteTitle('');
-    setNewNoteContent('');
-    setQuickNoteModalOpen(false);
-  };
 
   const handleShare = () => {
     navigator.clipboard.writeText(window.location.href);
@@ -67,18 +35,22 @@ export const ContactDetailView: React.FC<ContactDetailViewProps> = ({
     setTimeout(() => setCopiedToast(false), 2000);
   };
 
-  const identityFields: { label: string; value: string }[] = [
+  const hasValue = (v?: string | null) => Boolean(v && v.trim() && v.trim() !== 'N/A');
+
+  const dash = <span className="text-[#8A98A1]">—</span>;
+
+  const identityFields: { label: string; value: React.ReactNode }[] = [
     { label: 'Genre', value: GENDER_LABELS[contact.gender] },
     { label: 'Stade de carrière', value: CAREER_STAGE_LABELS[contact.researchCareerStage] },
-    { label: 'Pays d\'origine', value: contact.countryOfOrigin || '—' },
-    { label: 'Ville', value: contact.city || '—' }
+    { label: 'Pays d\'origine', value: hasValue(contact.countryOfOrigin) ? contact.countryOfOrigin : dash },
+    { label: 'Ville', value: hasValue(contact.city) ? contact.city : dash }
   ];
 
-  const riFields: { label: string; value: string }[] = [
-    { label: 'Affiliation', value: contact.affiliation || '—' },
-    { label: 'Fonction', value: contact.function || '—' },
-    { label: 'Expérience', value: contact.experience || '—' },
-    { label: 'Faculté / Département', value: contact.facultyDepartment || '—' }
+  const riFields: { label: string; value: React.ReactNode }[] = [
+    { label: 'Affiliation', value: hasValue(contact.affiliation) ? contact.affiliation : dash },
+    { label: 'Fonction', value: hasValue(contact.function) ? contact.function : dash },
+    { label: 'Expérience', value: hasValue(contact.experience) ? contact.experience : dash },
+    { label: 'Faculté / Département', value: hasValue(contact.facultyDepartment) ? contact.facultyDepartment : dash }
   ];
 
   return (
@@ -117,11 +89,6 @@ export const ContactDetailView: React.FC<ContactDetailViewProps> = ({
                   contact.initials
                 )}
               </div>
-              {contact.isVerified && (
-                <div className="absolute bottom-1 right-1 bg-[#005596] text-white p-1 rounded-full border-2 border-white" title="Compte Vérifié EURAXESS Africa">
-                  <CheckCircle2 className="w-4 h-4" />
-                </div>
-              )}
             </div>
 
             <div>
@@ -129,7 +96,7 @@ export const ContactDetailView: React.FC<ContactDetailViewProps> = ({
                 <h1 className="text-2xl sm:text-3xl font-extrabold text-[#1C2529]">
                   {contact.name}
                 </h1>
-                {contact.affiliation && (
+                {hasValue(contact.affiliation) && (
                   <span className="bg-[#BCD7EE] text-[#005596] px-3 py-0.5 rounded-full text-xs font-bold flex items-center gap-1">
                     <Building2 className="w-3.5 h-3.5" />
                     {contact.affiliation}
@@ -137,7 +104,7 @@ export const ContactDetailView: React.FC<ContactDetailViewProps> = ({
                 )}
               </div>
 
-              {contact.function && (
+              {hasValue(contact.function) && (
                 <p className="text-sm font-medium text-[#55636B] mb-3">
                   {contact.function}
                 </p>
@@ -203,7 +170,7 @@ export const ContactDetailView: React.FC<ContactDetailViewProps> = ({
                 </div>
                 <div>
                   <p className="text-[11px] font-semibold text-[#55636B]">Téléphone</p>
-                  <p className="font-semibold text-[#1C2529]">{contact.phone || '—'}</p>
+                  <p className="font-semibold text-[#1C2529]">{hasValue(contact.phone) ? contact.phone : dash}</p>
                 </div>
               </li>
 
@@ -214,7 +181,7 @@ export const ContactDetailView: React.FC<ContactDetailViewProps> = ({
                 <div>
                   <p className="text-[11px] font-semibold text-[#55636B]">Localisation</p>
                   <p className="font-semibold text-[#1C2529]">
-                    {[contact.countryOfOrigin, contact.city].filter(Boolean).join(', ') || '—'}
+                    {[contact.countryOfOrigin, contact.city].filter(v => hasValue(v)).join(', ') || dash}
                   </p>
                 </div>
               </li>
@@ -273,130 +240,9 @@ export const ContactDetailView: React.FC<ContactDetailViewProps> = ({
             </div>
           </section>
 
-          {/* Interaction Memory (Timeline) */}
-          <section className="bg-white rounded-2xl p-6 border border-[#C9D4DE]/40 shadow-[0_6px_18px_rgba(0,0,0,0.06)] flex-1">
-            <div className="flex justify-between items-center mb-6">
-              <h3 className="text-base font-bold text-[#1C2529] flex items-center gap-2">
-                <History className="w-5 h-5 text-[#005596]" /> Mémoire des Échanges
-              </h3>
-
-              <button
-                onClick={() => setQuickNoteModalOpen(true)}
-                className="text-[#005596] font-bold text-xs flex items-center gap-1 hover:underline cursor-pointer"
-              >
-                <PlusCircle className="w-4 h-4" /> Note rapide
-              </button>
-            </div>
-
-            {/* Timeline Tree */}
-            <div className="space-y-6 relative pl-6 before:absolute before:left-[11px] before:top-2 before:bottom-2 before:w-[2px] before:bg-[#D9E6F2]">
-              {contact.exchangeNotes.length === 0 && (
-                <p className="text-xs text-slate-400 italic">Aucun échange documenté pour le moment.</p>
-              )}
-              {contact.exchangeNotes.map((note) => (
-                <div key={note.id} className="relative">
-                  {/* Circle Marker */}
-                  <div className="absolute -left-[31px] top-0 w-6 h-6 bg-white border-2 border-[#005596] rounded-full flex items-center justify-center z-10 text-[#005596]">
-                    <MessageSquare className="w-3 h-3" />
-                  </div>
-
-                  <div className="bg-[#E8F1F8]/30 p-4 rounded-xl border border-[#C9D4DE]/30">
-                    <div className="flex justify-between items-center mb-1">
-                      <p className="font-bold text-xs text-[#1C2529]">{note.title}</p>
-                      <span className="text-[11px] text-[#55636B] italic">{note.relativeTime || note.date}</span>
-                    </div>
-
-                    <p className="text-xs text-[#55636B] leading-relaxed">
-                      {note.content}
-                    </p>
-
-                    {note.author && (
-                      <div className="mt-3 flex items-center gap-2">
-                        <div className="w-5 h-5 rounded-full bg-[#005596] text-white flex items-center justify-center text-[9px] font-bold">
-                          {note.authorInitials || 'LM'}
-                        </div>
-                        <span className="text-[11px] font-medium text-[#55636B]">{note.author}</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <button className="w-full mt-6 py-3 border-2 border-dashed border-[#C9D4DE] rounded-xl text-[#55636B] font-bold text-xs hover:bg-[#E8F1F8] transition-colors cursor-pointer">
-              Charger l'historique complet
-            </button>
-          </section>
-
         </div>
 
       </div>
-
-      {/* Quick Note Modal */}
-      {quickNoteModalOpen && (
-        <Modal
-          open={quickNoteModalOpen}
-          onClose={() => setQuickNoteModalOpen(false)}
-          maxWidth="max-w-md"
-          title={<h3 className="font-bold text-base text-[#1C2529]">Ajouter une note d'échange</h3>}
-        >
-          <form onSubmit={handleCreateNote} className="space-y-4 text-xs">
-              <div>
-                <label className="block font-bold text-[#55636B] mb-1">Type d'échange</label>
-                <select
-                  value={newNoteType}
-                  onChange={(e) => setNewNoteType(e.target.value as any)}
-                  className="w-full border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-[#005596]"
-                >
-                  <option value="meeting">Réunion / Visioconférence</option>
-                  <option value="email">Courrier Électronique</option>
-                  <option value="call">Appel Téléphonique</option>
-                  <option value="note">Note interne</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block font-bold text-[#55636B] mb-1">Titre de la note</label>
-                <input
-                  type="text"
-                  value={newNoteTitle}
-                  onChange={(e) => setNewNoteTitle(e.target.value)}
-                  placeholder="Ex: Réunion de cadrage Horizon-Health"
-                  className="w-full border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-[#005596]"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block font-bold text-[#55636B] mb-1">Contenu / Résumé</label>
-                <textarea
-                  rows={4}
-                  value={newNoteContent}
-                  onChange={(e) => setNewNoteContent(e.target.value)}
-                  placeholder="Compte-rendu succinct de l'échange..."
-                  className="w-full border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-[#005596] resize-none"
-                  required
-                />
-              </div>
-
-              <div className="flex justify-end gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setQuickNoteModalOpen(false)}
-                  className="px-4 py-2 border border-slate-300 rounded-xl font-bold hover:bg-slate-50 cursor-pointer"
-                >
-                  Annuler
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 bg-[#005596] hover:bg-[#004275] text-white rounded-xl font-bold shadow cursor-pointer"
-                >
-                  Enregistrer
-                </button>
-              </div>
-            </form>
-        </Modal>
-      )}
 
     </div>
   );

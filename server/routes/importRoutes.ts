@@ -1,6 +1,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { ContactService } from '../services/contactService';
 import { LogService } from '../services/logService';
+import { authenticateJWT, AuthenticatedRequest } from '../middleware/authenticateJWT';
 
 const router = Router();
 const contactService = new ContactService();
@@ -18,7 +19,7 @@ router.post('/preview', async (req: Request, res: Response, next: NextFunction) 
 });
 
 // POST /api/import/execute
-router.post('/execute', async (req: Request, res: Response, next: NextFunction) => {
+router.post('/execute', authenticateJWT, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const { contacts, fileName, format } = req.body;
     const inserted = [];
@@ -41,7 +42,9 @@ router.post('/execute', async (req: Request, res: Response, next: NextFunction) 
       format: format || 'CSV',
       fileName: fileName || 'import_contacts.csv',
       recordCount: inserted.length,
-      status: 'SUCCESS'
+      status: 'SUCCESS',
+      performedBy: req.user?.name,
+      userId: req.user?.id
     });
 
     res.status(200).json({ status: 'success', data: { importedCount: inserted.length, log } });

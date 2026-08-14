@@ -1,20 +1,18 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { Contact, Gender, ResearchCareerStage, Tag, GENDER_LABELS, CAREER_STAGE_LABELS } from '../types';
+import { Contact, Gender, ResearchCareerStage, Tag, CAREER_STAGE_LABELS } from '../types';
+import { formatFullName } from '../utils/format';
 import {
   ChevronRight,
   User,
   Briefcase,
   MapPin,
   CheckCircle2,
-  Circle,
   Lightbulb,
-  X,
   AlertTriangle,
   Tag as TagIcon,
   Camera,
-  Loader2,
-  GraduationCap
+  Loader2
 } from 'lucide-react';
 import { useToast } from './Toast';
 import { validateImageFile, uploadImage, readFileAsDataUrl } from '../utils/upload';
@@ -26,12 +24,135 @@ interface NewContactViewProps {
   tags?: Tag[];
 }
 
-const COMMON_COUNTRIES = [
-  'Sénégal', 'Tunisie', 'Maroc', 'Algérie', 'Côte d\'Ivoire', 'Nigéria', 'Ghana',
-  'Kenya', 'Éthiopie', 'Afrique du Sud', 'Égypte', 'Cameroun', 'Burkina Faso',
-  'Mali', 'République démocratique du Congo', 'France', 'Belgique', 'Allemagne',
-  'Italie', 'Espagne', 'Pays-Bas', 'Royaume-Uni', 'Portugal'
+const INPUT_CLASS =
+  'w-full px-3 py-2.5 rounded-lg border border-[#C9D4DE] bg-white focus:border-[#005596] focus:ring-2 focus:ring-[#005596]/20';
+
+const INVALID_INPUT_CLASS = '!border-red-400 !ring-red-400/20 focus:!border-red-400';
+
+const COUNTRY_OPTIONS = [
+  'Afrique du Sud', 'Algérie', 'Allemagne', 'Belgique', 'Bénin', 'Burkina Faso',
+  'Cameroun', "Côte d'Ivoire", 'Égypte', 'Espagne', 'Éthiopie', 'France', 'Gabon',
+  'Ghana', 'Guinée', 'Italie', 'Kenya', 'Madagascar', 'Mali', 'Maroc', 'Mauritanie',
+  'Niger', 'Nigeria', 'Pays-Bas', 'Portugal', 'République démocratique du Congo',
+  'Royaume-Uni', 'Sénégal', 'Sierra Leone', 'Soudan', 'Tchad', 'Togo', 'Tunisie'
 ];
+
+const CITIES_BY_COUNTRY: Record<string, string[]> = {
+  'Sénégal': ['Dakar', 'Saint-Louis', 'Thiès', 'Touba', 'Kaolack', 'Ziguinchor', 'Louga'],
+  'Tunisie': ['Tunis', 'Sfax', 'Sousse', 'Kairouan', 'Bizerte', 'Gabès', 'Monastir'],
+  'Maroc': ['Casablanca', 'Rabat', 'Marrakech', 'Fès', 'Tanger', 'Agadir', 'Meknès'],
+  'Algérie': ['Alger', 'Oran', 'Constantine', 'Annaba', 'Blida', 'Sétif'],
+  "Côte d'Ivoire": ['Abidjan', 'Bouaké', 'Yamoussoukro', 'Daloa', 'Korhogo'],
+  'Nigeria': ['Lagos', 'Abuja', 'Ibadan', 'Kano', 'Port Harcourt', 'Enugu'],
+  'Ghana': ['Accra', 'Kumasi', 'Tamale', 'Takoradi', 'Cape Coast'],
+  'Kenya': ['Nairobi', 'Mombasa', 'Kisumu', 'Nakuru', 'Eldoret'],
+  'Éthiopie': ['Addis-Abeba', 'Dire Dawa', 'Mekele', 'Gondar'],
+  'Afrique du Sud': ['Johannesburg', 'Le Cap', 'Durban', 'Pretoria', 'Bloemfontein'],
+  'Égypte': ['Le Caire', 'Alexandrie', 'Gizeh', 'Louxor'],
+  'Cameroun': ['Yaoundé', 'Douala', 'Garoua', 'Bamenda', 'Bafoussam'],
+  'Mali': ['Bamako', 'Sikasso', 'Mopti', 'Ségou', 'Tombouctou'],
+  'Guinée': ['Conakry', 'Kindia', 'Labé', 'Nzérékoré'],
+  'Sierra Leone': ['Freetown', 'Bo', 'Kenema', 'Makeni'],
+  'Burkina Faso': ['Ouagadougou', 'Bobo-Dioulasso', 'Koudougou'],
+  'Bénin': ['Cotonou', 'Porto-Novo', 'Parakou'],
+  'Niger': ['Niamey', 'Zinder', 'Maradi'],
+  'Togo': ['Lomé', 'Sokodé', 'Kara'],
+  'Tchad': ["N'Djaména", 'Moundou', 'Sarh'],
+  'Soudan': ['Khartoum', 'Omdurman', 'Port-Soudan'],
+  'Gabon': ['Libreville', 'Port-Gentil', 'Franceville'],
+  'Madagascar': ['Antananarivo', 'Toamasina', 'Antsirabe'],
+  'Mauritanie': ['Nouakchott', 'Nouadhibou'],
+  'République démocratique du Congo': ['Kinshasa', 'Lubumbashi', 'Goma', 'Kisangani', 'Bukavu'],
+  'France': ['Paris', 'Lyon', 'Marseille', 'Toulouse', 'Bordeaux', 'Lille', 'Strasbourg', 'Nantes'],
+  'Belgique': ['Bruxelles', 'Anvers', 'Gand', 'Liège', 'Charleroi'],
+  'Allemagne': ['Berlin', 'Munich', 'Hambourg', 'Francfort', 'Cologne'],
+  'Italie': ['Rome', 'Milan', 'Naples', 'Turin', 'Florence', 'Bologne'],
+  'Espagne': ['Madrid', 'Barcelone', 'Valence', 'Séville', 'Bilbao'],
+  'Pays-Bas': ['Amsterdam', 'Rotterdam', 'La Haye', 'Utrecht', 'Eindhoven'],
+  'Royaume-Uni': ['Londres', 'Birmingham', 'Manchester', 'Édimbourg', 'Glasgow'],
+  'Portugal': ['Lisbonne', 'Porto', 'Braga', 'Coimbra', 'Faro']
+};
+
+const COMMON_CITIES = [
+  'Dakar', 'Abidjan', 'Tunis', 'Casablanca', 'Alger', 'Nairobi', 'Lagos', 'Accra',
+  'Kumasi', 'Yaoundé', 'Douala', 'Bamako', 'Conakry', 'Freetown', 'Addis-Abeba',
+  'Le Caire', 'Johannesburg', 'Le Cap', 'Paris', 'Bruxelles', 'Londres', 'Berlin',
+  'Madrid', 'Rome', 'Lisbonne', 'Amsterdam'
+];
+
+interface SearchableSelectProps {
+  value: string;
+  onChange: (value: string) => void;
+  options: string[];
+  placeholder?: string;
+  invalid?: boolean;
+}
+
+function SearchableSelect({ value, onChange, options, placeholder, invalid = false }: SearchableSelectProps) {
+  const [query, setQuery] = useState(value);
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setQuery(value);
+  }, [value]);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const filteredOptions = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return q ? options.filter(o => o.toLowerCase().includes(q)) : options;
+  }, [options, query]);
+
+  return (
+    <div ref={containerRef} className="relative">
+      <input
+        type="text"
+        value={query}
+        onChange={(e) => {
+          setQuery(e.target.value);
+          onChange(e.target.value);
+          setOpen(true);
+        }}
+        onFocus={() => setOpen(true)}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') setOpen(false);
+        }}
+        placeholder={placeholder}
+        className={`${INPUT_CLASS} ${invalid ? INVALID_INPUT_CLASS : ''}`}
+      />
+      {open && filteredOptions.length > 0 && (
+        <div className="absolute z-30 mt-1 w-full max-h-56 overflow-y-auto bg-white border border-[#C9D4DE] rounded-lg shadow-xl">
+          {filteredOptions.map(opt => (
+            <button
+              key={opt}
+              type="button"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                setQuery(opt);
+                onChange(opt);
+                setOpen(false);
+              }}
+              className={`w-full text-left px-3 py-2 text-xs transition-colors cursor-pointer ${
+                opt === value ? 'bg-[#E8F1F8] font-bold text-[#005596]' : 'text-[#1C2529] hover:bg-[#E8F1F8]'
+              }`}
+            >
+              {opt}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export const NewContactView: React.FC<NewContactViewProps> = ({
   onAddContact,
@@ -48,7 +169,7 @@ export const NewContactView: React.FC<NewContactViewProps> = ({
   const [lastName, setLastName] = useState(contactToEdit?.lastName || '');
   const [email, setEmail] = useState(contactToEdit?.email || '');
   const [phone, setPhone] = useState(contactToEdit?.phone || '');
-  const [gender, setGender] = useState<Gender>(contactToEdit?.gender || 'MALE');
+  const [gender] = useState<Gender>(contactToEdit?.gender || 'NOT_SPECIFIED');
   const [countryOfOrigin, setCountryOfOrigin] = useState(contactToEdit?.countryOfOrigin || 'Sénégal');
   const [city, setCity] = useState(contactToEdit?.city || '');
   const [affiliation, setAffiliation] = useState(contactToEdit?.affiliation || '');
@@ -56,25 +177,24 @@ export const NewContactView: React.FC<NewContactViewProps> = ({
   const [experience, setExperience] = useState(contactToEdit?.experience || '');
   const [facultyDepartment, setFacultyDepartment] = useState(contactToEdit?.facultyDepartment || '');
   const [researchCareerStage, setResearchCareerStage] = useState<ResearchCareerStage>(contactToEdit?.researchCareerStage || 'R1_FIRST_STAGE');
-  const [lastDate, setLastDate] = useState(contactToEdit?.exchangeNotes?.[0]?.date || '');
-  const [exchangeSummary, setExchangeSummary] = useState(
-    contactToEdit?.exchangeNotes?.[0]?.content || ''
-  );
 
   // Tags & Avatar
   const [selectedTagNames, setSelectedTagNames] = useState<string[]>(contactToEdit?.tags || []);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(contactToEdit?.avatarUrl || null);
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
-  const avatarInputRef = React.useRef<HTMLInputElement>(null);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
+
+  // Validation state
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [hasSubmitted, setHasSubmitted] = useState(false);
 
   // Sync state if contactToEdit changes
-  React.useEffect(() => {
+  useEffect(() => {
     if (contactToEdit) {
       setFirstName(contactToEdit.firstName || '');
       setLastName(contactToEdit.lastName || '');
       setEmail(contactToEdit.email || '');
       setPhone(contactToEdit.phone || '');
-      setGender(contactToEdit.gender || 'MALE');
       setCountryOfOrigin(contactToEdit.countryOfOrigin || 'Sénégal');
       setCity(contactToEdit.city || '');
       setAffiliation(contactToEdit.affiliation || '');
@@ -82,12 +202,16 @@ export const NewContactView: React.FC<NewContactViewProps> = ({
       setExperience(contactToEdit.experience || '');
       setFacultyDepartment(contactToEdit.facultyDepartment || '');
       setResearchCareerStage(contactToEdit.researchCareerStage || 'R1_FIRST_STAGE');
-      setLastDate(contactToEdit.exchangeNotes?.[0]?.date || '');
-      setExchangeSummary(contactToEdit.exchangeNotes?.[0]?.content || '');
       setSelectedTagNames(contactToEdit.tags || []);
       setAvatarUrl(contactToEdit.avatarUrl || null);
     }
   }, [contactToEdit]);
+
+  // City options derived from the selected country (fallback: common cities)
+  const cityOptions = useMemo(() => {
+    const specific = CITIES_BY_COUNTRY[countryOfOrigin] || [];
+    return Array.from(new Set([...specific, ...COMMON_CITIES]));
+  }, [countryOfOrigin]);
 
   // Duplicate check: exclude the contact currently being edited
   const currentCleanEmail = email.toLowerCase().trim();
@@ -103,10 +227,10 @@ export const NewContactView: React.FC<NewContactViewProps> = ({
 
   // Calculate live completion score
   const filledFieldsCount = [
-    firstName, lastName, email, phone, gender, countryOfOrigin, city, affiliation, fonction, experience, facultyDepartment, researchCareerStage
+    firstName, lastName, email, phone, countryOfOrigin, city, affiliation, fonction, experience, facultyDepartment, researchCareerStage
   ].filter(Boolean).length;
 
-  const completionScore = Math.min(Math.round((filledFieldsCount / 12) * 100), 100);
+  const completionScore = Math.min(Math.round((filledFieldsCount / 11) * 100), 100);
 
   const toggleTag = (tagName: string) => {
     setSelectedTagNames(prev =>
@@ -140,11 +264,31 @@ export const NewContactView: React.FC<NewContactViewProps> = ({
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!firstName || !email) return;
+  const clearFieldError = (key: string) => {
+    if (errors[key]) setErrors(prev => ({ ...prev, [key]: '' }));
+  };
 
-    const fullName = `${firstName} ${lastName}`.trim();
+  const validateForm = (): boolean => {
+    const next: Record<string, string> = {};
+    if (!firstName.trim()) next.firstName = 'Prénom requis';
+    if (!lastName.trim()) next.lastName = 'Nom requis';
+    if (!email.trim()) next.email = 'Adresse e-mail requise';
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) next.email = 'Adresse e-mail invalide';
+
+    setErrors(next);
+    if (Object.keys(next).length > 0) {
+      const firstKey = (['firstName', 'lastName', 'email'] as const).find(k => next[k]);
+      if (firstKey) document.getElementById(`field-${firstKey}`)?.focus();
+      return false;
+    }
+    return true;
+  };
+
+  const performSave = async () => {
+    setHasSubmitted(true);
+    if (!validateForm()) return;
+
+    const fullName = formatFullName(firstName, lastName);
     const initials = `${firstName[0] || ''}${lastName[0] || ''}`.toUpperCase() || 'NC';
 
     const basePayload = {
@@ -152,7 +296,7 @@ export const NewContactView: React.FC<NewContactViewProps> = ({
       lastName: lastName.trim(),
       email: email.trim(),
       phone: phone.trim(),
-      gender,
+      gender: gender || 'NOT_SPECIFIED',
       countryOfOrigin: countryOfOrigin.trim() || 'Sénégal',
       city: city.trim(),
       affiliation: affiliation.trim(),
@@ -169,8 +313,7 @@ export const NewContactView: React.FC<NewContactViewProps> = ({
         ...contactToEdit,
         ...basePayload,
         name: fullName,
-        initials,
-        exchangeNotes: contactToEdit.exchangeNotes || []
+        initials
       };
 
       await onUpdateContact(updatedContact);
@@ -180,8 +323,7 @@ export const NewContactView: React.FC<NewContactViewProps> = ({
         id: '',
         ...basePayload,
         name: fullName,
-        initials,
-        exchangeNotes: []
+        initials
       };
 
       await onAddContact(newContact);
@@ -189,7 +331,14 @@ export const NewContactView: React.FC<NewContactViewProps> = ({
     }
   };
 
-  const inputClass = "w-full px-3 py-2.5 rounded-lg border border-[#C9D4DE] focus:border-[#005596] focus:ring-2 focus:ring-[#005596]/20";
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    performSave();
+  };
+
+  const fieldClass = (key: string) => `${INPUT_CLASS} ${errors[key] ? INVALID_INPUT_CLASS : ''}`;
+
+  const requiredError = hasSubmitted && Object.keys(errors).length > 0;
 
   return (
     <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-10 py-8 space-y-6 animate-fade-in">
@@ -226,7 +375,8 @@ export const NewContactView: React.FC<NewContactViewProps> = ({
               Annuler
             </Link>
             <button
-              onClick={handleSubmit}
+              type="button"
+              onClick={() => performSave()}
               className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-[#005596] to-[#004275] text-white text-xs font-bold shadow hover:shadow-md active:scale-95 transition-all cursor-pointer"
             >
               {contactToEdit ? 'Enregistrer les modifications' : 'Enregistrer le contact'}
@@ -235,10 +385,25 @@ export const NewContactView: React.FC<NewContactViewProps> = ({
         </div>
       </div>
 
-      <form onSubmit={handleSubmit} className="grid grid-cols-12 gap-6">
+      <form onSubmit={handleSubmit} noValidate className="grid grid-cols-12 gap-6">
 
         {/* Left Column: Form Sections */}
         <div className="col-span-12 lg:col-span-8 flex flex-col gap-6">
+
+          {/* Validation Error Banner */}
+          {requiredError && (
+            <div role="alert" className="flex items-start gap-3 p-4 bg-red-50 border border-red-300 rounded-xl text-xs">
+              <AlertTriangle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
+              <div>
+                <p className="text-red-700 font-bold">
+                  Veuillez remplir tous les champs obligatoires avant d'enregistrer.
+                </p>
+                <p className="text-red-600 text-[11px] mt-0.5">
+                  Les champs obligatoires sont le Nom, le Prénom et l'E-mail professionnel.
+                </p>
+              </div>
+            </div>
+          )}
 
           {/* Simulated Duplicate Warning */}
           {showDuplicateWarning && (
@@ -263,37 +428,52 @@ export const NewContactView: React.FC<NewContactViewProps> = ({
                 <div>
                   <label className="block font-bold text-[#55636B] mb-1">Nom *</label>
                   <input
+                    id="field-lastName"
                     type="text"
                     value={lastName}
-                    onChange={(e) => setLastName(e.target.value)}
+                    onChange={(e) => {
+                      setLastName(e.target.value);
+                      clearFieldError('lastName');
+                    }}
                     placeholder="Ex: Diop"
-                    className={inputClass}
+                    className={fieldClass('lastName')}
                     required
                   />
+                  {errors.lastName && <p className="text-[11px] font-semibold text-red-500 mt-1">{errors.lastName}</p>}
                 </div>
 
                 <div>
                   <label className="block font-bold text-[#55636B] mb-1">Prénom *</label>
                   <input
+                    id="field-firstName"
                     type="text"
                     value={firstName}
-                    onChange={(e) => setFirstName(e.target.value)}
+                    onChange={(e) => {
+                      setFirstName(e.target.value);
+                      clearFieldError('firstName');
+                    }}
                     placeholder="Ex: Moussa"
-                    className={inputClass}
+                    className={fieldClass('firstName')}
                     required
                   />
+                  {errors.firstName && <p className="text-[11px] font-semibold text-red-500 mt-1">{errors.firstName}</p>}
                 </div>
 
                 <div>
                   <label className="block font-bold text-[#55636B] mb-1">Email Professionnel *</label>
                   <input
+                    id="field-email"
                     type="email"
                     value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                    onChange={(e) => {
+                      setEmail(e.target.value);
+                      clearFieldError('email');
+                    }}
                     placeholder="moussa.diop@research-net.org"
-                    className={inputClass}
+                    className={fieldClass('email')}
                     required
                   />
+                  {errors.email && <p className="text-[11px] font-semibold text-red-500 mt-1">{errors.email}</p>}
                 </div>
 
                 <div>
@@ -303,21 +483,8 @@ export const NewContactView: React.FC<NewContactViewProps> = ({
                     value={phone}
                     onChange={(e) => setPhone(e.target.value)}
                     placeholder="+221 XX XXX XX XX"
-                    className={inputClass}
+                    className={INPUT_CLASS}
                   />
-                </div>
-
-                <div>
-                  <label className="block font-bold text-[#55636B] mb-1">Genre</label>
-                  <select
-                    value={gender}
-                    onChange={(e) => setGender(e.target.value as Gender)}
-                    className={`${inputClass} bg-white`}
-                  >
-                    {(Object.keys(GENDER_LABELS) as Gender[]).map(g => (
-                      <option key={g} value={g}>{GENDER_LABELS[g]}</option>
-                    ))}
-                  </select>
                 </div>
 
                 <div>
@@ -325,7 +492,7 @@ export const NewContactView: React.FC<NewContactViewProps> = ({
                   <select
                     value={researchCareerStage}
                     onChange={(e) => setResearchCareerStage(e.target.value as ResearchCareerStage)}
-                    className={`${inputClass} bg-white`}
+                    className={`${INPUT_CLASS} bg-white`}
                   >
                     {(Object.keys(CAREER_STAGE_LABELS) as ResearchCareerStage[]).map(s => (
                       <option key={s} value={s}>{CAREER_STAGE_LABELS[s]}</option>
@@ -374,27 +541,21 @@ export const NewContactView: React.FC<NewContactViewProps> = ({
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
                 <div>
                   <label className="block font-bold text-[#55636B] mb-1">Pays d'origine</label>
-                  <input
-                    type="text"
+                  <SearchableSelect
                     value={countryOfOrigin}
-                    onChange={(e) => setCountryOfOrigin(e.target.value)}
-                    placeholder="Ex: Sénégal"
-                    list="country-of-origin-options"
-                    className={inputClass}
+                    onChange={setCountryOfOrigin}
+                    options={COUNTRY_OPTIONS}
+                    placeholder="Rechercher ou saisir un pays..."
                   />
-                  <datalist id="country-of-origin-options">
-                    {COMMON_COUNTRIES.map(c => <option key={c} value={c} />)}
-                  </datalist>
                 </div>
 
                 <div>
                   <label className="block font-bold text-[#55636B] mb-1">Ville</label>
-                  <input
-                    type="text"
+                  <SearchableSelect
                     value={city}
-                    onChange={(e) => setCity(e.target.value)}
-                    placeholder="Ex: Dakar"
-                    className={inputClass}
+                    onChange={setCity}
+                    options={cityOptions}
+                    placeholder="Rechercher ou saisir une ville..."
                   />
                 </div>
               </div>
@@ -414,7 +575,7 @@ export const NewContactView: React.FC<NewContactViewProps> = ({
                     value={affiliation}
                     onChange={(e) => setAffiliation(e.target.value)}
                     placeholder="Université Cheikh Anta Diop"
-                    className={inputClass}
+                    className={INPUT_CLASS}
                   />
                 </div>
 
@@ -425,7 +586,7 @@ export const NewContactView: React.FC<NewContactViewProps> = ({
                     value={fonction}
                     onChange={(e) => setFonction(e.target.value)}
                     placeholder="Directeur de Recherche en IA"
-                    className={inputClass}
+                    className={INPUT_CLASS}
                   />
                 </div>
 
@@ -436,7 +597,7 @@ export const NewContactView: React.FC<NewContactViewProps> = ({
                     value={experience}
                     onChange={(e) => setExperience(e.target.value)}
                     placeholder="Ex: 10 ans en recherche biomédicale"
-                    className={inputClass}
+                    className={INPUT_CLASS}
                   />
                 </div>
 
@@ -447,7 +608,7 @@ export const NewContactView: React.FC<NewContactViewProps> = ({
                     value={facultyDepartment}
                     onChange={(e) => setFacultyDepartment(e.target.value)}
                     placeholder="Ex: Faculté des Sciences et Techniques"
-                    className={inputClass}
+                    className={INPUT_CLASS}
                   />
                 </div>
               </div>
@@ -475,7 +636,7 @@ export const NewContactView: React.FC<NewContactViewProps> = ({
                         className={`px-3 py-1.5 rounded-full text-[11px] font-bold border transition-all cursor-pointer ${
                           active
                             ? 'bg-[#005596] text-white border-[#005596] shadow'
-                            : `${t.color} hover:opacity-90`
+                            : `${t.color || 'bg-slate-100 text-slate-700 border-slate-200'} hover:opacity-90`
                         }`}
                       >
                         {t.name}
@@ -484,36 +645,6 @@ export const NewContactView: React.FC<NewContactViewProps> = ({
                   })}
                 </div>
               )}
-            </section>
-
-            {/* Section 5: Notes & Suivi */}
-            <section className="space-y-4">
-              <h2 className="text-base font-bold text-[#005596] border-b border-[#C9D4DE]/40 pb-2 flex items-center gap-2">
-                <GraduationCap className="w-4 h-4 text-[#005596]" /> Notes & Suivi
-              </h2>
-
-              <div className="grid grid-cols-1 gap-4 text-xs">
-                <div className="md:w-1/2">
-                  <label className="block font-bold text-[#55636B] mb-1">Date du premier échange</label>
-                  <input
-                    type="date"
-                    value={lastDate}
-                    onChange={(e) => setLastDate(e.target.value)}
-                    className={inputClass}
-                  />
-                </div>
-
-                <div>
-                  <label className="block font-bold text-[#55636B] mb-1">Résumé de l'échange</label>
-                  <textarea
-                    rows={4}
-                    value={exchangeSummary}
-                    onChange={(e) => setExchangeSummary(e.target.value)}
-                    placeholder="Points clés discutés, opportunités de collaboration identifiées..."
-                    className="w-full px-3 py-2.5 rounded-lg border border-[#C9D4DE] focus:border-[#005596] focus:ring-2 focus:ring-[#005596]/20 resize-none"
-                  />
-                </div>
-              </div>
             </section>
 
           </div>
@@ -547,10 +678,6 @@ export const NewContactView: React.FC<NewContactViewProps> = ({
                   <CheckCircle2 className={`w-4 h-4 ${affiliation ? 'text-[#005596]' : 'text-slate-300'}`} />
                   Affiliation R&I précisée
                 </li>
-                <li className="flex items-center gap-2">
-                  <Circle className={`w-4 h-4 ${exchangeSummary ? 'text-[#005596]' : 'text-slate-300'}`} />
-                  Première note d'échange documentée
-                </li>
               </ul>
             </div>
 
@@ -565,7 +692,7 @@ export const NewContactView: React.FC<NewContactViewProps> = ({
                   {firstName ? firstName[0].toUpperCase() : 'NC'}
                 </div>
                 <p className="font-extrabold text-sm text-[#1C2529]">
-                  {firstName || lastName ? `${firstName} ${lastName}` : 'Nouveau Contact'}
+                  {firstName || lastName ? formatFullName(firstName, lastName) : 'Nouveau Contact'}
                 </p>
                 <p className="text-xs text-[#55636B] mt-0.5">
                   {affiliation || 'Organisation non définie'}

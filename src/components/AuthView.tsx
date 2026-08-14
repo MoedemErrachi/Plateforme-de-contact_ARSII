@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { User, Lock, Eye, EyeOff, ShieldCheck, Sparkles, CheckCircle2, ArrowRight, HelpCircle, X, Mail, Building2 } from 'lucide-react';
+import { User, Lock, Eye, EyeOff, ShieldCheck, CheckCircle2, ArrowRight, X } from 'lucide-react';
 import { Modal } from './Modal';
 import { User as AuthUser } from '../types';
 
@@ -52,7 +52,18 @@ export const AuthView: React.FC<AuthViewProps> = ({ onLoginSuccess }) => {
         return;
       }
 
+      console.log('[AuthView] Login API response data:', data);
       const u = data.user || data.data?.user;
+      if (typeof data.token === 'string' && data.token) {
+        try {
+          localStorage.setItem('euraxess_token', data.token);
+          console.log('[AuthView] Successfully saved token to localStorage. Verification:', localStorage.getItem('euraxess_token')?.substring(0, 10) + '...');
+        } catch (err) {
+          console.error('[AuthView] Failed to save token to localStorage:', err);
+        }
+      } else {
+        console.warn('[AuthView] No valid token found in API response!', data);
+      }
       onLoginSuccess({
         id: u?.id,
         name: u?.name || email.split('@')[0].toUpperCase(),

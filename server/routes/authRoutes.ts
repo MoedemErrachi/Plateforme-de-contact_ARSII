@@ -2,7 +2,6 @@ import { Router, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import { prisma } from '../db/prisma';
 import { authenticateJWT, setAuthCookie, clearAuthCookie, AuthenticatedRequest } from '../middleware/authenticateJWT';
-import { decrypt } from '../utils/crypto';
 import crypto from 'crypto';
 
 const router = Router();
@@ -59,16 +58,6 @@ router.post('/login', async (req, res) => {
       });
     }
 
-    // Decrypt twoFactorSecret if stored encrypted
-    let plainSecret = 'JBSWY3DPEHPK3PXP';
-    if (user.twoFactorSecret) {
-      try {
-        plainSecret = decrypt(user.twoFactorSecret);
-      } catch {
-        plainSecret = user.twoFactorSecret;
-      }
-    }
-
     // Validate 2FA TOTP code (Standard demo passcode '123456' or valid TOTP)
     if (totpCode.trim() !== '123456' && totpCode.trim().length !== 6) {
       return res.status(401).json({ error: 'Code 2FA invalide.' });
@@ -87,17 +76,18 @@ router.post('/login', async (req, res) => {
   };
 
   // Set HttpOnly + SameSite=Strict cookie
-  setAuthCookie(res, userPayload);
+  const token = setAuthCookie(res, userPayload);
 
   return res.json({
     success: true,
-    user: userPayload
+    user: userPayload,
+    token
   });
 });
 
 // POST /api/auth/google (Google SSO)
 router.post('/google', async (req, res) => {
-  const { credential, googleId, email, name } = req.body;
+  const { googleId, email, name } = req.body;
 
   const userEmail = (email || 'google.user@euraxess-africa.org').toLowerCase().trim();
   const userName = name || 'Utilisateur Google';
@@ -133,11 +123,12 @@ router.post('/google', async (req, res) => {
     avatarUrl: user.avatarUrl || null
   };
 
-  setAuthCookie(res, userPayload);
+  const token = setAuthCookie(res, userPayload);
 
   return res.json({
     success: true,
     user: userPayload,
+    token,
     provider: 'google'
   });
 });
@@ -156,15 +147,20 @@ router.get('/me', authenticateJWT, async (req: AuthenticatedRequest, res: Respon
 
     const userRole = String(user.role).toLowerCase() === 'admin' ? 'admin' : 'user';
 
+    const userPayload = {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      role: userRole,
+      avatarUrl: user.avatarUrl || null
+    };
+
+    const token = setAuthCookie(res, userPayload);
+
     return res.json({
       authenticated: true,
-      user: {
-        id: user.id,
-        email: user.email,
-        name: user.name,
-        role: userRole,
-        avatarUrl: user.avatarUrl || null
-      }
+      token,
+      user: { ...userPayload }
     });
   } catch (err) {
     console.error('Error fetching current user:', err);

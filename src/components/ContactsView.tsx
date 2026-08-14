@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { Contact, FilterState, Segment, Tag as TagType, Gender, ResearchCareerStage, GENDER_LABELS, CAREER_STAGE_LABELS, CAREER_STAGE_SHORT_LABELS } from '../types';
+import { formatFullName } from '../utils/format';
 import { Modal } from './Modal';
 import { 
   Search, 
@@ -77,6 +78,8 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
     tags: []
   });
 
+  const location = useLocation();
+
   // Applied Filters State (used to filter contacts table)
   const [appliedFilters, setAppliedFilters] = useState<FilterState>({
     search: '',
@@ -87,12 +90,18 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
     tags: []
   });
 
-  // Debounced search term for real-time text input
-  const [debouncedSearch, setDebouncedSearch] = useState('');
+  // Apply filters passed via router state (e.g. from the AI chat assistant)
+  useEffect(() => {
+    const stateFilters = (location.state as { filters?: FilterState } | null)?.filters;
+    if (stateFilters && typeof stateFilters === 'object') {
+      setPendingFilters(stateFilters);
+      setAppliedFilters(stateFilters);
+    }
+  }, [location.state]);
 
+  // Debounced search term for real-time text input
   useEffect(() => {
     const handler = setTimeout(() => {
-      setDebouncedSearch(pendingFilters.search);
       setAppliedFilters(prev => ({ ...prev, search: pendingFilters.search }));
     }, 250);
     return () => clearTimeout(handler);
@@ -206,12 +215,16 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
   // Available Filter Options
   const countries = useMemo(() => {
     const set = new Set<string>();
-    contacts.forEach(c => { if (c.countryOfOrigin) set.add(c.countryOfOrigin.trim()); });
+    contacts.forEach(c => { if (c.countryOfOrigin && c.countryOfOrigin.trim() !== 'N/A') set.add(c.countryOfOrigin.trim()); });
     return Array.from(set).sort();
   }, [contacts]);
 
-  const genders = ['FEMALE', 'MALE', 'OTHER', 'PREFER_NOT_TO_SAY'] as Gender[];
+  const genders = ['FEMALE', 'MALE', 'NOT_SPECIFIED'] as Gender[];
   const allCareerStages = ['R1_FIRST_STAGE', 'R2_RECOGNIZED', 'R3_ESTABLISHED', 'R4_LEADING'] as ResearchCareerStage[];
+
+  const hasVal = (v?: string | null) => Boolean(v && v.trim() && v.trim() !== 'N/A');
+  const dash = <span className="text-[#8A98A1]">—</span>;
+  const fmt = (v?: string | null) => (hasVal(v) ? v : dash);
 
   // Helper to handle pending filter updates and deselect active segment
   const updatePendingFilters = (updater: (prev: FilterState) => FilterState) => {
@@ -287,11 +300,12 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
       // Search text match
       if (appliedFilters.search.trim()) {
         const query = appliedFilters.search.toLowerCase().trim();
-        const matchName = contact.name?.toLowerCase().includes(query) || `${contact.firstName} ${contact.lastName}`.toLowerCase().includes(query);
+        const matchName = contact.name?.toLowerCase().includes(query) || formatFullName(contact.firstName, contact.lastName).toLowerCase().includes(query);
         const matchAff = contact.affiliation?.toLowerCase().includes(query);
         const matchEmail = contact.email?.toLowerCase().includes(query);
         const matchFunction = contact.function?.toLowerCase().includes(query);
-        if (!matchName && !matchAff && !matchEmail && !matchFunction) return false;
+        const matchDepartment = contact.facultyDepartment?.toLowerCase().includes(query);
+        if (!matchName && !matchAff && !matchEmail && !matchFunction && !matchDepartment) return false;
       }
 
       // Country of origin match
@@ -353,7 +367,7 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
   // Helper to resolve tag color badge class
   const getTagBadgeStyle = (tagName: string) => {
     const found = tags.find(t => t.name.toLowerCase() === tagName.toLowerCase());
-    if (found) return found.color;
+    if (found && found.color) return found.color;
     return 'bg-slate-100 text-slate-700 border-slate-200';
   };
 
@@ -518,7 +532,7 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
                       className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all cursor-pointer ${
                         active
                           ? 'bg-[#005596] text-white border-[#005596] shadow'
-                          : `${t.color} hover:opacity-90`
+                          : `${t.color || 'bg-slate-100'} hover:opacity-90`
                       }`}
                     >
                       {t.name}
@@ -765,15 +779,15 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
                           <td className="p-3 sm:p-4 min-w-0">
                             <div className="flex items-center gap-1.5">
                               <Flag className="w-3.5 h-3.5 text-[#8A98A1] shrink-0" />
-                              <span className="font-semibold text-[#1C2529] truncate" title={contact.countryOfOrigin}>{contact.countryOfOrigin || '—'}</span>
+                              <span className="font-semibold text-[#1C2529] truncate" title={contact.countryOfOrigin}>{fmt(contact.countryOfOrigin)}</span>
                             </div>
-                            <div className="text-[11px] text-[#8A98A1] truncate pl-5" title={contact.city}>{contact.city || '—'}</div>
+                            <div className="text-[11px] text-[#8A98A1] truncate pl-5" title={contact.city}>{fmt(contact.city)}</div>
                           </td>
 
                           {/* Affiliation & Fonction */}
                           <td className="p-3 sm:p-4 min-w-0">
-                            <div className="font-semibold text-[#1C2529] truncate" title={contact.affiliation}>{contact.affiliation || '—'}</div>
-                            <div className="text-[11px] text-[#8A98A1] truncate" title={contact.function}>{contact.function || '—'}</div>
+                            <div className="font-semibold text-[#1C2529] truncate" title={contact.affiliation}>{fmt(contact.affiliation)}</div>
+                            <div className="text-[11px] text-[#8A98A1] truncate" title={contact.function}>{fmt(contact.function)}</div>
                           </td>
 
                           {/* Stade de carrière (Hidden on tablet, shown on lg) */}
@@ -938,11 +952,11 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
                       <div className="grid grid-cols-2 gap-2 text-xs text-slate-600 bg-slate-50 p-2.5 rounded-xl border border-slate-100">
                         <div>
                           <span className="text-[10px] font-bold uppercase text-slate-400 block">Affiliation</span>
-                          <span className="font-semibold text-slate-800">{contact.affiliation || '—'}</span>
+                          <span className="font-semibold text-slate-800">{fmt(contact.affiliation)}</span>
                         </div>
                         <div>
                           <span className="text-[10px] font-bold uppercase text-slate-400 block">Pays & Ville</span>
-                          <span className="font-semibold text-slate-800">{[contact.countryOfOrigin, contact.city].filter(Boolean).join(', ') || '—'}</span>
+                          <span className="font-semibold text-slate-800">{[contact.countryOfOrigin, contact.city].filter(v => hasVal(v)).join(', ') || dash}</span>
                         </div>
                       </div>
 
@@ -963,7 +977,7 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
 
                       {/* Mobile Card Action Footer */}
                       <div className="pt-2 flex items-center justify-between border-t border-slate-100" onClick={(e) => e.stopPropagation()}>
-                        <span className="text-[11px] text-slate-500 font-medium truncate">{contact.function || contact.affiliation}</span>
+                        <span className="text-[11px] text-slate-500 font-medium truncate">{hasVal(contact.function) ? contact.function : hasVal(contact.affiliation) ? contact.affiliation : dash}</span>
                         
                         <div className="flex items-center gap-2">
                           <button 
@@ -1120,8 +1134,8 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
                     )}
                   </div>
                   <h2 className="text-xl font-bold text-[#1C2529]">{quickDrawerContact.name}</h2>
-                  <p className="text-xs text-[#005596] font-bold mt-0.5">{quickDrawerContact.function || '—'}</p>
-                  <p className="text-xs text-[#55636B]">{quickDrawerContact.affiliation || '—'}</p>
+                  <p className="text-xs text-[#005596] font-bold mt-0.5">{fmt(quickDrawerContact.function)}</p>
+                  <p className="text-xs text-[#55636B]">{fmt(quickDrawerContact.affiliation)}</p>
                   <span className="inline-block mt-2 px-2.5 py-1 bg-[#D9E6F2] text-[#005596] rounded-full text-[11px] font-bold">
                     {CAREER_STAGE_LABELS[quickDrawerContact.researchCareerStage]}
                   </span>
@@ -1146,11 +1160,11 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
                     </div>
                     <div className="flex items-center gap-3 text-[#55636B]">
                       <Phone className="w-4 h-4 text-[#005596]" />
-                      <span>{quickDrawerContact.phone || '—'}</span>
+                      <span>{fmt(quickDrawerContact.phone)}</span>
                     </div>
                     <div className="flex items-center gap-3 text-[#55636B]">
                       <Globe className="w-4 h-4 text-[#005596]" />
-                      <span>Pays: {quickDrawerContact.countryOfOrigin || '—'}{quickDrawerContact.city ? ` · ${quickDrawerContact.city}` : ''}</span>
+                      <span>Pays: {fmt(quickDrawerContact.countryOfOrigin)}{hasVal(quickDrawerContact.city) ? ` · ${quickDrawerContact.city}` : ''}</span>
                     </div>
                     <div className="flex items-center gap-3 text-[#55636B]">
                       <Users className="w-4 h-4 text-[#005596]" />
@@ -1194,11 +1208,11 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
                     </div>
                     <div className="flex justify-between gap-2">
                       <span className="font-bold text-[#1C2529]">Expérience:</span>
-                      <span className="text-right">{quickDrawerContact.experience || '—'}</span>
+                      <span className="text-right">{fmt(quickDrawerContact.experience)}</span>
                     </div>
                     <div className="flex justify-between gap-2">
                       <span className="font-bold text-[#1C2529]">Faculté / Dépt:</span>
-                      <span className="text-right">{quickDrawerContact.facultyDepartment || '—'}</span>
+                      <span className="text-right">{fmt(quickDrawerContact.facultyDepartment)}</span>
                     </div>
                   </div>
                 </section>

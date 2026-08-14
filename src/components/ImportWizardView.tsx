@@ -2,8 +2,8 @@ import React, { useState, useRef, useMemo } from 'react';
 import Papa from 'papaparse';
 import ExcelJS from 'exceljs';
 import { Link } from 'react-router-dom';
-import { Contact, Gender, ResearchCareerStage, GENDER_LABELS, CAREER_STAGE_LABELS } from '../types';
-import { useToast } from './Toast';
+import { Contact, Gender, ResearchCareerStage, CAREER_STAGE_LABELS } from '../types';
+import { splitFullName } from '../utils/format';
 import { 
   Check, 
   Upload, 
@@ -18,11 +18,8 @@ import {
   Download,
   Info,
   RefreshCw,
-  Edit3,
   Trash2,
   XCircle,
-  ShieldCheck,
-  Sparkles,
   Layers,
   FileCheck,
   X
@@ -84,7 +81,6 @@ const SYSTEM_FIELDS: SystemFieldDef[] = [
   { key: 'firstName', label: '👤 Prénom', description: 'Prénom' },
   { key: 'lastName', label: '👤 Nom de famille', description: 'Nom de famille' },
   { key: 'fullName', label: '👥 Nom Complet', description: 'Prénom + Nom sur une colonne' },
-  { key: 'gender', label: '⚧ Genre', description: 'Femme, Homme, Autre, Préfère ne pas dire' },
   { key: 'countryOfOrigin', label: '🌍 Pays d\'origine', description: 'Pays d\'origine du chercheur' },
   { key: 'city', label: '🏙️ Ville', description: 'Ville de résidence' },
   { key: 'phone', label: '📞 Téléphone', description: 'Numéro de contact' },
@@ -100,8 +96,6 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
   onImportContacts,
   existingContacts
 }) => {
-  const { showToast } = useToast();
-
   // Wizard Step State
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4>(1);
   
@@ -169,7 +163,6 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
     if (clean === 'prénom' || clean === 'prenom' || clean === 'first name' || clean === 'firstname') return 'firstName';
     if (clean === 'nom' || clean === 'last name' || clean === 'lastname' || clean === 'family name') return 'lastName';
     if (['nom complet', 'nom & prénom', 'nom et prénom', 'contact', 'full name', 'fullname'].some(k => clean.includes(k))) return 'fullName';
-    if (['genre', 'gender', 'sexe'].some(k => clean.includes(k))) return 'gender';
     if (['pays d\'origine', 'pays', 'pays de provenance', 'country of origin', 'country'].some(k => clean.includes(k))) return 'countryOfOrigin';
     if (['ville', 'city', 'town'].some(k => clean.includes(k))) return 'city';
     if (['téléphone', 'telephone', 'tél', 'tel', 'phone', 'mobile', 'cell'].some(k => clean.includes(k))) return 'phone';
@@ -183,7 +176,7 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
   };
 
   // Helper to process parsed 2D array of rows
-  const processParsedData = (rowsMatrix: any[][], fileName: string) => {
+  const processParsedData = (rowsMatrix: any[][]) => {
     if (!rowsMatrix || rowsMatrix.length < 2) {
       setFileError("Impossible de lire ce fichier. Veuillez vérifier le format (.csv ou .xlsx) et vous assurer qu'il contient des données.");
       return;
@@ -261,7 +254,7 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
         matrix.push(cleanedValues);
       });
 
-      processParsedData(matrix, fileObj.name);
+      processParsedData(matrix);
     } catch (err) {
       setFileError("Impossible de lire ce fichier. Veuillez vérifier le format (.csv ou .xlsx) et vous assurer qu'il contient des données.");
     }
@@ -276,7 +269,7 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
           setFileError("Impossible de lire ce fichier. Veuillez vérifier le format (.csv ou .xlsx) et vous assurer qu'il contient des données.");
           return;
         }
-        processParsedData(results.data as any[][], fileObj.name);
+        processParsedData(results.data as any[][]);
       },
       error: () => {
         setFileError("Impossible de lire ce fichier. Veuillez vérifier le format (.csv ou .xlsx) et vous assurer qu'il contient des données.");
@@ -306,15 +299,6 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
     }
   };
 
-  // Parse raw gender string to enum value
-  const parseGender = (raw: string): Gender => {
-    const clean = raw.toLowerCase().trim();
-    if (['femme', 'female', 'f', 'féminin', 'feminin'].some(k => clean === k || clean.includes(k))) return 'FEMALE';
-    if (['homme', 'male', 'm', 'masculin', 'h'].some(k => clean === k || clean.includes(k))) return 'MALE';
-    if (['autre', 'other', 'non binaire', 'non-binaire', 'o'].some(k => clean === k || clean.includes(k))) return 'OTHER';
-    return 'PREFER_NOT_TO_SAY';
-  };
-
   // Parse raw career stage string to enum value
   const parseCareerStage = (raw: string): ResearchCareerStage => {
     const clean = raw.toLowerCase().trim();
@@ -338,10 +322,19 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
       };
 
       const email = getVal('email').trim();
-      const firstName = getVal('firstName').trim();
-      const lastName = getVal('lastName').trim();
+      let firstName = getVal('firstName').trim();
+      let lastName = getVal('lastName').trim();
       const fullNameVal = getVal('fullName').trim();
-      const gender = parseGender(getVal('gender'));
+
+      // Split the "Nom complet" column into firstName / lastName when
+      // individual name columns are not mapped.
+      if (!firstName && !lastName && fullNameVal) {
+        const split = splitFullName(fullNameVal);
+        firstName = split.firstName;
+        lastName = split.lastName;
+      }
+
+      const gender: Gender = 'NOT_SPECIFIED';
       const countryOfOrigin = getVal('countryOfOrigin').trim() || 'Sénégal';
       const city = getVal('city').trim();
       const phone = getVal('phone').trim() || '';
@@ -362,6 +355,7 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
       if (!finalFullName) {
         finalFullName = email.split('@')[0] || `Contact #${row.rowIndex}`;
       }
+      finalFullName = finalFullName.trim();
 
       // Validate email & required identity
       const isValidEmailFormat = !email || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
@@ -426,6 +420,14 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
     setCandidates(prev => prev.map(c => {
       if (c.id !== id) return c;
       const updated = { ...c, [field]: val };
+
+      // When "Nom complet" is edited inline, re-split into firstName / lastName.
+      if (field === 'fullName') {
+        updated.fullName = val.trim();
+        const split = splitFullName(val);
+        updated.firstName = split.firstName;
+        updated.lastName = split.lastName;
+      }
       
       // Re-evaluate validity
       const emailValid = !updated.email || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(updated.email);
@@ -497,18 +499,7 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
           experience: cand.experience || cand.duplicateMatch.experience,
           facultyDepartment: cand.facultyDepartment || cand.duplicateMatch.facultyDepartment,
           researchCareerStage: cand.researchCareerStage,
-          tags: Array.from(new Set([...(cand.duplicateMatch.tags || []), ...cand.tags, 'Importé', 'Mis à jour'])),
-          exchangeNotes: [
-            {
-              id: `note-merge-${Date.now()}-${cand.rowIndex}`,
-              date: new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' }),
-              relativeTime: 'Récemment mis à jour',
-              title: 'Données mises à jour par import',
-              content: `Fiche contact enrichie via l'importation du fichier ${file?.name || 'CSV/Excel'}.`,
-              type: 'note'
-            },
-            ...(cand.duplicateMatch.exchangeNotes || [])
-          ]
+          tags: Array.from(new Set([...(cand.duplicateMatch.tags || []), ...cand.tags, 'Importé', 'Mis à jour']))
         };
         updatedContactsToMerge.push(merged);
         countMerged++;
@@ -536,15 +527,7 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
           experience: cand.experience || undefined,
           facultyDepartment: cand.facultyDepartment || undefined,
           researchCareerStage: cand.researchCareerStage,
-          tags: cand.tags,
-          exchangeNotes: [{
-            id: `note-imp-${Date.now()}`,
-            date: new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' }),
-            relativeTime: 'Importé récemment',
-            title: 'Contact importé',
-            content: `Nouveau contact ajouté depuis le fichier ${file?.name || 'source'}.`,
-            type: 'email'
-          }]
+          tags: cand.tags
         };
         newContactsToAdd.push(newContact);
         countNew++;

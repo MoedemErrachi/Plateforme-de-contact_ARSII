@@ -10,12 +10,9 @@ import {
   Copy,
   Check,
   Search,
-  Filter,
   Users,
   ArrowRight,
   X,
-  Sparkles,
-  Info,
   Globe,
   MapPin,
   Bookmark
@@ -71,7 +68,6 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
   const [isTagModalOpen, setIsTagModalOpen] = useState(false);
   const [editingTag, setEditingTag] = useState<Tag | null>(null);
   const [tagNameInput, setTagNameInput] = useState('');
-  const [tagCategoryInput, setTagCategoryInput] = useState('Secteur');
   const [tagColorInput, setTagColorInput] = useState('bg-emerald-100 text-emerald-800 border-emerald-300');
   const [tagDescInput, setTagDescInput] = useState('');
 
@@ -94,13 +90,12 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
     { label: 'Ardoise / Neutre', class: 'bg-slate-100 text-slate-800 border-slate-300' },
   ];
 
-  const categories = ['Secteur', 'Priorité', 'Rôle', 'Statut', 'Financement', 'Réseau'];
-  const allGenders = ['FEMALE', 'MALE', 'OTHER', 'PREFER_NOT_TO_SAY'] as Gender[];
+  const allGenders = ['FEMALE', 'MALE', 'NOT_SPECIFIED'] as Gender[];
   const allCareerStages = ['R1_FIRST_STAGE', 'R2_RECOGNIZED', 'R3_ESTABLISHED', 'R4_LEADING'] as ResearchCareerStage[];
 
   const countries = useMemo(() => {
     const set = new Set<string>();
-    contacts.forEach(c => { if (c.countryOfOrigin) set.add(c.countryOfOrigin.trim()); });
+    contacts.forEach(c => { if (c.countryOfOrigin && c.countryOfOrigin.trim() !== 'N/A') set.add(c.countryOfOrigin.trim()); });
     return Array.from(set).sort();
   }, [contacts]);
 
@@ -182,13 +177,11 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
     if (tagToEdit) {
       setEditingTag(tagToEdit);
       setTagNameInput(tagToEdit.name);
-      setTagCategoryInput(tagToEdit.category || 'Secteur');
-      setTagColorInput(tagToEdit.color);
+      setTagColorInput(tagToEdit.color || colorPresets[0].class);
       setTagDescInput(tagToEdit.description || '');
     } else {
       setEditingTag(null);
       setTagNameInput('');
-      setTagCategoryInput('Secteur');
       setTagColorInput(colorPresets[0].class);
       setTagDescInput('');
     }
@@ -203,7 +196,6 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
       onUpdateTag({
         ...editingTag,
         name: tagNameInput.trim(),
-        category: tagCategoryInput,
         color: tagColorInput,
         description: tagDescInput
       });
@@ -211,7 +203,6 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
       onCreateTag({
         id: `tag-${Date.now()}`,
         name: tagNameInput.trim(),
-        category: tagCategoryInput,
         color: tagColorInput,
         description: tagDescInput
       });
@@ -442,7 +433,7 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
                 >
                   <div>
                     <div className="flex justify-between items-start gap-2 mb-3">
-                      <span className={`px-3 py-1 rounded-full text-xs font-bold border ${tag.color} inline-flex items-center gap-1.5 shadow-xs`}>
+                      <span className={`px-3 py-1 rounded-full text-xs font-bold border ${tag.color || 'bg-slate-100 text-slate-700 border-slate-200'} inline-flex items-center gap-1.5 shadow-xs`}>
                         <TagIcon className="w-3.5 h-3.5" />
                         {tag.name}
                       </span>
@@ -464,12 +455,6 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
                         </button>
                       </div>
                     </div>
-
-                    {tag.category && (
-                      <span className="text-[10px] uppercase tracking-wider font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded">
-                        Catégorie: {tag.category}
-                      </span>
-                    )}
 
                     <p className="text-xs text-[#55636B] mt-2 line-clamp-2">
                       {tag.description || 'Pas de description.'}
@@ -506,7 +491,7 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
                 <div>
                   <div className="flex justify-between items-center mb-6 border-b border-slate-100 pb-4">
                     <div className="flex items-center gap-3">
-                      <span className={`px-3 py-1 rounded-full text-xs font-bold border ${selectedTagForDetail.color} flex items-center gap-1.5`}>
+                      <span className={`px-3 py-1 rounded-full text-xs font-bold border ${selectedTagForDetail.color || 'bg-slate-100 text-slate-700 border-slate-200'} flex items-center gap-1.5`}>
                         <TagIcon className="w-4 h-4" />
                         {selectedTagForDetail.name}
                       </span>
@@ -844,19 +829,6 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
                   placeholder="ex: Leader R&I, Financement 2025"
                   className="w-full p-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#005596]"
                 />
-              </div>
-
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">Catégorie</label>
-                <select
-                  value={tagCategoryInput}
-                  onChange={(e) => setTagCategoryInput(e.target.value)}
-                  className="w-full p-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#005596]"
-                >
-                  {categories.map(cat => (
-                    <option key={cat} value={cat}>{cat}</option>
-                  ))}
-                </select>
               </div>
 
               <div>

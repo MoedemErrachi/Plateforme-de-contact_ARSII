@@ -1,16 +1,12 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { Contact, Tag, ResearchCareerStage, CAREER_STAGE_SHORT_LABELS, GENDER_LABELS } from '../types';
+import { Contact, Tag, ResearchCareerStage, CAREER_STAGE_SHORT_LABELS } from '../types';
 import {
   Users,
   Globe,
   Building2,
-  GraduationCap,
-  TrendingUp,
   Plus,
   Upload,
-  ArrowRight,
-  ExternalLink,
   Sliders,
   Eye,
   EyeOff,
@@ -18,8 +14,7 @@ import {
   MoveDown,
   GripVertical,
   RotateCcw,
-  Sparkles,
-  Layers
+  Download
 } from 'lucide-react';
 import { DashboardSkeleton } from './Skeletons';
 import { Modal } from './Modal';
@@ -28,7 +23,7 @@ import { DistributionChart } from './DistributionChart';
 interface DashboardViewProps {
   contacts: Contact[];
   tags: Tag[];
-  onSelectContact: (contactId: string) => void;
+  onExportAll?: () => void;
   isLoading?: boolean;
 }
 
@@ -44,7 +39,6 @@ const DEFAULT_WIDGETS: WidgetConfig[] = [
   { id: 'distributionChart', title: 'Distribution Pays & Genre', visible: true, order: 1 },
   { id: 'careerStage', title: 'Stades de carrière de recherche', visible: true, order: 2 },
   { id: 'topTags', title: 'Top Expertises & Tags', visible: true, order: 3 },
-  { id: 'recentExchanges', title: 'Derniers Échanges R&I', visible: true, order: 4 },
 ];
 
 const CAREER_STAGE_ORDER: ResearchCareerStage[] = [
@@ -66,7 +60,7 @@ const TAG_FALLBACK_COLORS = ['#005596', '#B8167C', '#FFC20C', '#35B8B2', '#8A98A
 export const DashboardView: React.FC<DashboardViewProps> = ({
   contacts,
   tags,
-  onSelectContact,
+  onExportAll,
   isLoading = false
 }) => {
   // Widget Layout State with persistence
@@ -201,14 +195,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     return set.size;
   }, [contacts]);
 
-  const seniorResearchers = useMemo(() => {
-    const count = contacts.filter(c =>
-      c.researchCareerStage === 'R3_ESTABLISHED' || c.researchCareerStage === 'R4_LEADING'
-    ).length;
-    const percentage = contacts.length > 0 ? Math.round((count / contacts.length) * 100) : 0;
-    return { count, percentage };
-  }, [contacts]);
-
   // 2. Career stage distribution (R1-R4)
   const careerStageData = useMemo(() => {
     const counts: Record<ResearchCareerStage, number> = {
@@ -259,16 +245,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
   const maxTagCount = Math.max(...topTagsData.map(d => d.count), 1);
 
-  // 4. Recent exchanges
-  const recentExchanges = useMemo(() => {
-    return contacts.flatMap(c =>
-      c.exchangeNotes.map(n => ({
-        ...n,
-        contact: c
-      }))
-    ).slice(0, 6);
-  }, [contacts]);
-
   // Get sorted visible widgets
   const orderedWidgets = [...widgets].sort((a, b) => a.order - b.order);
 
@@ -292,7 +268,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             className="flex items-center gap-2 bg-[#E8F1F8] hover:bg-[#BCD7EE] text-[#005596] px-4 py-2.5 rounded-xl text-xs font-extrabold border border-[#C9D4DE]/50 shadow-xs transition-all active:scale-95"
           >
             <Sliders className="w-4 h-4" />
-            Personnaliser la disposition
+            Configurer
+          </button>
+
+          <button
+            onClick={onExportAll}
+            className="flex items-center gap-2 bg-white border border-[#C9D4DE] text-[#005596] hover:bg-[#E8F1F8] px-4 py-2.5 rounded-xl text-xs font-bold shadow-sm transition-all active:scale-95"
+          >
+            <Download className="w-4 h-4" />
+            Exporter
           </button>
 
           <Link
@@ -357,15 +341,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   {widgetHeaderActions('stats')}
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                   <div className="bg-white p-6 rounded-2xl shadow-[0_6px_18px_rgba(0,0,0,0.06)] border border-[#C9D4DE]/30 flex flex-col justify-between h-40 hover:border-[#005596] transition-all">
-                    <div className="flex justify-between items-start">
-                      <div className="p-2.5 bg-[#005596]/10 rounded-xl text-[#005596]">
-                        <Users className="w-6 h-6" />
-                      </div>
-                      <span className="bg-green-100 text-green-700 text-xs font-bold px-2.5 py-1 rounded-full flex items-center gap-1">
-                        <TrendingUp className="w-3.5 h-3.5" /> Actif
-                      </span>
+                    <div className="p-2.5 bg-[#005596]/10 rounded-xl text-[#005596] w-fit">
+                      <Users className="w-6 h-6" />
                     </div>
                     <div>
                       <h3 className="text-3xl font-extrabold text-[#1C2529]">{totalContacts}</h3>
@@ -376,10 +355,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   </div>
 
                   <div className="bg-white p-6 rounded-2xl shadow-[0_6px_18px_rgba(0,0,0,0.06)] border border-[#C9D4DE]/30 flex flex-col justify-between h-40 hover:border-[#005596] transition-all">
-                    <div className="flex justify-between items-start">
-                      <div className="p-2.5 bg-[#BCD7EE]/40 rounded-xl text-[#004275]">
-                        <Globe className="w-6 h-6" />
-                      </div>
+                    <div className="p-2.5 bg-[#BCD7EE]/40 rounded-xl text-[#004275] w-fit">
+                      <Globe className="w-6 h-6" />
                     </div>
                     <div>
                       <h3 className="text-3xl font-extrabold text-[#1C2529]">{countriesCovered}</h3>
@@ -390,30 +367,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   </div>
 
                   <div className="bg-white p-6 rounded-2xl shadow-[0_6px_18px_rgba(0,0,0,0.06)] border border-[#C9D4DE]/30 flex flex-col justify-between h-40 hover:border-[#005596] transition-all">
-                    <div className="flex justify-between items-start">
-                      <div className="p-2.5 bg-[#FFC20C]/10 rounded-xl text-[#005596]">
-                        <Building2 className="w-6 h-6" />
-                      </div>
+                    <div className="p-2.5 bg-[#FFC20C]/10 rounded-xl text-[#005596] w-fit">
+                      <Building2 className="w-6 h-6" />
                     </div>
                     <div>
                       <h3 className="text-3xl font-extrabold text-[#1C2529]">{affiliationsCount}</h3>
                       <p className="text-[11px] font-bold text-[#55636B] uppercase tracking-wider mt-1">
                         AFFILIATIONS DISTINCTES
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="bg-white p-6 rounded-2xl shadow-[0_6px_18px_rgba(0,0,0,0.06)] border border-[#C9D4DE]/30 flex flex-col justify-between h-40 hover:border-[#005596] transition-all">
-                    <div className="flex justify-between items-start">
-                      <div className="p-2.5 bg-[#BCD7EE]/40 rounded-xl text-[#004275]">
-                        <GraduationCap className="w-6 h-6" />
-                      </div>
-                      <span className="text-[#004275] text-xs font-bold">{seniorResearchers.percentage}%</span>
-                    </div>
-                    <div>
-                      <h3 className="text-3xl font-extrabold text-[#1C2529]">{seniorResearchers.count}</h3>
-                      <p className="text-[11px] font-bold text-[#55636B] uppercase tracking-wider mt-1">
-                        CHERCHEURS SENIORS (R3+)
                       </p>
                     </div>
                   </div>
@@ -520,99 +480,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                       <span className="w-10 shrink-0 text-right text-xs font-bold text-[#1C2529]">{d.count}</span>
                     </div>
                   ))}
-                </div>
-              </div>
-            );
-          }
-
-          if (widget.id === 'recentExchanges') {
-            return (
-              <div key="recentExchanges" {...dragProps} className={`bg-white p-4 sm:p-6 rounded-2xl shadow-[0_6px_18px_rgba(0,0,0,0.06)] border border-[#C9D4DE]/30 space-y-4 ${dragStyleClass}`}>
-                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
-                  <div className="flex items-center gap-2 cursor-grab active:cursor-grabbing py-1 px-1 rounded-lg hover:bg-slate-50 transition-colors">
-                    <GripVertical className="w-4 h-4 text-slate-400 shrink-0" />
-                    <h3 className="text-base sm:text-lg font-bold text-[#1C2529]">Derniers Échanges R&I</h3>
-                  </div>
-
-                  <div className="flex items-center justify-between sm:justify-end w-full sm:w-auto gap-3">
-                    <Link
-                      to="/contacts"
-                      className="text-[#005596] font-bold text-xs hover:underline flex items-center gap-1 cursor-pointer"
-                    >
-                      Voir tout l'historique <ArrowRight className="w-3.5 h-3.5" />
-                    </Link>
-
-                    <div className="flex items-center gap-1 border-l border-slate-200 pl-2 shrink-0">
-                      <button onClick={() => moveWidget('recentExchanges', 'up')} className="p-1 hover:bg-slate-100 rounded cursor-pointer" title="Monter"><MoveUp className="w-3.5 h-3.5 text-slate-500" /></button>
-                      <button onClick={() => moveWidget('recentExchanges', 'down')} className="p-1 hover:bg-slate-100 rounded cursor-pointer" title="Descendre"><MoveDown className="w-3.5 h-3.5 text-slate-500" /></button>
-                      <button onClick={() => toggleVisibility('recentExchanges')} className="p-1 hover:bg-slate-100 rounded cursor-pointer" title="Masquer"><EyeOff className="w-3.5 h-3.5 text-slate-500" /></button>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left border-collapse min-w-[600px]">
-                    <thead>
-                      <tr className="border-b border-[#C9D4DE]/30 text-[11px] font-bold text-[#55636B] uppercase tracking-wider">
-                        <th className="py-3 px-2 min-w-[160px]">CONTACT</th>
-                        <th className="py-3 px-2 min-w-[100px]">DATE</th>
-                        <th className="py-3 px-2 min-w-[200px]">NOTE</th>
-                        <th className="py-3 px-2 min-w-[130px]">PROJET</th>
-                        <th className="py-3 px-2 text-right min-w-[80px]">ACTIONS</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-[#C9D4DE]/10 text-xs">
-                      {recentExchanges.map((item) => (
-                        <tr
-                          key={item.id}
-                          onClick={() => onSelectContact(item.contact.id)}
-                          className="hover:bg-[#E8F1F8]/40 transition-colors cursor-pointer group"
-                        >
-                          <td className="py-3.5 px-2">
-                            <div className="flex items-center gap-3">
-                              <div className="w-8 h-8 rounded-full bg-[#BCD7EE] text-[#005596] font-bold flex items-center justify-center text-xs overflow-hidden shrink-0">
-                                {item.contact.avatarUrl ? (
-                                  <img src={item.contact.avatarUrl} alt={item.contact.name || `${item.contact.firstName} ${item.contact.lastName}`} className="w-full h-full object-cover" />
-                                ) : (
-                                  item.contact.initials || `${item.contact.firstName[0] || ''}${item.contact.lastName[0] || ''}`.toUpperCase()
-                                )}
-                              </div>
-                              <div className="min-w-0">
-                                <p className="font-bold text-[#1C2529] truncate">{item.contact.name || `${item.contact.firstName} ${item.contact.lastName}`}</p>
-                                <p className="text-[11px] text-[#55636B] truncate">{item.contact.affiliation}</p>
-                              </div>
-                            </div>
-                          </td>
-                          <td className="py-3.5 px-2 text-[#1C2529] font-medium whitespace-nowrap">
-                            {item.date}
-                          </td>
-                          <td className="py-3.5 px-2 text-[#55636B] max-w-xs truncate">
-                            {item.content}
-                          </td>
-                          <td className="py-3.5 px-2">
-                            {item.projectName ? (
-                              <span className="inline-block bg-[#FFC20C]/10 text-[#005596] text-[11px] font-bold px-2.5 py-1 rounded-full truncate max-w-[140px]" title={item.projectName}>
-                                {item.projectName}
-                              </span>
-                            ) : (
-                              <span className="text-slate-400 italic text-[11px]">-</span>
-                            )}
-                          </td>
-                          <td className="py-3.5 px-2 text-right" onClick={(e) => e.stopPropagation()}>
-                            <div className="flex justify-end gap-1 opacity-100 sm:opacity-0 group-hover:opacity-100 transition-opacity">
-                              <button
-                                onClick={() => onSelectContact(item.contact.id)}
-                                className="p-1.5 text-slate-500 hover:text-[#005596] hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
-                                title="Voir le contact"
-                              >
-                                <ExternalLink className="w-4 h-4" />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
                 </div>
               </div>
             );

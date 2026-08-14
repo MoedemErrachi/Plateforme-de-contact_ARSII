@@ -1,20 +1,23 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { LogService } from '../services/logService';
 import { prisma } from '../db/prisma';
+import { authenticateJWT, AuthenticatedRequest } from '../middleware/authenticateJWT';
 
 const router = Router();
 const logService = new LogService();
 
 // POST /api/export/log
-router.post('/log', async (req: Request, res: Response, next: NextFunction) => {
+router.post('/log', authenticateJWT, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
-    const { format, fileName, recordCount, performedBy } = req.body;
+    const { format, fileName, recordCount } = req.body;
+    const normalizedFormat = String(format || 'CSV').toUpperCase() as 'CSV' | 'XLSX' | 'PDF' | 'JSON';
     const log = await logService.createLog({
       type: 'EXPORT',
-      format: format || 'XLSX',
-      fileName: fileName || 'export_contacts.xlsx',
-      recordCount: recordCount || 0,
-      performedBy: performedBy || 'Utilisateur Système'
+      format: normalizedFormat,
+      fileName: fileName || `export_contacts_${Date.now()}.${normalizedFormat.toLowerCase()}`,
+      recordCount: Number(recordCount) || 0,
+      performedBy: req.user?.name,
+      userId: req.user?.id
     });
     res.status(200).json({ status: 'success', data: { log } });
   } catch (error) {

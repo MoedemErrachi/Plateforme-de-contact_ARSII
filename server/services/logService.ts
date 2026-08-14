@@ -12,7 +12,7 @@ export class LogService {
 
   public async createLog(data: {
     type: 'IMPORT' | 'EXPORT';
-    format: 'CSV' | 'XLSX' | 'JSON';
+    format: 'CSV' | 'XLSX' | 'PDF' | 'JSON';
     fileName: string;
     recordCount: number;
     status?: string;
@@ -21,7 +21,11 @@ export class LogService {
     userId?: string;
   }) {
     const logType = data.type === 'IMPORT' ? LogType.IMPORT : LogType.EXPORT;
-    const logFormat = data.format === 'CSV' ? LogFormat.CSV : data.format === 'XLSX' ? LogFormat.XLSX : LogFormat.JSON;
+    const logFormat =
+      data.format === 'CSV' ? LogFormat.CSV
+      : data.format === 'XLSX' ? LogFormat.XLSX
+      : data.format === 'PDF' ? LogFormat.PDF
+      : LogFormat.JSON;
 
     return await prisma.importExportLog.create({
       data: {

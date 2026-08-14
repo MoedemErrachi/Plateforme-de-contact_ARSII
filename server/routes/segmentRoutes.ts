@@ -24,10 +24,10 @@ router.get('/tags', async (req: Request, res: Response, next: NextFunction) => {
 
 router.post('/tags', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { name, color, category, description } = req.body;
+    const { name, color, description } = req.body;
     if (!name) throw new AppError('Le nom du tag est requis', 400);
     const tag = await prisma.tag.create({
-      data: { name, color: color || '#35B8B2', category, description }
+      data: { name, color: color || null, description }
     });
     res.status(201).json({ status: 'success', data: { tag } });
   } catch (error) { next(error); }
@@ -36,10 +36,10 @@ router.post('/tags', async (req: Request, res: Response, next: NextFunction) => 
 router.put('/tags/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
-    const { name, color, category, description } = req.body;
+    const { name, color, description } = req.body;
     const tag = await prisma.tag.update({
       where: { id },
-      data: { name, color, category, description }
+      data: { name, color, description }
     });
     res.status(200).json({ status: 'success', data: { tag } });
   } catch (error) { next(error); }

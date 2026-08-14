@@ -1,6 +1,13 @@
 import { prisma } from '../db/prisma';
 import { AppError } from '../utils/AppError';
-import { NoteType, Gender, ResearchCareerStage } from '@prisma/client';
+import { Gender, ResearchCareerStage } from '@prisma/client';
+import { randomUUID } from 'node:crypto';
+
+const NA = 'N/A';
+
+function clean(value?: string | null): string {
+  return (value || '').trim();
+}
 
 export interface QueryContactsParams {
   page?: number;
@@ -17,6 +24,7 @@ export interface QueryContactsParams {
 export interface CreateContactPayload {
   firstName?: string;
   lastName?: string;
+  fullName?: string;
   email: string;
   gender?: string;
   countryOfOrigin?: string;
@@ -33,38 +41,30 @@ export interface CreateContactPayload {
 
 export interface UpdateContactPayload extends Partial<CreateContactPayload> {}
 
-export interface CreateNotePayload {
-  title: string;
-  content: string;
-  type?: string;
-  date?: string;
-  relativeTime?: string;
-  author?: string;
-  authorInitials?: string;
-  projectName?: string;
+function splitFullName(fullName?: string | null): { firstName: string; lastName: string } {
+  const parts = clean(fullName).split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return { firstName: NA, lastName: NA };
+  if (parts.length === 1) return { firstName: parts[0], lastName: NA };
+  return { firstName: parts[0], lastName: parts.slice(1).join(' ') };
 }
 
-function buildName(payload: CreateContactPayload): string {
-  const first = (payload.firstName || '').trim();
-  const last = (payload.lastName || '').trim();
-  if (first && last) return `${first} ${last}`;
-  return first || last || 'Nouveau Contact';
+function resolveNames(payload: CreateContactPayload): { firstName: string; lastName: string } {
+  const first = clean(payload.firstName);
+  const last = clean(payload.lastName);
+  if (first || last) return { firstName: first || NA, lastName: last || NA };
+  return splitFullName(payload.fullName);
 }
 
-function buildInitials(name: string): string {
-  return name
-    .split(' ')
-    .filter(Boolean)
-    .map(p => p[0])
-    .join('')
-    .substring(0, 2)
-    .toUpperCase() || 'NC';
+function resolveEmail(email?: string | null): string {
+  const e = clean(email).toLowerCase();
+  if (e.includes('@')) return e;
+  return `import_null_${randomUUID()}@euraxess.africa`;
 }
 
 function normalizeGender(value?: string): Gender {
   const v = (value || '').toUpperCase();
-  const valid = ['FEMALE', 'MALE', 'OTHER', 'PREFER_NOT_TO_SAY'] as const;
-  return (valid as readonly string[]).includes(v) ? (v as Gender) : Gender.PREFER_NOT_TO_SAY;
+  const valid = ['FEMALE', 'MALE', 'NOT_SPECIFIED'] as const;
+  return (valid as readonly string[]).includes(v) ? (v as Gender) : Gender.NOT_SPECIFIED;
 }
 
 function normalizeCareerStage(value?: string): ResearchCareerStage {
@@ -124,8 +124,7 @@ export class ContactService {
         take: limit,
         orderBy: { createdAt: 'desc' },
         include: {
-          tags: { include: { tag: true } },
-          exchangeNotes: { orderBy: { createdAt: 'desc' } }
+          tags: { include: { tag: true } }
         }
       })
     ]);
@@ -148,8 +147,7 @@ export class ContactService {
     const contact = await prisma.contact.findUnique({
       where: { id },
       include: {
-        tags: { include: { tag: true } },
-        exchangeNotes: { orderBy: { createdAt: 'desc' } }
+        tags: { include: { tag: true } }
       }
     });
 
@@ -182,36 +180,35 @@ export class ContactService {
 
   private contactInclude() {
     return {
-      tags: { include: { tag: true } },
-      exchangeNotes: { orderBy: { createdAt: 'desc' } }
+      tags: { include: { tag: true } }
     } as const;
   }
 
   public async createContact(payload: CreateContactPayload) {
-    const emailClean = payload.email.toLowerCase().trim();
+    const emailClean = resolveEmail(payload.email);
 
     const existing = await prisma.contact.findUnique({ where: { email: emailClean } });
     if (existing) {
       throw new AppError(`Un contact avec l'email ${payload.email} existe déjà`, 409);
     }
 
-    const name = buildName(payload);
+    const names = resolveNames(payload);
 
     const newContact = await prisma.contact.create({
       data: {
-        firstName: (payload.firstName || '').trim() || name.split(' ')[0] || '',
-        lastName: (payload.lastName || '').trim() || name.split(' ').slice(1).join(' ') || '',
+        firstName: names.firstName,
+        lastName: names.lastName,
         email: emailClean,
         gender: normalizeGender(payload.gender),
-        countryOfOrigin: payload.countryOfOrigin || '',
-        city: payload.city || '',
-        phone: payload.phone || '',
-        affiliation: payload.affiliation || '',
-        function: payload.function || null,
-        experience: payload.experience || null,
-        facultyDepartment: payload.facultyDepartment || null,
+        countryOfOrigin: clean(payload.countryOfOrigin) || NA,
+        city: clean(payload.city) || null,
+        phone: clean(payload.phone) || null,
+        affiliation: clean(payload.affiliation) || NA,
+        function: clean(payload.function) || null,
+        experience: clean(payload.experience) || null,
+        facultyDepartment: clean(payload.facultyDepartment) || null,
         researchCareerStage: normalizeCareerStage(payload.researchCareerStage),
-        avatarUrl: payload.avatarUrl || null
+        avatarUrl: clean(payload.avatarUrl) || null
       }
     });
 
@@ -243,19 +240,19 @@ export class ContactService {
 
     const dataToUpdate: any = {};
 
-    if (payload.firstName !== undefined) dataToUpdate.firstName = payload.firstName.trim();
-    if (payload.lastName !== undefined) dataToUpdate.lastName = payload.lastName.trim();
+    if (payload.firstName !== undefined) dataToUpdate.firstName = clean(payload.firstName) || NA;
+    if (payload.lastName !== undefined) dataToUpdate.lastName = clean(payload.lastName) || NA;
     if (payload.email !== undefined) dataToUpdate.email = payload.email.toLowerCase().trim();
     if (payload.gender !== undefined) dataToUpdate.gender = normalizeGender(payload.gender);
-    if (payload.countryOfOrigin !== undefined) dataToUpdate.countryOfOrigin = payload.countryOfOrigin;
-    if (payload.city !== undefined) dataToUpdate.city = payload.city;
-    if (payload.phone !== undefined) dataToUpdate.phone = payload.phone;
-    if (payload.affiliation !== undefined) dataToUpdate.affiliation = payload.affiliation;
-    if (payload.function !== undefined) dataToUpdate.function = payload.function || null;
-    if (payload.experience !== undefined) dataToUpdate.experience = payload.experience || null;
-    if (payload.facultyDepartment !== undefined) dataToUpdate.facultyDepartment = payload.facultyDepartment || null;
+    if (payload.countryOfOrigin !== undefined) dataToUpdate.countryOfOrigin = clean(payload.countryOfOrigin) || NA;
+    if (payload.city !== undefined) dataToUpdate.city = clean(payload.city) || null;
+    if (payload.phone !== undefined) dataToUpdate.phone = clean(payload.phone) || null;
+    if (payload.affiliation !== undefined) dataToUpdate.affiliation = clean(payload.affiliation) || NA;
+    if (payload.function !== undefined) dataToUpdate.function = clean(payload.function) || null;
+    if (payload.experience !== undefined) dataToUpdate.experience = clean(payload.experience) || null;
+    if (payload.facultyDepartment !== undefined) dataToUpdate.facultyDepartment = clean(payload.facultyDepartment) || null;
     if (payload.researchCareerStage !== undefined) dataToUpdate.researchCareerStage = normalizeCareerStage(payload.researchCareerStage);
-    if (payload.avatarUrl !== undefined) dataToUpdate.avatarUrl = payload.avatarUrl || null;
+    if (payload.avatarUrl !== undefined) dataToUpdate.avatarUrl = clean(payload.avatarUrl) || null;
 
     const updatedContact = await prisma.contact.update({
       where: { id },
@@ -284,66 +281,31 @@ export class ContactService {
     return { success: true, deletedId: id };
   }
 
-  public async addNote(contactId: string, payload: CreateNotePayload) {
-    const existing = await prisma.contact.findUnique({ where: { id: contactId } });
-    if (!existing) {
-      throw new AppError(`Contact avec l'ID ${contactId} non trouvé`, 404);
-    }
-
-    const noteTypeMap: Record<string, NoteType> = {
-      MEETING: NoteType.MEETING,
-      EMAIL: NoteType.EMAIL,
-      CALL: NoteType.CALL,
-      NOTE: NoteType.NOTE,
-      meeting: NoteType.MEETING,
-      email: NoteType.EMAIL,
-      call: NoteType.CALL,
-      note: NoteType.NOTE
-    };
-
-    const note = await prisma.exchangeNote.create({
-      data: {
-        contactId,
-        title: payload.title,
-        content: payload.content,
-        type: noteTypeMap[payload.type || 'NOTE'] || NoteType.NOTE,
-        date: payload.date || new Date().toISOString().split('T')[0],
-        relativeTime: payload.relativeTime || 'À l\'instant',
-        author: payload.author || null,
-        authorInitials: payload.authorInitials || null,
-        projectName: payload.projectName || null
-      }
-    });
-
-    return note;
-  }
-
   public async bulkSave(newContactsPayloads: CreateContactPayload[], updatedContactsPayloads: Array<{ id: string } & UpdateContactPayload>) {
     let createdCount = 0;
     let updatedCount = 0;
 
     for (const payload of newContactsPayloads) {
-      if (!payload.email) continue;
-      const emailClean = payload.email.toLowerCase().trim();
+      const emailClean = resolveEmail(payload.email);
       const existing = await prisma.contact.findUnique({ where: { email: emailClean } });
       if (existing) {
         // Skip or update existing
         continue;
       }
-      const name = buildName(payload);
+      const names = resolveNames(payload);
       await prisma.contact.create({
         data: {
-          firstName: (payload.firstName || '').trim() || name.split(' ')[0] || '',
-          lastName: (payload.lastName || '').trim() || name.split(' ').slice(1).join(' ') || '',
+          firstName: names.firstName,
+          lastName: names.lastName,
           email: emailClean,
           gender: normalizeGender(payload.gender),
-          countryOfOrigin: payload.countryOfOrigin || '',
-          city: payload.city || '',
-          phone: payload.phone || '',
-          affiliation: payload.affiliation || '',
-          function: payload.function || null,
-          experience: payload.experience || null,
-          facultyDepartment: payload.facultyDepartment || null,
+          countryOfOrigin: clean(payload.countryOfOrigin) || NA,
+          city: clean(payload.city) || null,
+          phone: clean(payload.phone) || null,
+          affiliation: clean(payload.affiliation) || NA,
+          function: clean(payload.function) || null,
+          experience: clean(payload.experience) || null,
+          facultyDepartment: clean(payload.facultyDepartment) || null,
           researchCareerStage: normalizeCareerStage(payload.researchCareerStage)
         }
       });
@@ -356,17 +318,17 @@ export class ContactService {
       if (!existing) continue;
 
       const dataToUpdate: any = {};
-      if (updateItem.firstName !== undefined) dataToUpdate.firstName = updateItem.firstName.trim();
-      if (updateItem.lastName !== undefined) dataToUpdate.lastName = updateItem.lastName.trim();
+      if (updateItem.firstName !== undefined) dataToUpdate.firstName = clean(updateItem.firstName) || NA;
+      if (updateItem.lastName !== undefined) dataToUpdate.lastName = clean(updateItem.lastName) || NA;
       if (updateItem.email !== undefined) dataToUpdate.email = updateItem.email.toLowerCase().trim();
       if (updateItem.gender !== undefined) dataToUpdate.gender = normalizeGender(updateItem.gender);
-      if (updateItem.countryOfOrigin !== undefined) dataToUpdate.countryOfOrigin = updateItem.countryOfOrigin;
-      if (updateItem.city !== undefined) dataToUpdate.city = updateItem.city;
-      if (updateItem.phone !== undefined) dataToUpdate.phone = updateItem.phone;
-      if (updateItem.affiliation !== undefined) dataToUpdate.affiliation = updateItem.affiliation;
-      if (updateItem.function !== undefined) dataToUpdate.function = updateItem.function || null;
-      if (updateItem.experience !== undefined) dataToUpdate.experience = updateItem.experience || null;
-      if (updateItem.facultyDepartment !== undefined) dataToUpdate.facultyDepartment = updateItem.facultyDepartment || null;
+      if (updateItem.countryOfOrigin !== undefined) dataToUpdate.countryOfOrigin = clean(updateItem.countryOfOrigin) || NA;
+      if (updateItem.city !== undefined) dataToUpdate.city = clean(updateItem.city) || null;
+      if (updateItem.phone !== undefined) dataToUpdate.phone = clean(updateItem.phone) || null;
+      if (updateItem.affiliation !== undefined) dataToUpdate.affiliation = clean(updateItem.affiliation) || NA;
+      if (updateItem.function !== undefined) dataToUpdate.function = clean(updateItem.function) || null;
+      if (updateItem.experience !== undefined) dataToUpdate.experience = clean(updateItem.experience) || null;
+      if (updateItem.facultyDepartment !== undefined) dataToUpdate.facultyDepartment = clean(updateItem.facultyDepartment) || null;
       if (updateItem.researchCareerStage !== undefined) dataToUpdate.researchCareerStage = normalizeCareerStage(updateItem.researchCareerStage);
 
       await prisma.contact.update({
@@ -381,8 +343,8 @@ export class ContactService {
 
   public async importContactsPreview(rows: Array<Partial<CreateContactPayload>>) {
     const emails = rows
-      .map(r => (r.email || '').toLowerCase().trim())
-      .filter(Boolean);
+      .map(r => clean(r.email).toLowerCase())
+      .filter(e => e.includes('@'));
 
     const existingContacts = await prisma.contact.findMany({
       where: { email: { in: emails } },
@@ -392,10 +354,13 @@ export class ContactService {
     const existingEmailMap = new Map(existingContacts.map(c => [c.email.toLowerCase(), c.id]));
 
     const preview = rows.map((row, index) => {
-      const email = (row.email || '').toLowerCase().trim();
-      const existingId = existingEmailMap.get(email) || null;
+      const rawEmail = clean(row.email);
+      const emailValid = rawEmail.includes('@');
+      const email = emailValid ? rawEmail.toLowerCase() : '';
+      const hasNames = Boolean(clean(row.firstName) || clean(row.lastName) || clean(row.fullName));
+      const existingId = emailValid ? existingEmailMap.get(email) || null : null;
 
-      const isValid = Boolean(email && email.includes('@'));
+      const isValid = emailValid || hasNames;
       const isDuplicate = Boolean(existingId);
 
       return {
@@ -404,7 +369,7 @@ export class ContactService {
         status: !isValid ? 'INVALID' : isDuplicate ? 'DUPLICATE' : 'VALID',
         existingContactId: existingId,
         message: !isValid
-          ? 'Email manquant ou invalide'
+          ? 'Nom et email manquants'
           : isDuplicate
           ? 'Un contact avec cette adresse e-mail existe déjà en base de données'
           : 'Prêt pour importation'

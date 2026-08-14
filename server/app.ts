@@ -51,7 +51,8 @@ export function createApp() {
 
   // 5. Rate Limiters & Security Defense Layers
   app.use('/api', globalApiRateLimiter);
-  app.use('/api/auth', authRateLimiter);
+  app.use('/api/auth/login', authRateLimiter);
+  app.use('/api/auth/google', authRateLimiter);
 
   // 6. CSRF Token Protection & Input Sanitization
   app.use('/api', csrfProtection);

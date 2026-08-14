@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import ExcelJS from 'exceljs';
 import { Link } from 'react-router-dom';
-import { Contact, GENDER_LABELS, CAREER_STAGE_LABELS } from '../types';
+import { Contact, CAREER_STAGE_LABELS, GENDER_LABELS } from '../types';
+import { FieldKey, FIELD_LABELS, FIELD_HEADERS, buildContactsCsv } from '../utils/exportCsv';
 import {
   ChevronRight,
   FileText,
@@ -21,56 +22,18 @@ interface ExportViewProps {
   selectedContactIds?: string[];
 }
 
-type FieldKey =
-  | 'email'
-  | 'firstName'
-  | 'lastName'
-  | 'gender'
-  | 'countryOfOrigin'
-  | 'city'
-  | 'phone'
-  | 'affiliation'
-  | 'function'
-  | 'experience'
-  | 'facultyDepartment'
-  | 'researchCareerStage';
-
-const FIELD_LABELS: { key: FieldKey; label: string }[] = [
-  { key: 'email', label: 'Adresse Email' },
-  { key: 'firstName', label: 'Prénom' },
-  { key: 'lastName', label: 'Nom' },
-  { key: 'gender', label: 'Genre' },
-  { key: 'countryOfOrigin', label: 'Pays d\'origine' },
-  { key: 'city', label: 'Ville' },
-  { key: 'phone', label: 'Téléphone' },
-  { key: 'affiliation', label: 'Affiliation' },
-  { key: 'function', label: 'Fonction' },
-  { key: 'experience', label: 'Expérience' },
-  { key: 'facultyDepartment', label: 'Faculté / Département' },
-  { key: 'researchCareerStage', label: 'Stade de carrière' }
-];
-
-const FIELD_HEADERS: Record<FieldKey, string> = {
-  email: 'Email',
-  firstName: 'Prénom',
-  lastName: 'Nom',
-  gender: 'Genre',
-  countryOfOrigin: 'Pays d\'origine',
-  city: 'Ville',
-  phone: 'Téléphone',
-  affiliation: 'Affiliation',
-  function: 'Fonction',
-  experience: 'Expérience',
-  facultyDepartment: 'Faculté / Département',
-  researchCareerStage: 'Stade de carrière'
-};
-
 export const ExportView: React.FC<ExportViewProps> = ({
   contacts = [],
   selectedContactIds = []
 }) => {
   const [selectedFormat, setSelectedFormat] = useState<'csv' | 'xlsx' | 'pdf' | 'json'>('csv');
-  const [exportScope, setExportScope] = useState<'all' | 'selected'>('selected');
+
+  // "Contacts cochés" only makes sense when a partial selection exists:
+  // hide it when nothing is checked or when every contact is checked.
+  const showSelectedScope = selectedContactIds.length > 0 && selectedContactIds.length < contacts.length;
+  const [exportScope, setExportScope] = useState<'all' | 'selected'>(
+    selectedContactIds.length > 0 && selectedContactIds.length < contacts.length ? 'selected' : 'all'
+  );
 
   const [fields, setFields] = useState<Record<FieldKey, boolean>>({
     email: true,
@@ -98,6 +61,11 @@ export const ExportView: React.FC<ExportViewProps> = ({
     ? contacts.filter(c => selectedContactIds.includes(c.id))
     : contacts;
 
+  // Force "all" scope whenever the "selected" option is hidden
+  React.useEffect(() => {
+    if (!showSelectedScope) setExportScope('all');
+  }, [showSelectedScope]);
+
   const toggleAllFields = () => {
     const allChecked = Object.values(fields).every(Boolean);
     const next = {} as Record<FieldKey, boolean>;
@@ -115,7 +83,6 @@ export const ExportView: React.FC<ExportViewProps> = ({
       default: return String((c as any)[key] || '');
     }
   };
-
   // Build export data (CSV, XLSX via ExcelJS, JSON or PDF Text) and generate Blob download URL
   const generateExportData = async (): Promise<string> => {
     const activeHeaders = FIELD_LABELS
@@ -170,28 +137,37 @@ export const ExportView: React.FC<ExportViewProps> = ({
     }
 
     // CSV format
-    const csvRows = [activeHeaders.join(',')];
-
-    targetContacts.forEach(c => {
-      const rowCols: string[] = [];
-      FIELD_LABELS.forEach(f => {
-        if (fields[f.key]) rowCols.push(`"${getCellValue(c, f.key).replace(/"/g, '""')}"`);
-      });
-      if (includeTags) rowCols.push(`"${((c.tags || []).join('; ')).replace(/"/g, '""')}"`);
-      csvRows.push(rowCols.join(','));
-    });
-
-    const csvContent = csvRows.join('\n');
+    const csvContent = buildContactsCsv(targetContacts, { includeTags, fields });
     const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
     return URL.createObjectURL(blob);
+  };
+
+  // Record the export action in ImportExportLog (fire-and-forget, non-blocking)
+  const recordExportLog = async (fileName: string) => {
+    try {
+      await fetch('/api/export/log', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          recordCount: targetContacts.length,
+          fileName,
+          format: selectedFormat.toUpperCase()
+        })
+      });
+    } catch (err) {
+      console.error('Failed to record export log:', err);
+    }
   };
 
   const handleStartExport = async () => {
     setIsExporting(true);
     try {
       const url = await generateExportData();
+      const fileName = `EURAXESS_Africa_Contacts_Export.${selectedFormat}`;
       setDownloadUrl(url);
       setExportDone(true);
+      await recordExportLog(fileName);
     } catch (err) {
       console.error('Failed to export data:', err);
     } finally {
@@ -233,30 +209,32 @@ export const ExportView: React.FC<ExportViewProps> = ({
             </h2>
 
             <div className="flex flex-col sm:flex-row gap-4">
-              <label
-                onClick={() => setExportScope('selected')}
-                className={`flex-1 p-4 rounded-xl border-2 flex items-center justify-between transition-all cursor-pointer ${
-                  exportScope === 'selected'
-                    ? 'border-[#005596] bg-[#E8F1F8]/60 font-bold'
-                    : 'border-slate-200 hover:border-slate-300'
-                }`}
-              >
-                <div>
-                  <p className="text-xs text-[#1C2529]">Contacts cochés uniquement</p>
-                  <p className="text-[11px] text-[#55636B] mt-0.5 font-semibold">
-                    {selectedContactIds.length > 0
-                      ? `${selectedContactIds.length} contact(s) sélectionné(s)`
-                      : '0 contact coché'
-                    }
-                  </p>
-                </div>
-                <input
-                  type="radio"
-                  checked={exportScope === 'selected'}
-                  onChange={() => setExportScope('selected')}
-                  className="text-[#005596]"
-                />
-              </label>
+              {showSelectedScope && (
+                <label
+                  onClick={() => setExportScope('selected')}
+                  className={`flex-1 p-4 rounded-xl border-2 flex items-center justify-between transition-all cursor-pointer ${
+                    exportScope === 'selected'
+                      ? 'border-[#005596] bg-[#E8F1F8]/60 font-bold'
+                      : 'border-slate-200 hover:border-slate-300'
+                  }`}
+                >
+                  <div>
+                    <p className="text-xs text-[#1C2529]">Contacts cochés uniquement</p>
+                    <p className="text-[11px] text-[#55636B] mt-0.5 font-semibold">
+                      {selectedContactIds.length > 0
+                        ? `${selectedContactIds.length} contact(s) sélectionné(s)`
+                        : '0 contact coché'
+                      }
+                    </p>
+                  </div>
+                  <input
+                    type="radio"
+                    checked={exportScope === 'selected'}
+                    onChange={() => setExportScope('selected')}
+                    className="text-[#005596]"
+                  />
+                </label>
+              )}
 
               <label
                 onClick={() => setExportScope('all')}
