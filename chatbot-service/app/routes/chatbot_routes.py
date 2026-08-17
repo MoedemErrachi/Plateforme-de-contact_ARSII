@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import logging
 import re
 import traceback
@@ -14,6 +13,7 @@ from app.exceptions import ServiceUnavailableError
 from app.models.schemas import ChatRequest, ChatResponse
 from app.prompts.system_prompt import SYSTEM_PROMPT
 from app.providers.base import build_assistant_message
+from app.services.validation import build_final_text_messages, validate_final_response
 from app.tools.tools import TOOL_DEFINITIONS
 
 logger = logging.getLogger("uvicorn.error")
@@ -59,37 +59,7 @@ def help_response() -> ChatResponse:
     return ChatResponse(message=message, actions=[])
 
 
-def parse_llm_content(content: str | None) -> ChatResponse:
-    text = (content or "").strip()
-    if not text:
-        return ChatResponse(message="Désolé, je n'ai pas compris. Pouvez-vous reformuler ?", actions=[])
-
-    candidates: list[str] = [text]
-    fence = re.search(r"```(?:json)?\s*(.*?)```", text, re.DOTALL)
-    if fence:
-        candidates.insert(0, fence.group(1).strip())
-
-    payload: dict | None = None
-    for candidate in candidates:
-        try:
-            parsed = json.loads(candidate)
-        except (ValueError, TypeError):
-            continue
-        if isinstance(parsed, dict):
-            payload = parsed
-            break
-
-    if payload is not None:
-        try:
-            return ChatResponse.model_validate(payload)
-        except Exception:
-            if "message" in payload:
-                return ChatResponse(message=str(payload["message"]), actions=[])
-
-    return ChatResponse(message=text, actions=[])
-
-
-@router.post("/message", response_model=ChatResponse)
+@router.post("/message", response_model=ChatResponse, response_model_exclude_none=True)
 @limiter.limit(CHATBOT_RATE_LIMIT)
 async def chatbot_message(
     request: Request,
@@ -146,7 +116,18 @@ async def chatbot_message(
         if final_content is None:
             final_content = "Je n'ai pas pu terminer ma réponse. Merci de reformuler votre demande."
 
-        response = parse_llm_content(final_content)
+        # Phase 2 — formattage structuré natif (toujours exécuté, sans tools).
+        # En cas d'échec (transport ou autre), dégradation sur le contenu de phase 1.
+        try:
+            phase2_content = await get_llm_router().chat_final(build_final_text_messages(messages), timeout=15)
+            response = validate_final_response(phase2_content)
+        except ServiceUnavailableError:
+            logger.warning("chat_final indisponible, dégradation sur le contenu de phase 1")
+            response = validate_final_response(final_content)
+        except Exception as exc:
+            logger.warning("chat_final en erreur, dégradation sur le contenu de phase 1: %s", exc)
+            response = validate_final_response(final_content)
+
         session_store.push(session_id, payload.message, response.message)
         return response
     except (HTTPException, ServiceUnavailableError):

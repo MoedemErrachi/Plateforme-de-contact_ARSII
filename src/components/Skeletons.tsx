@@ -69,6 +69,87 @@ export const DashboardSkeleton: React.FC = () => (
   </div>
 );
 
+export const ContactProfileSkeleton: React.FC = () => (
+  <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-10 py-6 space-y-6">
+    {/* Breadcrumb skeleton */}
+    <div className="flex items-center gap-1.5">
+      <SkeletonBox className="w-24 h-3" />
+      <SkeletonBox className="w-3 h-3 rounded-full" />
+      <SkeletonBox className="w-32 h-3" />
+    </div>
+
+    {/* Profile header card */}
+    <section className="bg-white rounded-2xl p-6 sm:p-8 border border-[#C9D4DE]/40 shadow-[0_6px_18px_rgba(0,0,0,0.06)]">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+        <div className="flex flex-col sm:flex-row items-center sm:items-start gap-4 sm:gap-6">
+          <SkeletonBox className="w-24 h-24 sm:w-28 sm:h-28 rounded-full shrink-0" />
+          <div className="space-y-3">
+            <SkeletonBox className="w-48 h-7" />
+            <SkeletonBox className="w-32 h-4" />
+            <div className="flex gap-2">
+              <SkeletonBox className="w-16 h-5 rounded-lg" />
+              <SkeletonBox className="w-20 h-5 rounded-lg" />
+              <SkeletonBox className="w-14 h-5 rounded-lg" />
+            </div>
+          </div>
+        </div>
+        <div className="flex gap-3">
+          <SkeletonBox className="w-24 h-10 rounded-xl" />
+          <SkeletonBox className="w-10 h-10 rounded-xl" />
+        </div>
+      </div>
+    </section>
+
+    {/* Main grid */}
+    <div className="grid grid-cols-12 gap-6">
+      <div className="col-span-12 lg:col-span-4 flex flex-col gap-6">
+        <div className="bg-white rounded-2xl p-6 border border-[#C9D4DE]/40 shadow-[0_6px_18px_rgba(0,0,0,0.06)] space-y-4">
+          <SkeletonBox className="w-32 h-5" />
+          {[1, 2, 3].map(i => (
+            <div key={i} className="flex items-center gap-3">
+              <SkeletonBox className="w-9 h-9 rounded-lg shrink-0" />
+              <div className="space-y-1.5 flex-1">
+                <SkeletonBox className="w-16 h-3" />
+                <SkeletonBox className="w-40 h-4" />
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="bg-white rounded-2xl p-6 border border-[#C9D4DE]/40 shadow-[0_6px_18px_rgba(0,0,0,0.06)] space-y-4">
+          <SkeletonBox className="w-40 h-5" />
+          {[1, 2, 3, 4].map(i => (
+            <div key={i} className="space-y-1">
+              <SkeletonBox className="w-20 h-3" />
+              <SkeletonBox className="w-36 h-4" />
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="col-span-12 lg:col-span-8">
+        <div className="bg-white rounded-2xl p-6 border border-[#C9D4DE]/40 shadow-[0_6px_18px_rgba(0,0,0,0.06)] space-y-4">
+          <SkeletonBox className="w-44 h-5" />
+          <div className="grid grid-cols-2 gap-4">
+            {[1, 2, 3, 4].map(i => (
+              <div key={i} className="bg-[#F4F6F8] rounded-xl p-3.5 space-y-1.5">
+                <SkeletonBox className="w-20 h-3" />
+                <SkeletonBox className="w-32 h-4" />
+              </div>
+            ))}
+          </div>
+          <div className="pt-4 border-t border-[#C9D4DE]/40 space-y-2">
+            <SkeletonBox className="w-28 h-3" />
+            <div className="flex gap-2">
+              <SkeletonBox className="w-16 h-5 rounded-full" />
+              <SkeletonBox className="w-20 h-5 rounded-full" />
+              <SkeletonBox className="w-14 h-5 rounded-full" />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+);
+
 export const ContactsTableSkeleton: React.FC = () => (
   <div className="space-y-6">
     {/* Filter bar skeleton */}

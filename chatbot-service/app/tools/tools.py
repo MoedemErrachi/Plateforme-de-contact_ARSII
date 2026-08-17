@@ -234,7 +234,9 @@ TOOL_SPECS: list[ToolSpec] = [
         name="search_contacts",
         description=(
             "Recherche des contacts (chercheurs) dans le CRM selon des filtres optionnels: countryOfOrigin, "
-            "affiliation, facultyDepartment, researchCareerStage, gender. Retourne total_count, limit, returned et contacts."
+            "affiliation, facultyDepartment, researchCareerStage, gender. Retourne total_count, limit, returned et contacts. "
+            "affiliation et facultyDepartment sont recherchés en sous-chaîne tolérante (casse et accents ignorés): "
+            "fournis une approximation du nom de l'institution ou du domaine (ex. 'ucad' ou 'cheikh anta diop' suffisent)."
         ),
         args_model=SearchContactsArgs,
         handler=_search_contacts,

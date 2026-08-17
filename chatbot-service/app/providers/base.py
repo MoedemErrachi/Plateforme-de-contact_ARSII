@@ -49,6 +49,11 @@ class LLMProvider(ABC):
     async def chat_with_tools(self, messages: list[dict], tools: list[dict], timeout: int = 15) -> ToolCallResponse:
         raise NotImplementedError
 
+    @abstractmethod
+    async def chat_final(self, messages: list[dict], timeout: int = 15) -> str:
+        """Produit la réponse finale structurée (sortie JSON native, sans tools)."""
+        raise NotImplementedError
+
 
 def extract_text(content: Any) -> str | None:
     if content is None:

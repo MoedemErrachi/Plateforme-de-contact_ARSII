@@ -1,15 +1,17 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
-import { Link, useLocation } from 'react-router-dom';
-import { Contact, FilterState, Segment, Tag as TagType, Gender, ResearchCareerStage, GENDER_LABELS, CAREER_STAGE_LABELS, CAREER_STAGE_SHORT_LABELS } from '../types';
-import { formatFullName } from '../utils/format';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Contact, FilterState, Segment, Tag as TagType, Gender, ResearchCareerStage, ContactSelection, PaginationInfo, GENDER_LABELS, CAREER_STAGE_LABELS, CAREER_STAGE_SHORT_LABELS } from '../types';
+import { apiFetch } from '../utils/api';
+import { mapContactFromApi } from '../utils/mapContact';
+import { buildContactsListQuery, emptyFilterState, isEmptyFilterState } from '../utils/contactQuery';
+import { formatFieldValue } from '../utils/formatFieldValue';
 import { Modal } from './Modal';
+import { Pagination } from './Pagination';
 import { 
   Search, 
   SlidersHorizontal, 
-  Filter,
   Save,
   Globe, 
-  Map, 
   Users, 
   Bookmark, 
   UserPlus, 
@@ -25,12 +27,12 @@ import {
   Phone, 
   ExternalLink,
   RotateCcw,
+  RotateCw,
   Check
 } from 'lucide-react';
 import { ContactsTableSkeleton } from './Skeletons';
 
 interface ContactsViewProps {
-  contacts: Contact[];
   segments: Segment[];
   tags: TagType[];
   activeSegmentId: string;
@@ -40,13 +42,11 @@ interface ContactsViewProps {
   onDeleteContact?: (contactId: string) => void;
   itemsPerPage?: number;
   onItemsPerPageChange?: (newLimit: number) => void;
-  selectedContactIds?: string[];
-  onSelectContactIds?: (ids: string[] | ((prev: string[]) => string[])) => void;
-  isLoading?: boolean;
+  selection: ContactSelection;
+  onSelectionChange: (next: ContactSelection | ((prev: ContactSelection) => ContactSelection)) => void;
 }
 
 export const ContactsView: React.FC<ContactsViewProps> = ({
-  contacts,
   segments,
   tags,
   activeSegmentId,
@@ -56,39 +56,43 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
   onDeleteContact,
   itemsPerPage = 10,
   onItemsPerPageChange,
-  selectedContactIds: propSelectedContactIds,
-  onSelectContactIds: propOnSelectContactIds,
-  isLoading = false
+  selection,
+  onSelectionChange
 }) => {
-  // Local fallback selection state if prop not passed
-  const [localSelectedContactIds, setLocalSelectedContactIds] = useState<string[]>([]);
-  const selectedContactIds = propSelectedContactIds ?? localSelectedContactIds;
-  const setSelectedContactIds = propOnSelectContactIds ?? setLocalSelectedContactIds;
-
-  // Mobile Filter Drawer Toggle State
-  const [isMobileFilterOpen, setIsMobileFilterOpen] = useState(false);
+  // Filter Sidebar Toggle State
+  const [isFilterOpen, setIsFilterOpen] = useState(false);
 
   // Pending Filters State (modified in sidebar before clicking "Appliquer les filtres")
-  const [pendingFilters, setPendingFilters] = useState<FilterState>({
-    search: '',
-    countries: [],
-    genders: [],
-    careerStages: [],
-    affiliations: '',
-    tags: []
-  });
+  const [pendingFilters, setPendingFilters] = useState<FilterState>(emptyFilterState);
 
   const location = useLocation();
+  const navigate = useNavigate();
 
-  // Applied Filters State (used to filter contacts table)
-  const [appliedFilters, setAppliedFilters] = useState<FilterState>({
-    search: '',
-    countries: [],
-    genders: [],
-    careerStages: [],
-    affiliations: '',
-    tags: []
-  });
+  // Applied Filters State (used to fetch the contacts table)
+  const [appliedFilters, setAppliedFilters] = useState<FilterState>(emptyFilterState);
+
+  // Server-side paginated data
+  const [pageContacts, setPageContacts] = useState<Contact[]>([]);
+  const [pagination, setPagination] = useState<PaginationInfo | null>(null);
+  const [pageLoading, setPageLoading] = useState<boolean>(false);
+  const [serverError, setServerError] = useState<string | null>(null);
+  const [retryTick, setRetryTick] = useState(0);
+
+  // Distinct countries for the filter sidebar (server, indépendant de la page)
+  const [countries, setCountries] = useState<string[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    apiFetch('/api/contacts/countries')
+      .then((data: any) => {
+        if (!cancelled && Array.isArray(data?.data?.countries)) {
+          setCountries(data.data.countries);
+        }
+      })
+      .catch(() => {
+        // liste des pays non bloquante
+      });
+    return () => { cancelled = true; };
+  }, []);
 
   // Apply filters passed via router state (e.g. from the AI chat assistant)
   useEffect(() => {
@@ -99,11 +103,11 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
     }
   }, [location.state]);
 
-  // Debounced search term for real-time text input
+  // Debounced search term for real-time text input (appliqué automatiquement)
   useEffect(() => {
     const handler = setTimeout(() => {
       setAppliedFilters(prev => ({ ...prev, search: pendingFilters.search }));
-    }, 250);
+    }, 350);
     return () => clearTimeout(handler);
   }, [pendingFilters.search]);
 
@@ -115,6 +119,39 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
       setAppliedFilters(activeSeg.filters);
     }
   }, [activeSegmentId, segments]);
+
+  // Pagination State
+  const [currentPage, setCurrentPage] = useState(1);
+
+  // Reset page when applied filters or segment changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [appliedFilters, activeSegmentId]);
+
+  // Fetch current page from the server (AbortController pour annuler les requêtes obsolètes)
+  useEffect(() => {
+    const controller = new AbortController();
+    setPageLoading(true);
+    setServerError(null);
+
+    apiFetch(buildContactsListQuery(appliedFilters, tags, currentPage, itemsPerPage), { signal: controller.signal })
+      .then((data: any) => {
+        if (controller.signal.aborted) return;
+        const rows = Array.isArray(data?.data?.contacts) ? data.data.contacts : [];
+        setPageContacts(rows.map(mapContactFromApi));
+        setPagination(data?.pagination ?? null);
+      })
+      .catch((err: any) => {
+        if (controller.signal.aborted) return;
+        setServerError(err?.message || 'Erreur lors du chargement des contacts.');
+        setPageContacts([]);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setPageLoading(false);
+      });
+
+    return () => controller.abort();
+  }, [appliedFilters, currentPage, itemsPerPage, tags, retryTick]);
 
   // Drawer state
   const [quickDrawerContact, setQuickDrawerContact] = useState<Contact | null>(null);
@@ -131,14 +168,6 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
     setNewSegmentNameInput('');
     setIsSaveSegmentModalOpen(false);
   };
-
-  // Pagination State
-  const [currentPage, setCurrentPage] = useState(1);
-
-  // Reset page when applied filters or segment changes
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [appliedFilters, activeSegmentId]);
 
   // Ref for scrollable segments bar
   const segmentsRef = useRef<HTMLDivElement>(null);
@@ -178,14 +207,13 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
     };
   }, [checkSegmentsScrollState, segments]);
 
-  // Determine if any custom filter is active (search, countries, genders, career stages, affiliations, tags)
+  // Determine if any custom filter is active (search, countries, genders, career stages, tags)
   const isAnyCustomFilterActive = useMemo(() => {
     return (
       appliedFilters.search.trim() !== '' ||
       appliedFilters.countries.length > 0 ||
       appliedFilters.genders.length > 0 ||
       appliedFilters.careerStages.length > 0 ||
-      appliedFilters.affiliations.trim() !== '' ||
       appliedFilters.tags.length > 0
     );
   }, [appliedFilters]);
@@ -199,7 +227,6 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
       countries: [],
       genders: [],
       careerStages: [],
-      affiliations: '',
       tags: []
     }
   }), []);
@@ -212,19 +239,8 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
   // Expanded tags popover ID
   const [popoverContactId, setPopoverContactId] = useState<string | null>(null);
 
-  // Available Filter Options
-  const countries = useMemo(() => {
-    const set = new Set<string>();
-    contacts.forEach(c => { if (c.countryOfOrigin && c.countryOfOrigin.trim() !== 'N/A') set.add(c.countryOfOrigin.trim()); });
-    return Array.from(set).sort();
-  }, [contacts]);
-
   const genders = ['FEMALE', 'MALE', 'NOT_SPECIFIED'] as Gender[];
   const allCareerStages = ['R1_FIRST_STAGE', 'R2_RECOGNIZED', 'R3_ESTABLISHED', 'R4_LEADING'] as ResearchCareerStage[];
-
-  const hasVal = (v?: string | null) => Boolean(v && v.trim() && v.trim() !== 'N/A');
-  const dash = <span className="text-[#8A98A1]">—</span>;
-  const fmt = (v?: string | null) => (hasVal(v) ? v : dash);
 
   // Helper to handle pending filter updates and deselect active segment
   const updatePendingFilters = (updater: (prev: FilterState) => FilterState) => {
@@ -271,98 +287,94 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
     }));
   };
 
-  // Apply pending sidebar filters to appliedFilters
-  const handleApplyFilters = () => {
-    setAppliedFilters(pendingFilters);
-    if (activeSegmentId !== 'all') {
-      onSelectSegment('all');
-    }
-  };
-
   // Reset all filters
   const handleResetFilters = () => {
-    const emptyFilter: FilterState = {
-      search: '',
-      countries: [],
-      genders: [],
-      careerStages: [],
-      affiliations: '',
-      tags: []
-    };
+    const emptyFilter = emptyFilterState();
     setPendingFilters(emptyFilter);
     setAppliedFilters(emptyFilter);
     onSelectSegment('all');
   };
 
-  // Filtered contacts calculation with applied filters
-  const filteredContacts = useMemo(() => {
-    return contacts.filter(contact => {
-      // Search text match
-      if (appliedFilters.search.trim()) {
-        const query = appliedFilters.search.toLowerCase().trim();
-        const matchName = contact.name?.toLowerCase().includes(query) || formatFullName(contact.firstName, contact.lastName).toLowerCase().includes(query);
-        const matchAff = contact.affiliation?.toLowerCase().includes(query);
-        const matchEmail = contact.email?.toLowerCase().includes(query);
-        const matchFunction = contact.function?.toLowerCase().includes(query);
-        const matchDepartment = contact.facultyDepartment?.toLowerCase().includes(query);
-        if (!matchName && !matchAff && !matchEmail && !matchFunction && !matchDepartment) return false;
-      }
-
-      // Country of origin match
-      if (appliedFilters.countries.length > 0 && !appliedFilters.countries.includes(contact.countryOfOrigin)) {
-        return false;
-      }
-
-      // Gender match
-      if (appliedFilters.genders.length > 0 && !appliedFilters.genders.includes(contact.gender)) {
-        return false;
-      }
-
-      // Career stage match
-      if (appliedFilters.careerStages.length > 0 && !appliedFilters.careerStages.includes(contact.researchCareerStage)) {
-        return false;
-      }
-
-      // Affiliation match
-      if (appliedFilters.affiliations.trim() && !(contact.affiliation || '').toLowerCase().includes(appliedFilters.affiliations.toLowerCase().trim())) {
-        return false;
-      }
-
-      // Tags filter match
-      if (appliedFilters.tags.length > 0) {
-        const hasTag = contact.tags?.some(t => appliedFilters.tags.includes(t));
-        if (!hasTag) return false;
-      }
-
-      return true;
-    });
-  }, [contacts, appliedFilters]);
-
-  // Total pages and valid page calculation
-  const totalPages = Math.max(1, Math.ceil(filteredContacts.length / itemsPerPage));
-  const validCurrentPage = Math.min(Math.max(1, currentPage), totalPages);
-
-  // Slice contacts for active page
-  const paginatedContacts = useMemo(() => {
-    const startIndex = (validCurrentPage - 1) * itemsPerPage;
-    return filteredContacts.slice(startIndex, startIndex + itemsPerPage);
-  }, [filteredContacts, validCurrentPage, itemsPerPage]);
-
-  // Select all checkbox handler for current page items
-  const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.checked) {
-      setSelectedContactIds(paginatedContacts.map(c => c.id));
+  // ── Sélection (4 modes) : none | page | partial | all-filtered ──
+  const handleSelectPage = (checked: boolean) => {
+    if (checked) {
+      onSelectionChange({
+        mode: 'page',
+        ids: pageContacts.map(c => c.id),
+        filters: appliedFilters,
+        totalCount: pagination?.totalCount ?? pageContacts.length
+      });
     } else {
-      setSelectedContactIds([]);
+      onSelectionChange({ mode: 'none', ids: [], filters: appliedFilters, totalCount: 0 });
     }
   };
 
-  const handleSelectRow = (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    setSelectedContactIds(prev => 
-      prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
-    );
+  const handleSelectAllFiltered = () => {
+    onSelectionChange({
+      mode: 'all-filtered',
+      ids: [],
+      filters: appliedFilters,
+      totalCount: pagination?.totalCount ?? pageContacts.length
+    });
   };
+
+  const handleSelectRow = (id: string, checked: boolean) => {
+    onSelectionChange(prev => {
+      if (checked) {
+        if (prev.mode === 'all-filtered' || prev.mode === 'none') {
+          return { mode: 'partial', ids: [id], filters: prev.filters, totalCount: prev.totalCount };
+        }
+        const ids = prev.ids.includes(id) ? prev.ids : [...prev.ids, id];
+        return { ...prev, mode: 'partial', ids };
+      }
+      // décocher
+      if (prev.mode === 'page') {
+        const ids = prev.ids.filter(i => i !== id);
+        return { ...prev, mode: ids.length ? 'partial' : 'none', ids };
+      }
+      if (prev.mode === 'all-filtered') {
+        const ids = pageContacts.map(c => c.id).filter(i => i !== id);
+        return { ...prev, mode: ids.length ? 'partial' : 'none', ids, totalCount: pagination?.totalCount ?? ids.length };
+      }
+      const ids = prev.ids.filter(i => i !== id);
+      return { ...prev, mode: ids.length ? 'partial' : 'none', ids };
+    });
+  };
+
+  const handleClearSelection = () => {
+    onSelectionChange({ mode: 'none', ids: [], filters: appliedFilters, totalCount: 0 });
+  };
+
+  // Un changement de filtres invalide la sélection (page / all-filtered)
+  const appliedFiltersRef = useRef(appliedFilters);
+  useEffect(() => {
+    const filtersChanged = JSON.stringify(appliedFiltersRef.current) !== JSON.stringify(appliedFilters);
+    appliedFiltersRef.current = appliedFilters;
+    if (filtersChanged && (selection.mode === 'page' || selection.mode === 'all-filtered')) {
+      onSelectionChange({ mode: 'none', ids: [], filters: appliedFilters, totalCount: 0 });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [appliedFilters]);
+
+  // Mode 'page' : les ids suivent la page courante
+  useEffect(() => {
+    if (selection.mode === 'page' && pageContacts.length) {
+      onSelectionChange(prev => prev.mode === 'page' ? { ...prev, ids: pageContacts.map(c => c.id) } : prev);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pageContacts, selection.mode]);
+
+  // ── Export (bouton de la barre flottante) ──
+  const selectionCount = selection.mode === 'all-filtered' ? selection.totalCount : selection.ids.length;
+
+  const handleExportSelection = () => {
+    // Navigation vers /export : la sélection (mode + filtres + ids) voyage via
+    // les props d'App (persistée en localStorage) ; ExportView appelle le backend.
+    navigate('/export');
+  };
+
+  const isRowSelected = (id: string) =>
+    selection.mode === 'all-filtered' || selection.ids.includes(id);
 
   // Helper to resolve tag color badge class
   const getTagBadgeStyle = (tagName: string) => {
@@ -375,14 +387,14 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
     <div className="flex-1 flex flex-col lg:flex-row lg:items-start min-h-[calc(100vh-64px)] w-full max-w-full bg-[#E8F1F8] relative">
       
       {/* Mobile / Slide-over Filter Backdrop (< lg) */}
-      {isMobileFilterOpen && (
+      {isFilterOpen && (
         <div 
-          onClick={() => setIsMobileFilterOpen(false)}
+          onClick={() => setIsFilterOpen(false)}
           className="lg:hidden fixed inset-0 bg-slate-900/50 backdrop-blur-xs z-40 animate-in fade-in duration-200"
         />
       )}
 
-      {/* Left Sidebar Filter Panel (sticky on lg+, slide-over drawer below) */}
+      {/* Left Sidebar Filter Panel (permanent on lg+, slide-over drawer below) */}
       <aside className={`
         w-72 flex-shrink-0
         fixed lg:relative
@@ -397,7 +409,7 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
         transition-transform duration-300
         shadow-2xl lg:shadow-none
         lg:translate-x-0
-        ${isMobileFilterOpen ? 'translate-x-0' : '-translate-x-full'}
+        ${isFilterOpen ? 'translate-x-0' : '-translate-x-full'}
       `}>
         <div className="space-y-5">
           <div className="flex items-center justify-between">
@@ -412,7 +424,7 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
                 type="button"
                 onClick={() => {
                   handleResetFilters();
-                  setIsMobileFilterOpen(false);
+                  setIsFilterOpen(false);
                 }}
                 className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-200/60 hover:text-[#005596] transition-colors cursor-pointer"
                 title="Réinitialiser les filtres"
@@ -420,7 +432,7 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
                 <RotateCcw className="w-4 h-4" />
               </button>
               <button 
-                onClick={() => setIsMobileFilterOpen(false)}
+                onClick={() => setIsFilterOpen(false)}
                 className="lg:hidden p-1.5 rounded-lg text-slate-500 hover:bg-slate-200/60 transition-colors cursor-pointer"
               >
                 <X className="w-5 h-5" />
@@ -429,29 +441,30 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
           </div>
 
           <div className="space-y-5">
-            {/* Country of Origin Pills */}
+            {/* Country of Origin Checkboxes */}
             <section>
               <label className="text-xs font-bold text-[#55636B] flex items-center gap-1.5 mb-2">
                 <Globe className="w-4 h-4 text-[#005596]" /> Pays d'origine
+                {pendingFilters.countries.length > 0 && (
+                  <span className="ml-auto text-[10px] font-bold text-[#005596] bg-[#E8F1F8] px-1.5 py-0.5 rounded-full">{pendingFilters.countries.length}</span>
+                )}
               </label>
-              <div className="flex flex-wrap gap-1.5">
+              <div className="space-y-2 bg-white/60 p-3 rounded-xl border border-[#C9D4DE]/40 max-h-48 overflow-y-auto">
                 {countries.length === 0 && (
                   <span className="text-[11px] text-slate-400 italic">Aucun pays renseigné</span>
                 )}
                 {countries.map(country => {
-                  const active = pendingFilters.countries.includes(country);
+                  const checked = pendingFilters.countries.includes(country);
                   return (
-                    <button
-                      key={country}
-                      onClick={() => toggleCountry(country)}
-                      className={`px-2.5 py-1 rounded-full text-[11px] font-bold transition-all cursor-pointer ${
-                        active
-                          ? 'bg-[#005596] text-white shadow-sm'
-                          : 'bg-[#D9E6F2] text-[#55636B] hover:bg-[#BCD7EE]'
-                      }`}
-                    >
-                      {country}
-                    </button>
+                    <label key={country} className="flex items-center gap-2 cursor-pointer text-xs text-[#1C2529] hover:text-[#005596]">
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => toggleCountry(country)}
+                        className="rounded border-[#C9D4DE] text-[#005596] focus:ring-[#005596] w-4 h-4 cursor-pointer"
+                      />
+                      <span className={checked ? 'font-bold text-[#005596]' : 'font-medium'}>{country}</span>
+                    </label>
                   );
                 })}
               </div>
@@ -503,20 +516,6 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
               </div>
             </section>
 
-            {/* Affiliation Search */}
-            <section>
-              <label className="text-xs font-bold text-[#55636B] flex items-center gap-1.5 mb-2">
-                <Map className="w-4 h-4 text-[#005596]" /> Affiliation
-              </label>
-              <input
-                type="text"
-                value={pendingFilters.affiliations}
-                onChange={(e) => updatePendingFilters(prev => ({ ...prev, affiliations: e.target.value }))}
-                placeholder="Rechercher une affiliation..."
-                className="w-full rounded-xl border border-[#C9D4DE] bg-white text-xs p-2.5 font-semibold text-[#1C2529] focus:ring-2 focus:ring-[#005596] shadow-xs"
-              />
-            </section>
-
             {/* Filter by Tags */}
             <section>
               <label className="text-xs font-bold text-[#55636B] flex items-center gap-1.5 mb-2">
@@ -546,22 +545,34 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
           {/* Sidebar Action Buttons (end of content) */}
           <div className="pt-4 border-t border-[#C9D4DE] space-y-2.5">
             {/* Appliquer les filtres */}
-            <button 
+            <button
               onClick={() => {
-                handleApplyFilters();
-                setIsMobileFilterOpen(false);
+                setAppliedFilters(pendingFilters);
+                setCurrentPage(1);
+                setIsFilterOpen(false);
               }}
-              className="w-full py-3 px-4 bg-[#004275] hover:bg-[#003B66] text-white rounded-2xl text-xs font-extrabold flex items-center justify-start gap-3 shadow-xs transition-all active:scale-95 cursor-pointer"
+              disabled={pageLoading}
+              className="w-full py-2.5 px-4 bg-[#005596] hover:bg-[#004275] text-white rounded-2xl text-xs font-extrabold flex items-center justify-start gap-3 transition-all active:scale-95 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+              title="Appliquer les filtres sélectionnés au répertoire"
             >
-              <Filter className="w-4 h-4 text-white stroke-[2.5]" />
-              <span>Appliquer les filtres</span>
+              {pageLoading ? (
+                <>
+                  <RotateCw className="w-4 h-4 text-white animate-spin" />
+                  <span>Filtrage…</span>
+                </>
+              ) : (
+                <>
+                  <Search className="w-4 h-4 text-white stroke-[2.5]" />
+                  <span>Appliquer les filtres</span>
+                </>
+              )}
             </button>
 
             {/* Enregistrer comme segment */}
             <button 
               onClick={() => {
                 setIsSaveSegmentModalOpen(true);
-                setIsMobileFilterOpen(false);
+                setIsFilterOpen(false);
               }}
               className="w-full py-2.5 px-4 bg-[#E8F1F8] hover:bg-[#D9E6F2] text-[#004275] rounded-2xl text-xs font-extrabold flex items-center justify-start gap-3 transition-all active:scale-95 cursor-pointer"
               title="Enregistrer les filtres appliqués comme nouveau segment"
@@ -581,11 +592,11 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
           
           <div className="flex items-center gap-2 flex-1 w-full">
             <button
-              onClick={() => setIsMobileFilterOpen(true)}
-              className="min-[1600px]:hidden flex items-center gap-1.5 px-3.5 py-2.5 bg-[#005596] hover:bg-[#004275] text-white rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer shadow-xs"
-              title="Afficher les filtres"
+              onClick={() => setIsFilterOpen(prev => !prev)}
+              className="lg:hidden flex items-center gap-1.5 px-3.5 py-2.5 bg-[#005596] hover:bg-[#004275] text-white rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer shadow-xs"
+              title={isFilterOpen ? 'Masquer les filtres' : 'Afficher les filtres'}
             >
-              <SlidersHorizontal className="w-4 h-4" />
+              {isFilterOpen ? <ChevronLeft className="w-4 h-4" /> : <SlidersHorizontal className="w-4 h-4" />}
               <span>Filtres</span>
             </button>
 
@@ -597,9 +608,8 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
                 onChange={(e) => {
                   const val = e.target.value;
                   updatePendingFilters(prev => ({ ...prev, search: val }));
-                  setAppliedFilters(prev => ({ ...prev, search: val }));
                 }}
-                placeholder="Rechercher par nom, e-mail, affiliation, fonction..."
+                placeholder="Rechercher par nom, e-mail, affiliation, pays, département, tag…"
                 className="w-full pl-10 pr-4 py-2.5 bg-[#E8F1F8] border-none rounded-xl text-xs font-semibold focus:ring-2 focus:ring-[#005596]"
               />
             </div>
@@ -689,24 +699,45 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
         </div>
 
         {/* Contacts Container */}
-        {isLoading ? (
+        {pageLoading ? (
           <ContactsTableSkeleton />
         ) : (
           <div className="bg-white rounded-2xl shadow-sm overflow-hidden border border-slate-200">
-            
+
+            {/* Sélection (4 modes) : cette page / tous les résultats */}
+            <div className="px-4 py-2.5 border-b border-[#C9D4DE] bg-white flex flex-wrap items-center gap-x-5 gap-y-2 text-xs">
+              <label className="flex items-center gap-2 cursor-pointer text-[#55636B] font-semibold hover:text-[#005596]">
+                <input
+                  type="checkbox"
+                  checked={selection.mode === 'page' && pageContacts.length > 0}
+                  onChange={(e) => handleSelectPage(e.target.checked)}
+                  className="rounded text-[#005596] focus:ring-[#005596] border-[#C9D4DE] w-4 h-4 cursor-pointer"
+                />
+                Sélectionner cette page ({pageContacts.length})
+              </label>
+              <button
+                onClick={handleSelectAllFiltered}
+                disabled={!pagination?.totalCount}
+                className={`flex items-center gap-1.5 font-bold transition-colors cursor-pointer ${
+                  pagination?.totalCount
+                    ? 'text-[#005596] hover:text-[#004275]'
+                    : 'text-slate-300 cursor-not-allowed'
+                }`}
+              >
+                Sélectionner les {pagination?.totalCount ?? 0} résultats
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+              {isEmptyFilterState(appliedFilters) && (
+                <span className="text-[11px] text-slate-400 font-medium">(tous les contacts)</span>
+              )}
+            </div>
+
             {/* Desktop / Tablet Table View (Hidden on mobile <768px) */}
             <div className="hidden md:block w-full overflow-hidden">
               <table className="w-full text-left border-collapse table-fixed max-w-full">
                 <thead className="bg-[#D9E6F2]/50 border-b border-[#C9D4DE] text-[11px] font-bold text-[#55636B] uppercase tracking-wider">
                   <tr>
-                    <th className="p-3 w-10 text-center shrink-0">
-                      <input 
-                        type="checkbox"
-                        checked={paginatedContacts.length > 0 && paginatedContacts.every(c => selectedContactIds.includes(c.id))}
-                        onChange={handleSelectAll}
-                        className="rounded text-[#005596] focus:ring-[#005596] border-[#C9D4DE] w-4 h-4 cursor-pointer"
-                      />
-                    </th>
+                    <th className="p-3 w-10 text-center shrink-0"></th>
                     <th className="p-3 w-[30%] md:w-[28%] lg:w-[22%] truncate" title="Nom et e-mail du contact">CONTACT</th>
                     <th className="p-3 w-[20%] md:w-[18%] lg:w-[14%] truncate" title="Pays d'origine et ville">PAYS & VILLE</th>
                     <th className="p-3 w-[25%] md:w-[22%] lg:w-[18%] truncate" title="Affiliation et fonction">AFFILIATION & FONCTION</th>
@@ -718,7 +749,19 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
                 </thead>
 
                 <tbody className="divide-y divide-[#C9D4DE]/30 text-xs">
-                  {filteredContacts.length === 0 ? (
+                  {serverError ? (
+                    <tr>
+                      <td colSpan={8} className="p-12 text-center text-slate-500">
+                        <p className="font-bold text-red-600 text-sm">{serverError}</p>
+                        <button
+                          onClick={() => setRetryTick(t => t + 1)}
+                          className="mt-3 px-4 py-2 bg-[#005596] hover:bg-[#004275] text-white rounded-xl font-bold text-xs cursor-pointer shadow-xs"
+                        >
+                          Réessayer
+                        </button>
+                      </td>
+                    </tr>
+                  ) : pageContacts.length === 0 ? (
                     <tr>
                       <td colSpan={8} className="p-12 text-center text-slate-500">
                         <p className="font-bold text-slate-700 text-sm">Aucun contact ne correspond à ces critères</p>
@@ -731,8 +774,8 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
                       </td>
                     </tr>
                   ) : (
-                    paginatedContacts.map(contact => {
-                      const isSelected = selectedContactIds.includes(contact.id);
+                    pageContacts.map(contact => {
+                      const isSelected = isRowSelected(contact.id);
                       const contactTags = contact.tags || [];
                       const visibleTags = contactTags.slice(0, 2);
                       const hiddenCount = contactTags.length - 2;
@@ -745,14 +788,14 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
                             isSelected ? 'bg-[#E8F1F8]' : ''
                           }`}
                         >
-                          <td className="p-3 sm:p-4" onClick={(e) => { e.stopPropagation(); handleSelectRow(contact.id, e); }}>
+                          <td className="p-3 sm:p-4" onClick={(e) => { e.stopPropagation(); handleSelectRow(contact.id, !isSelected); }}>
                             <input 
                               type="checkbox" 
                               checked={isSelected}
                               onClick={(e) => e.stopPropagation()}
                               onChange={(e) => {
                                 e.stopPropagation();
-                                handleSelectRow(contact.id, e as unknown as React.MouseEvent);
+                                handleSelectRow(contact.id, e.target.checked);
                               }}
                               className="rounded text-[#005596] focus:ring-[#005596] border-[#C9D4DE] w-4 h-4 cursor-pointer"
                             />
@@ -779,15 +822,15 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
                           <td className="p-3 sm:p-4 min-w-0">
                             <div className="flex items-center gap-1.5">
                               <Flag className="w-3.5 h-3.5 text-[#8A98A1] shrink-0" />
-                              <span className="font-semibold text-[#1C2529] truncate" title={contact.countryOfOrigin}>{fmt(contact.countryOfOrigin)}</span>
+                              <span className="font-semibold text-[#1C2529] truncate" title={contact.countryOfOrigin}>{formatFieldValue(contact.countryOfOrigin)}</span>
                             </div>
-                            <div className="text-[11px] text-[#8A98A1] truncate pl-5" title={contact.city}>{fmt(contact.city)}</div>
+                            <div className="text-[11px] text-[#8A98A1] truncate pl-5" title={contact.city}>{formatFieldValue(contact.city)}</div>
                           </td>
 
                           {/* Affiliation & Fonction */}
                           <td className="p-3 sm:p-4 min-w-0">
-                            <div className="font-semibold text-[#1C2529] truncate" title={contact.affiliation}>{fmt(contact.affiliation)}</div>
-                            <div className="text-[11px] text-[#8A98A1] truncate" title={contact.function}>{fmt(contact.function)}</div>
+                            <div className="font-semibold text-[#1C2529] truncate" title={contact.affiliation}>{formatFieldValue(contact.affiliation)}</div>
+                            <div className="text-[11px] text-[#8A98A1] truncate" title={contact.function}>{formatFieldValue(contact.function)}</div>
                           </td>
 
                           {/* Stade de carrière (Hidden on tablet, shown on lg) */}
@@ -896,7 +939,17 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
 
             {/* Mobile Card List View (Visible on small screens) */}
             <div className="block md:hidden divide-y divide-slate-100">
-              {filteredContacts.length === 0 ? (
+              {serverError ? (
+                <div className="p-8 text-center text-slate-500">
+                  <p className="font-bold text-red-600 text-sm">{serverError}</p>
+                  <button
+                    onClick={() => setRetryTick(t => t + 1)}
+                    className="mt-3 px-4 py-2 bg-[#005596] text-white rounded-xl font-bold text-xs cursor-pointer"
+                  >
+                    Réessayer
+                  </button>
+                </div>
+              ) : pageContacts.length === 0 ? (
                 <div className="p-8 text-center text-slate-500">
                   <p className="font-bold text-slate-700 text-sm">Aucun contact trouvé</p>
                   <button 
@@ -907,8 +960,8 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
                   </button>
                 </div>
               ) : (
-                paginatedContacts.map(contact => {
-                  const isSelected = selectedContactIds.includes(contact.id);
+                pageContacts.map(contact => {
+                  const isSelected = isRowSelected(contact.id);
                   const contactTags = contact.tags || [];
 
                   return (
@@ -927,7 +980,7 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
                             onClick={(e) => e.stopPropagation()}
                             onChange={(e) => {
                               e.stopPropagation();
-                              handleSelectRow(contact.id, e as unknown as React.MouseEvent);
+                              handleSelectRow(contact.id, e.target.checked);
                             }}
                             className="rounded text-[#005596] focus:ring-[#005596] border-[#C9D4DE] w-4 h-4 cursor-pointer mt-0.5"
                           />
@@ -952,11 +1005,11 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
                       <div className="grid grid-cols-2 gap-2 text-xs text-slate-600 bg-slate-50 p-2.5 rounded-xl border border-slate-100">
                         <div>
                           <span className="text-[10px] font-bold uppercase text-slate-400 block">Affiliation</span>
-                          <span className="font-semibold text-slate-800">{fmt(contact.affiliation)}</span>
+                          <span className="font-semibold text-slate-800">{formatFieldValue(contact.affiliation)}</span>
                         </div>
                         <div>
                           <span className="text-[10px] font-bold uppercase text-slate-400 block">Pays & Ville</span>
-                          <span className="font-semibold text-slate-800">{[contact.countryOfOrigin, contact.city].filter(v => hasVal(v)).join(', ') || dash}</span>
+                          <span className="font-semibold text-slate-800">{[contact.countryOfOrigin, contact.city].filter(v => v?.trim()).join(', ') || '\u2014'}</span>
                         </div>
                       </div>
 
@@ -977,7 +1030,7 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
 
                       {/* Mobile Card Action Footer */}
                       <div className="pt-2 flex items-center justify-between border-t border-slate-100" onClick={(e) => e.stopPropagation()}>
-                        <span className="text-[11px] text-slate-500 font-medium truncate">{hasVal(contact.function) ? contact.function : hasVal(contact.affiliation) ? contact.affiliation : dash}</span>
+                        <span className="text-[11px] text-slate-500 font-medium truncate">{contact.function?.trim() || contact.affiliation?.trim() || '\u2014'}</span>
                         
                         <div className="flex items-center gap-2">
                           <button 
@@ -1012,11 +1065,8 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
           <div className="px-6 py-3 bg-[#E8F1F8] border-t border-[#C9D4DE] flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-[#55636B]">
             <div>
               Affichage de <span className="font-bold text-[#005596]">
-                {filteredContacts.length === 0 ? 0 : (validCurrentPage - 1) * itemsPerPage + 1} - {Math.min(validCurrentPage * itemsPerPage, filteredContacts.length)}
-              </span> sur <span className="font-bold text-[#005596]">{filteredContacts.length}</span> contacts
-              {filteredContacts.length !== contacts.length && (
-                <span className="text-[#8A98A1] ml-1">({contacts.length} au total)</span>
-              )}
+                {pageContacts.length === 0 ? 0 : ((pagination?.page ?? 1) - 1) * itemsPerPage + 1} - {Math.min((pagination?.page ?? 1) * itemsPerPage, pagination?.totalCount ?? 0)}
+              </span> sur <span className="font-bold text-[#005596]">{pagination?.totalCount ?? 0}</span> contacts
             </div>
 
             <div className="flex items-center gap-4">
@@ -1043,30 +1093,22 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
               <div className="flex items-center gap-1">
                 <button 
                   onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                  disabled={validCurrentPage === 1}
+                  disabled={(pagination?.page ?? 1) === 1}
                   className="p-1 hover:bg-[#E8F1F8] rounded disabled:opacity-30 cursor-pointer disabled:cursor-not-allowed transition-colors"
                   title="Page précédente"
                 >
                   <ChevronLeft className="w-4 h-4" />
                 </button>
                 
-                {Array.from({ length: totalPages }, (_, i) => i + 1).map(pageNum => (
-                  <button
-                    key={pageNum}
-                    onClick={() => setCurrentPage(pageNum)}
-                    className={`w-7 h-7 rounded-lg font-bold text-xs transition-colors cursor-pointer ${
-                      pageNum === validCurrentPage
-                        ? 'bg-[#005596] text-white shadow-xs'
-                        : 'hover:bg-[#D9E6F2] text-[#55636B]'
-                    }`}
-                  >
-                    {pageNum}
-                  </button>
-                ))}
+                <Pagination
+                  page={pagination?.page ?? 1}
+                  totalPages={pagination?.totalPages ?? 1}
+                  onPageChange={setCurrentPage}
+                />
 
                 <button 
-                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                  disabled={validCurrentPage >= totalPages}
+                  onClick={() => setCurrentPage(p => Math.min(pagination?.totalPages ?? 1, p + 1))}
+                  disabled={(pagination?.page ?? 1) >= (pagination?.totalPages ?? 1)}
                   className="p-1 hover:bg-[#E8F1F8] rounded disabled:opacity-30 cursor-pointer disabled:cursor-not-allowed transition-colors"
                   title="Page suivante"
                 >
@@ -1079,35 +1121,41 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
       )}
 
         {/* Floating Selection Action Bar */}
-        {selectedContactIds.length > 0 && (
+        {selection.mode !== 'none' && (
           <div className="fixed bottom-8 left-1/2 -translate-x-1/2 bg-[#1C2529] text-white px-6 py-3 rounded-2xl shadow-2xl flex items-center gap-6 z-40 animate-slide-up">
             <div className="flex items-center gap-2">
               <span className="bg-[#005596] px-2.5 py-0.5 rounded-full text-xs font-bold">
-                {selectedContactIds.length}
+                {selection.mode === 'all-filtered' ? `${selection.totalCount} ↗` : selection.ids.length}
               </span>
-              <span className="text-xs font-medium text-[#E8F1F8]">Contacts sélectionnés</span>
+              <span className="text-xs font-medium text-[#E8F1F8]">
+                {selection.mode === 'all-filtered' ? 'Tous les résultats sélectionnés' : 'Contacts sélectionnés'}
+              </span>
             </div>
 
             <div className="h-5 w-px bg-white/20" />
 
             <div className="flex items-center gap-4 text-xs font-bold">
-              <Link 
-                to="/export"
-                className="flex items-center gap-1.5 hover:text-[#FFC20C] transition-colors"
+              <button
+                onClick={handleExportSelection}
+                className="flex items-center gap-1.5 hover:text-[#FFC20C] transition-colors cursor-pointer"
+                title="Exporter la sélection"
               >
                 <Download className="w-4 h-4" /> Exporter
-              </Link>
-              <Link 
-                to="/segments"
-                className="flex items-center gap-1.5 hover:text-[#FFC20C] transition-colors"
-              >
-                <TagIcon className="w-4 h-4" /> Ajouter des tags
-              </Link>
+              </button>
+              {(selection.mode === 'page' || selection.mode === 'partial') && (
+                <Link 
+                  to="/segments"
+                  className="flex items-center gap-1.5 hover:text-[#FFC20C] transition-colors"
+                >
+                  <TagIcon className="w-4 h-4" /> Ajouter des tags
+                </Link>
+              )}
             </div>
 
             <button 
-              onClick={() => setSelectedContactIds([])}
+              onClick={handleClearSelection}
               className="p-1 hover:bg-white/10 rounded-full transition-colors ml-2"
+              title="Effacer la sélection"
             >
               <X className="w-4 h-4" />
             </button>
@@ -1134,8 +1182,8 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
                     )}
                   </div>
                   <h2 className="text-xl font-bold text-[#1C2529]">{quickDrawerContact.name}</h2>
-                  <p className="text-xs text-[#005596] font-bold mt-0.5">{fmt(quickDrawerContact.function)}</p>
-                  <p className="text-xs text-[#55636B]">{fmt(quickDrawerContact.affiliation)}</p>
+                  <p className="text-xs text-[#005596] font-bold mt-0.5">{formatFieldValue(quickDrawerContact.function)}</p>
+                  <p className="text-xs text-[#55636B]">{formatFieldValue(quickDrawerContact.affiliation)}</p>
                   <span className="inline-block mt-2 px-2.5 py-1 bg-[#D9E6F2] text-[#005596] rounded-full text-[11px] font-bold">
                     {CAREER_STAGE_LABELS[quickDrawerContact.researchCareerStage]}
                   </span>
@@ -1160,11 +1208,11 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
                     </div>
                     <div className="flex items-center gap-3 text-[#55636B]">
                       <Phone className="w-4 h-4 text-[#005596]" />
-                      <span>{fmt(quickDrawerContact.phone)}</span>
+                      <span>{formatFieldValue(quickDrawerContact.phone)}</span>
                     </div>
                     <div className="flex items-center gap-3 text-[#55636B]">
                       <Globe className="w-4 h-4 text-[#005596]" />
-                      <span>Pays: {fmt(quickDrawerContact.countryOfOrigin)}{hasVal(quickDrawerContact.city) ? ` · ${quickDrawerContact.city}` : ''}</span>
+                      <span>Pays: {formatFieldValue(quickDrawerContact.countryOfOrigin)}{quickDrawerContact.city?.trim() ? ` · ${quickDrawerContact.city}` : ''}</span>
                     </div>
                     <div className="flex items-center gap-3 text-[#55636B]">
                       <Users className="w-4 h-4 text-[#005596]" />
@@ -1208,11 +1256,11 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
                     </div>
                     <div className="flex justify-between gap-2">
                       <span className="font-bold text-[#1C2529]">Expérience:</span>
-                      <span className="text-right">{fmt(quickDrawerContact.experience)}</span>
+                      <span className="text-right">{formatFieldValue(quickDrawerContact.experience)}</span>
                     </div>
                     <div className="flex justify-between gap-2">
                       <span className="font-bold text-[#1C2529]">Faculté / Dépt:</span>
-                      <span className="text-right">{fmt(quickDrawerContact.facultyDepartment)}</span>
+                      <span className="text-right">{formatFieldValue(quickDrawerContact.facultyDepartment)}</span>
                     </div>
                   </div>
                 </section>
@@ -1281,9 +1329,8 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
                   {appliedFilters.countries.length > 0 && <li>Pays d'origine: {appliedFilters.countries.join(', ')}</li>}
                   {appliedFilters.genders.length > 0 && <li>Genres: {appliedFilters.genders.map(g => GENDER_LABELS[g as Gender]).join(', ')}</li>}
                   {appliedFilters.careerStages.length > 0 && <li>Stades de carrière: {appliedFilters.careerStages.map(s => CAREER_STAGE_SHORT_LABELS[s as ResearchCareerStage]).join(', ')}</li>}
-                  {appliedFilters.affiliations && <li>Affiliation: {appliedFilters.affiliations}</li>}
                   {appliedFilters.tags.length > 0 && <li>Tags: {appliedFilters.tags.join(', ')}</li>}
-                  {!appliedFilters.search && appliedFilters.countries.length === 0 && appliedFilters.genders.length === 0 && appliedFilters.careerStages.length === 0 && !appliedFilters.affiliations && appliedFilters.tags.length === 0 && (
+                  {!appliedFilters.search && appliedFilters.countries.length === 0 && appliedFilters.genders.length === 0 && appliedFilters.careerStages.length === 0 && appliedFilters.tags.length === 0 && (
                     <li className="italic text-slate-500">Tous les contacts (aucun filtre restreint)</li>
                   )}
                 </ul>

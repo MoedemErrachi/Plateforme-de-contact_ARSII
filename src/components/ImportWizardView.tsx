@@ -4,6 +4,7 @@ import ExcelJS from 'exceljs';
 import { Link } from 'react-router-dom';
 import { Contact, Gender, ResearchCareerStage, CAREER_STAGE_LABELS } from '../types';
 import { splitFullName } from '../utils/format';
+import { OcrImportTab } from './OcrImportTab';
 import { 
   Check, 
   Upload, 
@@ -22,7 +23,8 @@ import {
   XCircle,
   Layers,
   FileCheck,
-  X
+  X,
+  Camera
 } from 'lucide-react';
 
 export interface ImportResult {
@@ -96,6 +98,9 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
   onImportContacts,
   existingContacts
 }) => {
+  // Tab State
+  const [activeTab, setActiveTab] = useState<'file' | 'ocr'>('file');
+
   // Wizard Step State
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4>(1);
   
@@ -616,6 +621,34 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
         )}
       </header>
 
+      {/* Tab Bar */}
+      <div className="flex items-center bg-[#E8F1F8] p-1.5 rounded-xl border border-[#C9D4DE]/40">
+        <button
+          onClick={() => setActiveTab('file')}
+          className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-xs font-bold transition-all ${
+            activeTab === 'file'
+              ? 'bg-[#005596] text-white shadow'
+              : 'text-[#55636B] hover:text-[#005596]'
+          }`}
+        >
+          <FileSpreadsheet className="w-4 h-4" />
+          Importer un fichier
+        </button>
+        <button
+          onClick={() => setActiveTab('ocr')}
+          className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-xs font-bold transition-all ${
+            activeTab === 'ocr'
+              ? 'bg-[#005596] text-white shadow'
+              : 'text-[#55636B] hover:text-[#005596]'
+          }`}
+        >
+          <Camera className="w-4 h-4" />
+          Scanner une carte de visite
+        </button>
+      </div>
+
+      {/* FILE TAB */}
+      {activeTab === 'file' && (<>
       {/* 4-Step Stepper Progress Bar */}
       <div className="px-2 py-4 bg-white rounded-2xl border border-[#C9D4DE]/50 shadow-sm overflow-x-auto scrollbar-none">
         <div className="flex items-center w-full justify-between relative min-w-[500px] max-w-4xl mx-auto px-4">
@@ -1254,6 +1287,20 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
             </button>
           </div>
 
+        </div>
+      )}
+      </>)}
+
+      {/* OCR TAB */}
+      {activeTab === 'ocr' && (
+        <div className="bg-white rounded-2xl border border-[#C9D4DE]/60 p-8 shadow-[0_6px_18px_rgba(0,0,0,0.06)] max-w-4xl mx-auto">
+          <div className="text-center space-y-2 mb-6">
+            <h2 className="text-xl font-extrabold text-[#1C2529]">Scanner une carte de visite</h2>
+            <p className="text-xs text-[#55636B]">
+              Uploadez une photo d'une carte de visite — l'IA extraira automatiquement les informations du contact.
+            </p>
+          </div>
+          <OcrImportTab onSaveContact={onImportContacts} />
         </div>
       )}
 

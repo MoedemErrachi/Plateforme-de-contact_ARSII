@@ -1,24 +1,134 @@
 import { prisma } from '../db/prisma';
 import { AppError } from '../utils/AppError';
-import { Gender, ResearchCareerStage } from '@prisma/client';
+import { Prisma, Gender, ResearchCareerStage } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
+import ExcelJS from 'exceljs';
+
 
 const NA = 'N/A';
 
+// ---- Schéma d'export canonique (source de vérité partagée : list + export) ----
+// Aligné sur `FieldKey`/`FIELD_HEADERS` du frontend (src/utils/exportCsv.ts).
+export type ExportFieldKey =
+  | 'email'
+  | 'firstName'
+  | 'lastName'
+  | 'gender'
+  | 'countryOfOrigin'
+  | 'city'
+  | 'phone'
+  | 'affiliation'
+  | 'function'
+  | 'experience'
+  | 'facultyDepartment'
+  | 'researchCareerStage';
+
+export const EXPORT_FIELD_KEYS: ExportFieldKey[] = [
+  'email',
+  'firstName',
+  'lastName',
+  'gender',
+  'countryOfOrigin',
+  'city',
+  'phone',
+  'affiliation',
+  'function',
+  'experience',
+  'facultyDepartment',
+  'researchCareerStage'
+];
+
+export const EXPORT_FIELD_HEADERS: Record<ExportFieldKey, string> = {
+  email: 'Email',
+  firstName: 'Prénom',
+  lastName: 'Nom',
+  gender: 'Genre',
+  countryOfOrigin: "Pays d'origine",
+  city: 'Ville',
+  phone: 'Téléphone',
+  affiliation: 'Affiliation',
+  function: 'Fonction',
+  experience: 'Expérience',
+  facultyDepartment: 'Faculté / Département',
+  researchCareerStage: 'Stade de carrière'
+};
+
+export const EXPORT_TAGS_HEADER = 'Étiquettes / Tags';
+
+const EXPORT_GENDER_LABELS: Record<string, string> = {
+  FEMALE: 'Femme',
+  MALE: 'Homme',
+  NOT_SPECIFIED: 'Non spécifié'
+};
+
+const EXPORT_STAGE_LABELS: Record<string, string> = {
+  R1_FIRST_STAGE: 'R1 — Chercheur débutant (First Stage)',
+  R2_RECOGNIZED: 'R2 — Chercheur reconnu (Recognised)',
+  R3_ESTABLISHED: 'R3 — Chercheur établi (Established)',
+  R4_LEADING: 'R4 — Chercheur leader (Leading)'
+};
+
 function clean(value?: string | null): string {
   return (value || '').trim();
+}
+
+// ---- Recherche tolérante (affiliation / facultyDepartment) ----
+// Champs texte libre sujets aux variantes de saisie (casse, accents, sigles).
+// On replie casse + accents via translate() (littéraux UTF-8, aucune extension
+// ni DDL requis — `unaccent` n'est pas installé) et on compare en sous-chaîne.
+const ACCENTS_IN = 'àáâãäåçèéêëìíîïñòóôõöùúûüýÿ';
+const ACCENTS_OUT = 'aaaaaaceeeeiiiinooooouuuuyy';
+
+const AFFILIATION_FOLD = Prisma.sql`translate(lower("affiliation"), ${ACCENTS_IN}, ${ACCENTS_OUT})`;
+const FACULTY_DEPARTMENT_FOLD = Prisma.sql`translate(lower("facultyDepartment"), ${ACCENTS_IN}, ${ACCENTS_OUT})`;
+const FIRST_NAME_FOLD = Prisma.sql`translate(lower("firstName"), ${ACCENTS_IN}, ${ACCENTS_OUT})`;
+const LAST_NAME_FOLD = Prisma.sql`translate(lower("lastName"), ${ACCENTS_IN}, ${ACCENTS_OUT})`;
+const FUNCTION_FOLD = Prisma.sql`translate(lower("function"), ${ACCENTS_IN}, ${ACCENTS_OUT})`;
+const COUNTRY_OF_ORIGIN_FOLD = Prisma.sql`translate(lower("countryOfOrigin"), ${ACCENTS_IN}, ${ACCENTS_OUT})`;
+
+const FOLD_MAP = new Map<string, string>();
+ACCENTS_IN.split('').forEach((char, index) => FOLD_MAP.set(char, ACCENTS_OUT[index]));
+
+/** Replie côté JS exactement comme translate() côté SQL (mêmes tables). */
+function foldTerm(value: string): string {
+  return value
+    .toLowerCase()
+    .split('')
+    .map((char) => FOLD_MAP.get(char) ?? char)
+    .join('');
+}
+
+/** Échappe les jokers LIKE pour une correspondance littérale. */
+function escapeLike(value: string): string {
+  return value.replace(/[\\%_]/g, (match) => `\\${match}`);
+}
+
+function likePattern(value: string): string {
+  return `%${escapeLike(foldTerm(value))}%`;
+}
+
+function csvCell(value: unknown): string {
+  return `"${String(value ?? '').replace(/"/g, '""')}"`;
 }
 
 export interface QueryContactsParams {
   page?: number;
   limit?: number;
   search?: string;
-  countryOfOrigin?: string;
-  gender?: string;
-  careerStage?: string;
+  countryOfOrigin?: string | string[];
+  gender?: string | string[];
+  careerStage?: string | string[];
+  researchCareerStage?: string | string[];
   affiliation?: string;
-  tagId?: string;
+  facultyDepartment?: string;
+  tagId?: string | string[];
   segmentId?: string;
+}
+
+export interface ExportContactsParams extends QueryContactsParams {
+  ids?: string[];
+  fields?: string[];
+  includeTags?: boolean;
 }
 
 export interface CreateContactPayload {
@@ -73,74 +183,295 @@ function normalizeCareerStage(value?: string): ResearchCareerStage {
   return (valid as readonly string[]).includes(v) ? (v as ResearchCareerStage) : ResearchCareerStage.R1_FIRST_STAGE;
 }
 
-export class ContactService {
-  public async getContacts(params: QueryContactsParams) {
-    const page = Math.max(1, params.page || 1);
-    const limit = Math.max(1, Math.min(100, params.limit || 50));
-    const skip = (page - 1) * limit;
+// ---- Construction partagée du WHERE (list + export) ----
+// Les filtres multi-valeurs sont exprimés en paramètres répétés (arrays).
+// `careerStage` est conservé comme alias de `researchCareerStage` pour
+// compatibilité avec le contrat du chatbot.
 
-    const where: any = {};
+function toArray(value?: string | string[]): string[] {
+  return Array.isArray(value) ? value.filter(Boolean) : value ? [value] : [];
+}
+
+function orCountryOfOrigin(values: string[]): Prisma.Sql {
+  return Prisma.sql`(${Prisma.join(values.map(v => Prisma.sql`"countryOfOrigin" ILIKE ${v}`), ' OR ')})`;
+}
+
+function orGender(values: string[]): Prisma.Sql {
+  return Prisma.sql`(${Prisma.join(values.map(v => Prisma.sql`"gender" = ${normalizeGender(v)}::"Gender"`), ' OR ')})`;
+}
+
+function orCareerStage(values: string[]): Prisma.Sql {
+  return Prisma.sql`(${Prisma.join(
+    values.map(v => Prisma.sql`"researchCareerStage" = ${normalizeCareerStage(v)}::"ResearchCareerStage"`),
+    ' OR '
+  )})`;
+}
+
+function orTagId(values: string[]): Prisma.Sql {
+  return Prisma.sql`(${Prisma.join(
+    values.map(tagId => Prisma.sql`EXISTS (
+      SELECT 1 FROM "TagOnContact"
+      WHERE "TagOnContact"."contactId" = "Contact"."id"
+        AND "TagOnContact"."tagId" = ${tagId}
+    )`),
+    ' OR '
+  )})`;
+}
+
+function orSegmentId(values: string[]): Prisma.Sql {
+  return orTagId(values);
+}
+
+export class ContactService {
+  /**
+   * Construit les conditions WHERE partagées entre la liste paginée et l'export.
+   * Zéro duplication : tout nouveau filtre ajouté ici profite aux deux endpoints.
+   */
+  private buildWhereConditions(params: QueryContactsParams): Prisma.Sql[] {
+    const conditions: Prisma.Sql[] = [];
 
     if (params.search) {
       const q = params.search.trim();
-      where.OR = [
-        { firstName: { contains: q, mode: 'insensitive' } },
-        { lastName: { contains: q, mode: 'insensitive' } },
-        { email: { contains: q, mode: 'insensitive' } },
-        { affiliation: { contains: q, mode: 'insensitive' } },
-        { function: { contains: q, mode: 'insensitive' } }
-      ];
+      const pattern = likePattern(q);
+      conditions.push(
+        Prisma.sql`(
+          ${FIRST_NAME_FOLD} LIKE ${pattern} OR
+          ${LAST_NAME_FOLD} LIKE ${pattern} OR
+          "email" ILIKE ${`%${escapeLike(foldTerm(q))}%`} OR
+          ${AFFILIATION_FOLD} LIKE ${pattern} OR
+          ${FACULTY_DEPARTMENT_FOLD} LIKE ${pattern} OR
+          ${FUNCTION_FOLD} LIKE ${pattern} OR
+          ${COUNTRY_OF_ORIGIN_FOLD} LIKE ${pattern} OR
+          EXISTS (
+            SELECT 1 FROM "TagOnContact" toc
+            JOIN "Tag" t ON t."id" = toc."tagId"
+            WHERE toc."contactId" = "Contact"."id"
+              AND translate(lower(t."name"), ${ACCENTS_IN}, ${ACCENTS_OUT}) LIKE ${pattern}
+          )
+        )`
+      );
     }
 
-    if (params.countryOfOrigin) {
-      where.countryOfOrigin = { equals: params.countryOfOrigin, mode: 'insensitive' };
+    const countries = toArray(params.countryOfOrigin);
+    if (countries.length) {
+      conditions.push(orCountryOfOrigin(countries));
     }
 
-    if (params.gender) {
-      where.gender = normalizeGender(params.gender);
+    const genders = toArray(params.gender);
+    if (genders.length) {
+      conditions.push(orGender(genders));
     }
 
-    if (params.careerStage) {
-      where.researchCareerStage = normalizeCareerStage(params.careerStage);
+    // Alias : `careerStage` (legacy) a priorité sur `researchCareerStage` (chatbot)
+    const stages = toArray(params.careerStage).length ? toArray(params.careerStage) : toArray(params.researchCareerStage);
+    if (stages.length) {
+      conditions.push(orCareerStage(stages));
     }
 
     if (params.affiliation) {
-      where.affiliation = { contains: params.affiliation, mode: 'insensitive' };
+      conditions.push(Prisma.sql`${AFFILIATION_FOLD} LIKE ${likePattern(params.affiliation)}`);
     }
 
-    if (params.tagId) {
-      where.tags = { some: { tagId: params.tagId } };
+    if (params.facultyDepartment) {
+      conditions.push(Prisma.sql`${FACULTY_DEPARTMENT_FOLD} LIKE ${likePattern(params.facultyDepartment)}`);
     }
 
-    if (params.segmentId) {
-      where.tags = { some: { tagId: params.segmentId } };
+    const tagIds = toArray(params.tagId);
+    if (tagIds.length) {
+      conditions.push(orTagId(tagIds));
     }
 
-    const [totalRecords, contacts] = await Promise.all([
-      prisma.contact.count({ where }),
-      prisma.contact.findMany({
-        where,
-        skip,
-        take: limit,
-        orderBy: { createdAt: 'desc' },
-        include: {
-          tags: { include: { tag: true } }
-        }
-      })
+    const segmentIds = toArray(params.segmentId);
+    if (segmentIds.length) {
+      conditions.push(orSegmentId(segmentIds));
+    }
+
+    return conditions;
+  }
+
+  /**
+   * Conditions de l'export : le mode `ids` prime sur les filtres.
+   */
+  private exportConditions(params: ExportContactsParams): Prisma.Sql[] {
+    const ids = toArray(params.ids);
+    if (ids.length) {
+      return [Prisma.sql`"id" IN (${Prisma.join(ids.map(id => Prisma.sql`${id}`))})`];
+    }
+    return this.buildWhereConditions(params);
+  }
+
+  private whereSql(conditions: Prisma.Sql[]): Prisma.Sql {
+    return conditions.length ? Prisma.sql`WHERE ${Prisma.join(conditions, ' AND ')}` : Prisma.empty;
+  }
+
+  public async getContacts(params: QueryContactsParams) {
+    const page = Math.max(1, params.page || 1);
+    const limit = Math.max(1, Math.min(100, params.limit || 20));
+    const skip = (page - 1) * limit;
+
+    const conditions = this.buildWhereConditions(params);
+    const whereSql = this.whereSql(conditions);
+
+    const [totalRecords, idsResult] = await Promise.all([
+      prisma.$queryRaw<{ n: bigint }[]>`SELECT COUNT(*)::bigint AS n FROM "Contact" ${whereSql}`,
+      prisma.$queryRaw<{ id: string }[]>`
+        SELECT "id" FROM "Contact" ${whereSql}
+        ORDER BY "createdAt" DESC
+        LIMIT ${limit} OFFSET ${skip}
+      `,
     ]);
 
-    const totalPages = Math.ceil(totalRecords / limit) || 1;
+    const count = Number(totalRecords[0]?.n ?? 0);
+    const ids = idsResult.map((row) => row.id);
+    const contacts = ids.length
+      ? await prisma.contact.findMany({
+          where: { id: { in: ids } },
+          orderBy: { createdAt: 'desc' },
+          include: this.contactInclude(),
+        })
+      : [];
+
+    const totalPages = Math.ceil(count / limit) || 1;
 
     return {
       contacts,
       pagination: {
-        totalRecords,
+        page,
+        limit,
+        totalCount: count,
         totalPages,
         currentPage: page,
         hasNextPage: page < totalPages,
-        hasPrevPage: page > 1
-      }
+        hasPrevPage: page > 1,
+        totalRecords: count,
+      },
     };
+  }
+
+  /**
+   * Nombre total de contacts correspondant à l'export (header X-Export-Count).
+   */
+  public async countExport(params: ExportContactsParams): Promise<number> {
+    const whereSql = this.whereSql(this.exportConditions(params));
+    const rows = await prisma.$queryRaw<{ n: bigint }[]>`SELECT COUNT(*)::bigint AS n FROM "Contact" ${whereSql}`;
+    return Number(rows[0]?.n ?? 0);
+  }
+
+  /**
+   * Export par lot (cursor sur id) pour ne jamais charger toute la table en mémoire.
+   * Sert aussi bien le CSV (stream HTTP) que le JSON.
+   */
+  public async *streamExport(params: ExportContactsParams): AsyncGenerator<any> {
+    const conditions = this.exportConditions(params);
+    const BATCH = 200;
+    let lastId: string | null = null;
+
+    while (true) {
+      const cursorCondition = lastId ? Prisma.sql`"id" > ${lastId}` : null;
+      const all = cursorCondition ? [...conditions, cursorCondition] : conditions;
+      const whereSql = this.whereSql(all);
+
+      const idRows = await prisma.$queryRaw<{ id: string }[]>`
+        SELECT "id" FROM "Contact" ${whereSql}
+        ORDER BY "id" ASC
+        LIMIT ${BATCH}
+      `;
+
+      if (!idRows.length) break;
+
+      const contacts = await prisma.contact.findMany({
+        where: { id: { in: idRows.map(row => row.id) } },
+        orderBy: { id: 'asc' },
+        include: this.contactInclude(),
+      });
+
+      for (const contact of contacts) {
+        yield contact;
+      }
+
+      if (idRows.length < BATCH) break;
+      lastId = idRows[idRows.length - 1].id;
+    }
+  }
+
+  /**
+   * Résout les colonnes d'export (ordre canonique) à partir du paramètre
+   * `fields` (optionnel) et du flag `includeTags`. Zéro champ requis => tous.
+   */
+  public resolveExportColumns(fields?: string[], includeTags?: boolean): { keys: ExportFieldKey[]; headers: string[] } {
+    const requested = (fields || []).filter(Boolean);
+    const keys = requested.length
+      ? EXPORT_FIELD_KEYS.filter(k => requested.includes(k))
+      : [...EXPORT_FIELD_KEYS];
+    const headers = keys.map(k => EXPORT_FIELD_HEADERS[k]);
+    if (includeTags) headers.push(EXPORT_TAGS_HEADER);
+    return { keys, headers };
+  }
+
+  /** Valeur lisible (labels localisés) d'un champ pour l'export. */
+  public exportFieldValue(contact: any, key: ExportFieldKey): string {
+    switch (key) {
+      case 'gender':
+        return EXPORT_GENDER_LABELS[contact.gender] || contact.gender || '';
+      case 'researchCareerStage':
+        return EXPORT_STAGE_LABELS[contact.researchCareerStage] || contact.researchCareerStage || '';
+      case 'firstName':
+      case 'lastName':
+        return contact[key] || '';
+      default:
+        return String(contact[key] ?? '');
+    }
+  }
+
+  /** Noms des étiquettes d'un contact (relation `tags: { include: { tag } }`). */
+  public tagNames(contact: any): string[] {
+    return (contact.tags || [])
+      .map((t: any) => t?.tag?.name || '')
+      .filter(Boolean);
+  }
+
+  /** Cellules CSV (échappées) d'un contact selon les colonnes résolues. */
+  public exportCsvCells(contact: any, keys: ExportFieldKey[], includeTags?: boolean): string[] {
+    const cells = keys.map(k => csvCell(this.exportFieldValue(contact, k)));
+    if (includeTags) cells.push(csvCell(this.tagNames(contact).join('; ')));
+    return cells;
+  }
+
+  /** Matérialise toutes les lignes de l'export (XLSX / PDF / JSON). */
+  public async collectExportRows(params: ExportContactsParams): Promise<any[]> {
+    const rows: any[] = [];
+    for await (const contact of this.streamExport(params)) {
+      rows.push(contact);
+    }
+    return rows;
+  }
+
+  /** Buffer XLSX (ExcelJS) avec en-têtes surlignés, conformément au contrat front. */
+  public async buildXlsxBuffer(
+    params: ExportContactsParams,
+    keys: ExportFieldKey[],
+    includeTags?: boolean
+  ): Promise<Buffer> {
+    const rows = await this.collectExportRows(params);
+    const { headers } = this.resolveExportColumns(keys, includeTags);
+
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Contacts EURAXESS Africa');
+
+    const headerRow = worksheet.addRow(headers);
+    headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF005596' } };
+
+    for (const contact of rows) {
+      worksheet.addRow(keys.map(k => this.exportFieldValue(contact, k)).concat(includeTags ? [this.tagNames(contact).join('; ')] : []));
+    }
+
+    worksheet.columns.forEach(col => {
+      col.width = 22;
+    });
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    return Buffer.from(buffer);
   }
 
   public async getContactById(id: string) {
@@ -156,6 +487,64 @@ export class ContactService {
     }
 
     return contact;
+  }
+
+  /**
+   * Liste distincte des pays d'origine (pills de filtrage du sidebar),
+   * indépendante de la page de résultats courante.
+   */
+  public async getDistinctCountries(): Promise<string[]> {
+    const rows = await prisma.$queryRaw<{ country: string }[]>`
+      SELECT DISTINCT "countryOfOrigin" AS country FROM "Contact"
+      WHERE "countryOfOrigin" IS NOT NULL AND "countryOfOrigin" <> ''
+      ORDER BY "countryOfOrigin" ASC
+    `;
+    return rows.map(row => row.country);
+  }
+
+  private static readonly GROUP_BY_ALLOWED = new Set([
+    'gender',
+    'countryOfOrigin',
+    'facultyDepartment',
+    'researchCareerStage'
+  ]);
+
+  /**
+   * Statistiques agrégées par gender / countryOfOrigin / facultyDepartment /
+   * researchCareerStage, en appliquant les mêmes filtres que la liste et
+   * l'export (WHERE partagé). Retourne une map `label -> count`.
+   */
+  public async getAggregation(groupBy: string, params: QueryContactsParams): Promise<Record<string, number>> {
+    if (!ContactService.GROUP_BY_ALLOWED.has(groupBy)) {
+      throw new AppError(`group_by invalide: ${groupBy}`, 400);
+    }
+    const column = `"${groupBy}"`;
+    const whereSql = this.whereSql(this.buildWhereConditions(params));
+    const rows = await prisma.$queryRaw<{ label: string | null; n: bigint }[]>`
+      SELECT ${Prisma.raw(column)} AS label, COUNT(*)::bigint AS n
+      FROM "Contact"
+      ${whereSql}
+      GROUP BY ${Prisma.raw(column)}
+      ORDER BY n DESC
+    `;
+    const aggregation: Record<string, number> = {};
+    for (const row of rows) {
+      const label = row.label === null || row.label === '' ? 'Non renseigné' : String(row.label);
+      aggregation[label] = Number(row.n);
+    }
+    return aggregation;
+  }
+
+  /**
+   * Nombre de contacts dont l'email matche un motif (ex. emails temporaires
+   * `import_null_...` créés par les imports). Le motif est échappé (LIKE littéral).
+   */
+  public async countByEmailPattern(pattern: string): Promise<number> {
+    const rows = await prisma.$queryRaw<{ n: bigint }[]>`
+      SELECT COUNT(*)::bigint AS n FROM "Contact"
+      WHERE "email" ILIKE ${`${escapeLike(pattern)}%`}
+    `;
+    return Number(rows[0]?.n ?? 0);
   }
 
   /**
@@ -244,10 +633,10 @@ export class ContactService {
     if (payload.lastName !== undefined) dataToUpdate.lastName = clean(payload.lastName) || NA;
     if (payload.email !== undefined) dataToUpdate.email = payload.email.toLowerCase().trim();
     if (payload.gender !== undefined) dataToUpdate.gender = normalizeGender(payload.gender);
-    if (payload.countryOfOrigin !== undefined) dataToUpdate.countryOfOrigin = clean(payload.countryOfOrigin) || NA;
+    if (payload.countryOfOrigin !== undefined) dataToUpdate.countryOfOrigin = clean(payload.countryOfOrigin) || null;
     if (payload.city !== undefined) dataToUpdate.city = clean(payload.city) || null;
     if (payload.phone !== undefined) dataToUpdate.phone = clean(payload.phone) || null;
-    if (payload.affiliation !== undefined) dataToUpdate.affiliation = clean(payload.affiliation) || NA;
+    if (payload.affiliation !== undefined) dataToUpdate.affiliation = clean(payload.affiliation) || null;
     if (payload.function !== undefined) dataToUpdate.function = clean(payload.function) || null;
     if (payload.experience !== undefined) dataToUpdate.experience = clean(payload.experience) || null;
     if (payload.facultyDepartment !== undefined) dataToUpdate.facultyDepartment = clean(payload.facultyDepartment) || null;
@@ -299,10 +688,10 @@ export class ContactService {
           lastName: names.lastName,
           email: emailClean,
           gender: normalizeGender(payload.gender),
-          countryOfOrigin: clean(payload.countryOfOrigin) || NA,
+        countryOfOrigin: clean(payload.countryOfOrigin) || null,
           city: clean(payload.city) || null,
           phone: clean(payload.phone) || null,
-          affiliation: clean(payload.affiliation) || NA,
+        affiliation: clean(payload.affiliation) || null,
           function: clean(payload.function) || null,
           experience: clean(payload.experience) || null,
           facultyDepartment: clean(payload.facultyDepartment) || null,

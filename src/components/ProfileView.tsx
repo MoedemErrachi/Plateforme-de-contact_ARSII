@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { User } from '../types';
 import { useToast } from './Toast';
+import { apiFetch } from '../utils/api';
 import { validateImageFile, uploadImage, readFileAsDataUrl } from '../utils/upload';
 
 interface ProfileViewProps {
@@ -87,16 +88,10 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ user, onUserUpdate, on
 
     setIsSaving(true);
     try {
-      const res = await fetch('/api/auth/profile', {
+      const json = await apiFetch('/api/auth/profile', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
         body: JSON.stringify({ name: name.trim(), email: email.trim(), avatarUrl })
       });
-      const json = await res.json();
-      if (!res.ok) {
-        throw new Error(json.error || json.message || `API error ${res.status}`);
-      }
       onUserUpdate(json.user);
       showToast('Profil mis à jour avec succès.', 'success');
       navigate('/dashboard');

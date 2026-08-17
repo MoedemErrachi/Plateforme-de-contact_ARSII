@@ -41,6 +41,7 @@ from google import genai
 from google.genai import types
 
 from app.config import GEMINI_API_KEY, GEMINI_MODEL
+from app.models.schemas import ChatResponse
 from app.providers.base import (
     APIConnectionError,
     LLMProvider,
@@ -181,6 +182,25 @@ class GeminiProvider(LLMProvider):
         flush_tool_parts()
         return system_instruction, contents
 
+    @staticmethod
+    def _map_exception(exc: Exception) -> None:
+        if isinstance(exc, TimeoutError):
+            raise APIConnectionError(str(exc)) from exc
+        if genai_errors is not None:
+            if isinstance(exc, getattr(genai_errors, "ServerError", ())):
+                raise ProviderHTTPError(500, str(exc)) from exc
+            if isinstance(exc, getattr(genai_errors, "ClientError", ())):
+                code = getattr(exc, "code", None)
+                if code == 429:
+                    raise RateLimitError(str(exc)) from exc
+                if isinstance(code, int) and code >= 500:
+                    raise ProviderHTTPError(code, str(exc)) from exc
+                raise
+        name = type(exc).__name__.lower()
+        if "connection" in name or "timeout" in name:
+            raise APIConnectionError(str(exc)) from exc
+        raise
+
     async def chat_with_tools(self, messages: list[dict], tools: list[dict], timeout: int = 15) -> ToolCallResponse:
         system_instruction, contents = self._to_gemini_contents(messages)
         full_system_instruction = "\n".join(
@@ -194,28 +214,13 @@ class GeminiProvider(LLMProvider):
                     config=types.GenerateContentConfig(
                         system_instruction=full_system_instruction or None,
                         tools=self._to_gemini_tools(tools),
-                        temperature=0.1,
+                        temperature=0,
                     ),
                 ),
                 timeout=timeout,
             )
-        except TimeoutError as exc:
-            raise APIConnectionError(str(exc)) from exc
         except Exception as exc:
-            if genai_errors is not None:
-                if isinstance(exc, getattr(genai_errors, "ServerError", ())):
-                    raise ProviderHTTPError(500, str(exc)) from exc
-                if isinstance(exc, getattr(genai_errors, "ClientError", ())):
-                    code = getattr(exc, "code", None)
-                    if code == 429:
-                        raise RateLimitError(str(exc)) from exc
-                    if isinstance(code, int) and code >= 500:
-                        raise ProviderHTTPError(code, str(exc)) from exc
-                    raise
-            name = type(exc).__name__.lower()
-            if "connection" in name or "timeout" in name:
-                raise APIConnectionError(str(exc)) from exc
-            raise
+            self._map_exception(exc)
 
         text_parts: list[str] = []
         tool_calls: list[ToolCall] = []
@@ -254,3 +259,40 @@ class GeminiProvider(LLMProvider):
 
         content = " ".join(text_parts).strip() or None
         return ToolCallResponse(content=content, tool_calls=tool_calls)
+
+    async def chat_final(self, messages: list[dict], timeout: int = 15) -> str:
+        """Phase finale: sortie structurée native via response_schema, sans tools.
+
+        Gemini rejette response_mime_type="application/json" EN PRÉSENCE de tools
+        (incompatibilité API, issue python-genai #867) : cette phase est donc
+        toujours appelée SANS tools, après la boucle d'outils.
+        """
+        system_instruction, contents = self._to_gemini_contents(messages)
+        full_system_instruction = "\n".join(
+            part for part in (system_instruction, GEMINI_STRICT_OUTPUT_INSTRUCTIONS) if part and part.strip()
+        ).strip()
+        try:
+            response = await asyncio.wait_for(
+                self._client.aio.models.generate_content(
+                    model=self.model,
+                    contents=contents,
+                    config=types.GenerateContentConfig(
+                        system_instruction=full_system_instruction or None,
+                        response_mime_type="application/json",
+                        response_schema=ChatResponse,
+                        temperature=0,
+                    ),
+                ),
+                timeout=timeout,
+            )
+        except Exception as exc:
+            self._map_exception(exc)
+
+        text_parts: list[str] = []
+        if response.candidates:
+            candidate = response.candidates[0]
+            if candidate.content:
+                for part in candidate.content.parts:
+                    if part.text:
+                        text_parts.append(part.text)
+        return " ".join(text_parts).strip()

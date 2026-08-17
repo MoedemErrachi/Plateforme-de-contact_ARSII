@@ -3,8 +3,10 @@ import { useNavigate } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Bot, Download, Loader2, MessageSquare, RotateCcw, Search, Send, UserRound, X } from 'lucide-react';
-import { Contact, FilterState, Gender, ResearchCareerStage } from '../../types';
-import { downloadContactsCsv } from '../../utils/exportCsv';
+import { FilterState, Gender, ResearchCareerStage } from '../../types';
+import { downloadCsvFromEndpoint } from '../../utils/download';
+import { buildContactsExportQuery } from '../../utils/contactQuery';
+import { apiFetch } from '../../utils/api';
 
 const SESSION_KEY = 'chatbot_session_id';
 const API_URL = import.meta.env.VITE_CHATBOT_API_URL || 'http://localhost:8000';
@@ -42,7 +44,6 @@ interface ChatMessage {
 }
 
 interface ChatWidgetProps {
-  contacts: Contact[];
   getToken?: () => string | null;
 }
 
@@ -129,35 +130,16 @@ function normalizeAction(raw: unknown): ChatAction | null {
   return null;
 }
 
-function filterValueMatches(actual: string | null | undefined, expected: string | null | undefined): boolean {
-  if (!expected) return true;
-  return (actual || '').trim().toLowerCase() === expected.trim().toLowerCase();
-}
-
-function contactMatches(contact: Contact, filters?: ContactFilters | null): boolean {
-  if (!filters) return true;
-  if (!filterValueMatches(contact.countryOfOrigin, filters.countryOfOrigin)) return false;
-  if (!filterValueMatches(contact.gender, filters.gender)) return false;
-  if (!filterValueMatches(contact.researchCareerStage, filters.researchCareerStage)) return false;
-  if (filters.affiliation && !(contact.affiliation || '').toLowerCase().includes(filters.affiliation.toLowerCase())) {
-    return false;
-  }
-  if (
-    filters.facultyDepartment &&
-    !(contact.facultyDepartment || '').toLowerCase().includes(filters.facultyDepartment.toLowerCase())
-  ) {
-    return false;
-  }
-  return true;
-}
-
 function toFilterState(filters?: ContactFilters | null): FilterState {
+  const searchParts = [
+    filters?.facultyDepartment?.trim(),
+    filters?.affiliation?.trim()
+  ].filter(Boolean);
   return {
-    search: filters?.facultyDepartment?.trim() || '',
+    search: searchParts.join(' ') || '',
     countries: filters?.countryOfOrigin ? [filters.countryOfOrigin] : [],
     genders: filters?.gender ? [filters.gender] : [],
     careerStages: filters?.researchCareerStage ? [filters.researchCareerStage] : [],
-    affiliations: filters?.affiliation?.trim() || '',
     tags: []
   };
 }
@@ -281,7 +263,7 @@ const ActionButtons: React.FC<ActionButtonsProps> = ({ actions, onViewList, onEx
   </div>
 );
 
-export const ChatWidget: React.FC<ChatWidgetProps> = ({ contacts, getToken }) => {
+export const ChatWidget: React.FC<ChatWidgetProps> = ({ getToken }) => {
   const navigate = useNavigate();
   const [sessionId, setSessionId] = useState<string>(getOrCreateSessionId);
   const [isOpen, setIsOpen] = useState(false);
@@ -401,25 +383,27 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ contacts, getToken }) =>
   );
 
   const handleExportCsv = useCallback(
-    (filters?: ContactFilters | null) => {
-      const matches = contacts.filter(c => contactMatches(c, filters));
-      downloadContactsCsv(matches, 'EURAXESS_Africa_Contacts_Export.csv', { includeTags: true });
+    async (filters?: ContactFilters | null) => {
       try {
-        fetch('/api/export/log', {
-          method: 'POST',
-          credentials: 'include',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            recordCount: matches.length,
-            fileName: 'EURAXESS_Africa_Contacts_Export.csv',
-            format: 'CSV'
-          })
-        });
-      } catch {
-        // ignore logging failures
+        const query = buildContactsExportQuery(toFilterState(filters), []);
+        const result = await downloadCsvFromEndpoint(query, 'export.csv');
+        try {
+          await apiFetch('/api/export/log', {
+            method: 'POST',
+            body: JSON.stringify({
+              format: 'CSV',
+              fileName: result.fileName,
+              recordCount: result.count ?? 0
+            })
+          });
+        } catch {
+          // journalisation non bloquante
+        }
+      } catch (err) {
+        console.error('Export CSV failed:', err);
       }
     },
-    [contacts]
+    []
   );
 
   const handleProfile = useCallback(

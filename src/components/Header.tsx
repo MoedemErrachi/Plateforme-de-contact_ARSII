@@ -1,13 +1,11 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Link, NavLink } from 'react-router-dom';
 import { 
-  Bell, 
-  HelpCircle, 
   Search, 
   Menu, 
   X, 
   LogOut, 
-  Download, 
+  Download,
   PlusCircle,
   UserCircle
 } from 'lucide-react';
@@ -17,6 +15,7 @@ interface HeaderProps {
   isAuthenticated: boolean;
   user?: User | null;
   onLogout: () => void;
+  onExportAll?: () => void;
   isHeaderVisible?: boolean;
 }
 
@@ -34,22 +33,18 @@ export const Header: React.FC<HeaderProps> = ({
   isAuthenticated,
   user,
   onLogout,
+  onExportAll,
   isHeaderVisible = true
 }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
-  const [notificationsOpen, setNotificationsOpen] = useState(false);
 
   const profileRef = useRef<HTMLDivElement>(null);
-  const notificationsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (profileRef.current && !profileRef.current.contains(event.target as Node)) {
         setProfileDropdownOpen(false);
-      }
-      if (notificationsRef.current && !notificationsRef.current.contains(event.target as Node)) {
-        setNotificationsOpen(false);
       }
     };
 
@@ -126,58 +121,6 @@ export const Header: React.FC<HeaderProps> = ({
             <Search className="w-5 h-5" />
           </Link>
 
-          {/* Notifications Dropdown */}
-          <div className="relative" ref={notificationsRef}>
-            <button 
-              onClick={() => setNotificationsOpen(!notificationsOpen)}
-              className="p-2 rounded-full hover:bg-white/10 text-white/90 hover:text-white transition-colors relative cursor-pointer"
-              title="Notifications"
-            >
-              <Bell className="w-5 h-5" />
-              <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-[#FFC20C] animate-ping" />
-              <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-[#FFC20C]" />
-            </button>
-
-            {notificationsOpen && (
-              <div className="absolute right-0 top-full mt-2 w-80 bg-white rounded-xl shadow-2xl border border-slate-200 py-3 text-slate-800 z-[100] animate-in fade-in slide-in-from-top-1 duration-150">
-                <div className="px-4 py-2 border-b border-slate-100 flex justify-between items-center">
-                  <span className="font-bold text-sm">Notifications R&I</span>
-                  <span className="text-xs text-[#005596] font-semibold bg-[#E8F1F8] px-2 py-0.5 rounded-full">3 nouvelles</span>
-                </div>
-                <div className="divide-y divide-slate-100 max-h-64 overflow-y-auto">
-                  <div className="px-4 py-2.5 hover:bg-slate-50 transition-colors text-xs">
-                    <p className="font-semibold text-slate-900">Dr. Elena Volkov - Conflit de doublons</p>
-                    <p className="text-slate-500 mt-0.5">Importation network_audit_2024.csv requiert votre attention.</p>
-                  </div>
-                  <div className="px-4 py-2.5 hover:bg-slate-50 transition-colors text-xs">
-                    <p className="font-semibold text-slate-900">Nouveau projet Solaire-Hub</p>
-                    <p className="text-slate-500 mt-0.5">Ajouté par le secteur Énergie à Dakar.</p>
-                  </div>
-                  <div className="px-4 py-2.5 hover:bg-slate-50 transition-colors text-xs">
-                    <p className="font-semibold text-slate-900">Prof. Amadou Diallo</p>
-                    <p className="text-slate-500 mt-0.5">Mise à jour des notes d'échange récente.</p>
-                  </div>
-                </div>
-                <div className="px-4 pt-2 border-t border-slate-100 text-center">
-                  <Link 
-                    to="/import"
-                    onClick={() => setNotificationsOpen(false)}
-                    className="text-xs text-[#005596] font-bold hover:underline cursor-pointer"
-                  >
-                    Voir l'importation en cours
-                  </Link>
-                </div>
-              </div>
-            )}
-          </div>
-
-          <button 
-            className="p-2 rounded-full hover:bg-white/10 text-white/90 hover:text-white transition-colors hidden sm:flex cursor-pointer"
-            title="Aide & Documentation"
-          >
-            <HelpCircle className="w-5 h-5" />
-          </button>
-
           {/* Profile Menu / Login Button */}
           {isAuthenticated ? (
             <div className="relative" ref={profileRef}>
@@ -224,14 +167,13 @@ export const Header: React.FC<HeaderProps> = ({
                       <PlusCircle className="w-4 h-4" />
                       Nouveau contact
                     </Link>
-                    <Link
-                      to="/export"
-                      onClick={() => setProfileDropdownOpen(false)}
+                    <button
+                      onClick={() => { setProfileDropdownOpen(false); onExportAll?.(); }}
                       className="w-full px-4 py-2 text-left text-xs text-slate-700 hover:bg-[#005596]/10 hover:text-[#005596] flex items-center gap-2 transition-colors cursor-pointer"
                     >
                       <Download className="w-4 h-4" />
                       Exporter les données
-                    </Link>
+                    </button>
                   </div>
 
                   <div className="border-t border-slate-100 pt-1">
@@ -281,13 +223,12 @@ export const Header: React.FC<HeaderProps> = ({
             >
               <PlusCircle className="w-4 h-4" /> Ajouter un expert
             </Link>
-            <Link
-              to="/export"
-              onClick={() => setMobileMenuOpen(false)}
+            <button
+              onClick={() => { setMobileMenuOpen(false); onExportAll?.(); }}
               className="w-full text-left py-2 px-3 rounded-lg text-xs border border-white/30 hover:bg-white/10 flex items-center gap-2 cursor-pointer"
             >
               <Download className="w-4 h-4" /> Exporter la base
-            </Link>
+            </button>
           </div>
         </div>
       )}

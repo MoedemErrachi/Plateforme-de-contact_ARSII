@@ -69,15 +69,71 @@ export const getContactByIdSchema = z.object({
 
 export const queryContactSchema = z.object({
   query: z.object({
-    page: z.string().optional().transform(val => (val ? parseInt(val, 10) : 1)),
-    limit: z.string().optional().transform(val => (val ? parseInt(val, 10) : 50)),
+    page: z.coerce.number().int().min(1).optional(),
+    limit: z.coerce.number().int().min(1).max(100).optional(),
     search: z.string().optional(),
-    countryOfOrigin: z.string().optional(),
-    gender: genderEnum.optional(),
-    careerStage: careerStageEnum.optional(),
+    countryOfOrigin: z.union([z.string(), z.array(z.string())]).optional(),
+    gender: z.union([genderEnum, z.array(genderEnum)]).optional(),
+    careerStage: z.union([careerStageEnum, z.array(careerStageEnum)]).optional(),
+    researchCareerStage: z.union([careerStageEnum, z.array(careerStageEnum)]).optional(),
     affiliation: z.string().optional(),
-    tagId: z.string().optional(),
+    facultyDepartment: z.string().optional(),
+    tagId: z.union([z.string(), z.array(z.string())]).optional(),
     segmentId: z.string().optional()
+  })
+});
+
+export const exportFieldEnum = z.enum([
+  'email',
+  'firstName',
+  'lastName',
+  'gender',
+  'countryOfOrigin',
+  'city',
+  'phone',
+  'affiliation',
+  'function',
+  'experience',
+  'facultyDepartment',
+  'researchCareerStage'
+]);
+
+export const exportQuerySchema = z.object({
+  query: z.object({
+    ids: z.union([z.string(), z.array(z.string())]).optional(),
+    format: z.enum(['csv', 'json', 'xlsx']).optional(),
+    fields: z.union([exportFieldEnum, z.array(exportFieldEnum)]).optional(),
+    includeTags: z.enum(['true', 'false', '1', '0']).optional(),
+    search: z.string().optional(),
+    countryOfOrigin: z.union([z.string(), z.array(z.string())]).optional(),
+    gender: z.union([genderEnum, z.array(genderEnum)]).optional(),
+    careerStage: z.union([careerStageEnum, z.array(careerStageEnum)]).optional(),
+    researchCareerStage: z.union([careerStageEnum, z.array(careerStageEnum)]).optional(),
+    affiliation: z.string().optional(),
+    facultyDepartment: z.string().optional(),
+    tagId: z.union([z.string(), z.array(z.string())]).optional(),
+    segmentId: z.string().optional()
+  })
+});
+
+export const aggregationQuerySchema = z.object({
+  query: z.object({
+    group_by: z.enum(['gender', 'countryOfOrigin', 'facultyDepartment', 'researchCareerStage']),
+    search: z.string().optional(),
+    countryOfOrigin: z.union([z.string(), z.array(z.string())]).optional(),
+    gender: z.union([genderEnum, z.array(genderEnum)]).optional(),
+    careerStage: z.union([careerStageEnum, z.array(careerStageEnum)]).optional(),
+    researchCareerStage: z.union([careerStageEnum, z.array(careerStageEnum)]).optional(),
+    affiliation: z.string().optional(),
+    facultyDepartment: z.string().optional(),
+    tagId: z.union([z.string(), z.array(z.string())]).optional(),
+    segmentId: z.string().optional()
+  })
+});
+
+export const countContactsQuerySchema = z.object({
+  query: z.object({
+    email_pattern: z.string().optional()
   })
 });
 

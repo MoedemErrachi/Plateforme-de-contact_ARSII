@@ -60,7 +60,6 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
     countries: [],
     genders: [],
     careerStages: [],
-    affiliations: '',
     tags: []
   });
 
@@ -113,7 +112,6 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
       if (f.countries && f.countries.length > 0 && !f.countries.includes(contact.countryOfOrigin)) return false;
       if (f.genders && f.genders.length > 0 && !f.genders.includes(contact.gender)) return false;
       if (f.careerStages && f.careerStages.length > 0 && !f.careerStages.includes(contact.researchCareerStage)) return false;
-      if (f.affiliations && f.affiliations.trim() && !(contact.affiliation || '').toLowerCase().includes(f.affiliations.toLowerCase().trim())) return false;
       if (f.tags && f.tags.length > 0) {
         const hasTag = contact.tags?.some(t => f.tags.includes(t));
         if (!hasTag) return false;
@@ -143,7 +141,6 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
         countries: [],
         genders: [],
         careerStages: [],
-        affiliations: '',
         tags: []
       });
     }
@@ -369,11 +366,6 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
                                 <Bookmark className="w-3 h-3" /> {CAREER_STAGE_SHORT_LABELS[s]}
                               </span>
                             ))}
-                            {f.affiliations && (
-                              <span className="px-2 py-0.5 bg-teal-50 text-teal-700 rounded font-medium flex items-center gap-1">
-                                <MapPin className="w-3 h-3" /> Affiliation: {f.affiliations}
-                              </span>
-                            )}
                             {f.tags && f.tags.map(t => (
                               <span key={t} className="px-2 py-0.5 bg-rose-50 text-rose-700 rounded font-medium flex items-center gap-1">
                                 <TagIcon className="w-3 h-3" /> Tag: {t}
@@ -740,14 +732,14 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
                   </div>
                 </div>
 
-                {/* Affiliation keyword */}
+                {/* Search keyword */}
                 <div>
-                  <label className="font-semibold text-slate-700 block mb-1">Affiliation (mot-clé)</label>
+                  <label className="font-semibold text-slate-700 block mb-1">Recherche (nom, e-mail, affiliation, pays…)</label>
                   <input
                     type="text"
-                    value={segFilters.affiliations}
-                    onChange={(e) => setSegFilters({ ...segFilters, affiliations: e.target.value })}
-                    placeholder="ex: Université, CNRS, IRD..."
+                    value={segFilters.search}
+                    onChange={(e) => setSegFilters({ ...segFilters, search: e.target.value })}
+                    placeholder="ex: Université, Sénégal, CNRS..."
                     className="w-full p-2 bg-white border border-slate-200 rounded-lg"
                   />
                 </div>

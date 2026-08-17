@@ -18,7 +18,22 @@ import {
 } from 'lucide-react';
 import { DashboardSkeleton } from './Skeletons';
 import { Modal } from './Modal';
-import { DistributionChart } from './DistributionChart';
+import { DistributionChart, DistributionServerData } from './DistributionChart';
+import { apiFetch } from '../utils/api';
+
+interface DashboardStats {
+  kpis: {
+    totalContacts: number;
+    countriesCovered: number;
+    affiliationsCount: number;
+    seniorResearchers: { count: number; percentage: number };
+  };
+  distributionByCountry: { country: string; count: number; percentage: number }[];
+  distributionByGender: { gender: string; count: number; percentage: number }[];
+  distributionByCountryGender: { country: string; gender: string; count: number }[];
+  distributionByCareerStage: { careerStage: string; count: number; percentage: number }[];
+  distributionByTag: { tagId: string; name: string; color: string; count: number }[];
+}
 
 interface DashboardViewProps {
   contacts: Contact[];
@@ -87,6 +102,21 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   });
 
   const [isCustomizeModalOpen, setIsCustomizeModalOpen] = useState(false);
+
+  // Statistiques réelles servies par le backend (GET /api/dashboard/stats)
+  const [stats, setStats] = useState<DashboardStats | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    apiFetch('/api/dashboard/stats')
+      .then(json => {
+        if (!cancelled && json?.data) setStats(json.data);
+      })
+      .catch(err => {
+        console.error('Failed to load dashboard stats:', err);
+      });
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     try {
@@ -176,27 +206,40 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     setWidgets(DEFAULT_WIDGETS);
   };
 
-  // 1. KPIs
-  const totalContacts = contacts.length;
+  // 1. KPIs (stats serveur = valeurs réelles sur toute la base ; repli sur le prop contacts)
+  const totalContacts = stats?.kpis.totalContacts ?? contacts.length;
 
   const countriesCovered = useMemo(() => {
+    if (stats) return stats.kpis.countriesCovered;
     const set = new Set<string>();
     contacts.forEach(c => {
       if (c.countryOfOrigin) set.add(c.countryOfOrigin.trim());
     });
     return set.size;
-  }, [contacts]);
+  }, [contacts, stats]);
 
   const affiliationsCount = useMemo(() => {
+    if (stats) return stats.kpis.affiliationsCount;
     const set = new Set<string>();
     contacts.forEach(c => {
       if (c.affiliation) set.add(c.affiliation.trim());
     });
     return set.size;
-  }, [contacts]);
+  }, [contacts, stats]);
 
   // 2. Career stage distribution (R1-R4)
   const careerStageData = useMemo(() => {
+    if (stats) {
+      return CAREER_STAGE_ORDER.map(stage => {
+        const found = stats.distributionByCareerStage.find(d => d.careerStage === stage);
+        return {
+          stage,
+          count: found?.count ?? 0,
+          pct: found?.percentage ?? 0,
+          color: CAREER_STAGE_COLORS[stage]
+        };
+      });
+    }
     const counts: Record<ResearchCareerStage, number> = {
       R1_FIRST_STAGE: 0,
       R2_RECOGNIZED: 0,
@@ -213,7 +256,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       pct: Math.round((counts[stage] / total) * 100),
       color: CAREER_STAGE_COLORS[stage]
     }));
-  }, [contacts]);
+  }, [contacts, stats]);
 
   // 3. Top tags (expertises & tags)
   const tagColorMap = useMemo(() => {
@@ -223,6 +266,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   }, [tags]);
 
   const topTagsData = useMemo(() => {
+    if (stats) {
+      return stats.distributionByTag.map(d => ({
+        name: d.name,
+        count: d.count,
+        color: d.color || tagColorMap[d.name.toLowerCase()] || TAG_FALLBACK_COLORS[0]
+      }));
+    }
     const counts: Record<string, number> = {};
     contacts.forEach(c => {
       (c.tags || []).forEach(t => {
@@ -241,9 +291,20 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       })
       .sort((a, b) => b.count - a.count)
       .slice(0, 10);
-  }, [contacts, tagColorMap]);
+  }, [contacts, tagColorMap, stats]);
 
   const maxTagCount = Math.max(...topTagsData.map(d => d.count), 1);
+
+  // Distribution pays & genre servie par le backend (complète sur la base entière)
+  const distributionServerData: DistributionServerData | null = useMemo(() => {
+    if (!stats) return null;
+    return {
+      distributionByCountry: stats.distributionByCountry,
+      distributionByGender: stats.distributionByGender,
+      distributionByCountryGender: stats.distributionByCountryGender,
+      totalCount: stats.kpis.totalContacts
+    };
+  }, [stats]);
 
   // Get sorted visible widgets
   const orderedWidgets = [...widgets].sort((a, b) => a.order - b.order);
@@ -392,7 +453,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   </div>
                   {widgetHeaderActions('distributionChart')}
                 </div>
-                <DistributionChart contacts={contacts} />
+                <DistributionChart contacts={contacts} serverData={distributionServerData} />
               </div>
             );
           }
@@ -423,7 +484,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                       }}
                     >
                       <div className="absolute inset-[34px] rounded-full bg-white flex flex-col items-center justify-center shadow-inner">
-                        <span className="text-2xl font-black text-[#005596]">{contacts.length}</span>
+                        <span className="text-2xl font-black text-[#005596]">{totalContacts}</span>
                         <span className="text-[11px] font-semibold text-[#55636B]">Chercheurs</span>
                       </div>
                     </div>

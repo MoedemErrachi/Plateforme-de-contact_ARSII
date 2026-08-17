@@ -40,6 +40,7 @@ class GroqProvider(LLMProvider):
                     messages=strip_internal_fields(messages),
                     tools=tools,
                     tool_choice="auto",
+                    temperature=0,
                 ),
                 timeout=timeout,
             )
@@ -56,11 +57,44 @@ class GroqProvider(LLMProvider):
         message = response.choices[0].message
         tool_calls: list[ToolCall] = []
         for call in message.tool_calls or []:
-            arguments: dict = {}
+            raw_arguments = call.function.arguments or "{}"
             try:
-                arguments = json.loads(call.function.arguments or "{}")
+                arguments = json.loads(raw_arguments)
             except (ValueError, TypeError):
-                arguments = {"raw": call.function.arguments}
+                arguments = None
+            if not isinstance(arguments, dict):
+                arguments = {"raw": raw_arguments}
             tool_calls.append(ToolCall(id=call.id, name=call.function.name, arguments=arguments))
 
         return ToolCallResponse(content=extract_text(message.content), tool_calls=tool_calls)
+
+    async def chat_final(self, messages: list[dict], timeout: int = 15) -> str:
+        """Phase finale: sortie JSON native (mode json_object), sans tools.
+
+        Le modèle configuré (llama-3.3-70b-versatile) ne supporte PAS le mode
+        json_schema strict (400 sinon) : on utilise json_object + validation
+        Pydantic post-réponse. Le SYSTEM_PROMPT contient le mot "JSON", condition
+        requise par Groq pour le mode json_object.
+        """
+        try:
+            response = await asyncio.wait_for(
+                self._client.chat.completions.create(
+                    model=self.model,
+                    messages=strip_internal_fields(messages),
+                    temperature=0,
+                    response_format={"type": "json_object"},
+                ),
+                timeout=timeout,
+            )
+        except GroqRateLimitError as exc:
+            raise RateLimitError(str(exc)) from exc
+        except (GroqAPIConnectionError, GroqAPITimeoutError, TimeoutError) as exc:
+            raise APIConnectionError(str(exc)) from exc
+        except GroqAPIStatusError as exc:
+            status = getattr(exc, "status_code", None)
+            if status is not None and status >= 500:
+                raise ProviderHTTPError(status, str(exc)) from exc
+            raise
+
+        content = response.choices[0].message.content
+        return content or ""

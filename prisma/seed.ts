@@ -220,7 +220,150 @@ async function main() {
     }
   ];
 
-  for (const data of contactData) {
+  // ── Contacts synthétiques supplémentaires (déterministes, ~113) ──────────
+  // Enrichit la base pour un volume réaliste (~120 contacts au total) et fournit
+  // des emails temporaires `import_null_...` (audit / outil count_temp_emails).
+  const SYNTHETIC_COUNT = 105;
+
+  const firstNamesFemale = ['Aminata', 'Fatoumata', 'Awa', 'Mariam', 'Khady', 'Binta', 'Aïcha', 'Ndeye', 'Rokhaya', 'Bineta', 'Adama', 'Fatou', 'Nana', 'Sarah', 'Sofia', 'Claire', 'Giulia', 'Efua', 'Ngozi', 'Yaa'];
+  const firstNamesMale = ['Moussa', 'Abdoulaye', 'Seydou', 'Ibrahima', 'Ousmane', 'Modou', 'Cheikh', 'Papa', 'Idrissa', 'Mamadou', 'Karim', 'Ahmed', 'Yassine', 'Kofi', 'Kwame', 'Emeka', 'Chidi', 'Pierre', 'Thomas', 'Julien'];
+  const lastNamesByCountry: Record<string, string[]> = {
+    'Sénégal': ['Diallo', 'Ndiaye', 'Diop', 'Sarr', 'Fall', 'Ba', 'Diagne', 'Gueye', 'Cissé', 'Faye', 'Sy', 'Mbaye', 'Niang', 'Kane', 'Sow'],
+    'Tunisie': ['Ben Salah', 'Ben Ali', 'Haddad', 'Bouazizi', 'Trabelsi', 'Gharbi', 'Jaziri', 'Mansouri', 'Kallel', 'Ayari'],
+    'Côte d\'Ivoire': ['Kouassi', 'Koné', 'Ouattara', 'N\'Guessan', 'Kouamé', 'Bamba', 'Yao', 'Boni', 'Soro', 'Traoré'],
+    'Mali': ['Traoré', 'Keïta', 'Touré', 'Coulibaly', 'Sidibé', 'Diabaté', 'Konaté', 'Diarra', 'Sangaré', 'Maïga'],
+    'Cameroun': ['Mbarga', 'Nguema', 'Tchoumi', 'Njiki', 'Fotso', 'Kamga', 'Atangana', 'Ngo', 'Belobo', 'Essomba'],
+    'Ghana': ['Mensah', 'Boateng', 'Owusu', 'Asante', 'Osei', 'Agyemang', 'Addo', 'Ampofo', 'Darko', 'Bonsu'],
+    'Nigeria': ['Okafor', 'Eze', 'Okoro', 'Adeyemi', 'Ogunleye', 'Bello', 'Chukwu', 'Nwosu', 'Adeleke', 'Balogun'],
+    'Guinée': ['Camara', 'Sow', 'Bah', 'Diallo', 'Sylla', 'Keita', 'Condé', 'Barry', 'Touré', 'Doumbouya'],
+    'Sierra Leone': ['Kamara', 'Sesay', 'Koroma', 'Turay', 'Sankoh', 'Bangura', 'Fofanah', 'Johnson', 'Cole', 'Williams'],
+    'Maroc': ['El Amrani', 'Bennani', 'El Fassi', 'Idrissi', 'Berrada', 'Amrani', 'Tazi', 'Ziani', 'Bouazza', 'Chraibi'],
+    'Kenya': ['Muthoni', 'Ochieng', 'Njoroge', 'Wanjiru', 'Otieno', 'Mwangi', 'Chebet', 'Kipchoge', 'Achieng', 'Odhiambo'],
+    'Égypte': ['Hassan', 'Ahmed', 'Mahmoud', 'Ibrahim', 'Mostafa', 'Fathy', 'Ezzat', 'Tarek', 'Adel', 'Sherif'],
+    'France': ['Moreau', 'Lefèvre', 'Dubois', 'Bernard', 'Petit', 'Rousseau', 'Mercier', 'Girard', 'Lambert', 'Fontaine'],
+    'Allemagne': ['Schmidt', 'Müller', 'Weber', 'Schneider', 'Fischer', 'Wagner', 'Becker', 'Hoffmann', 'Koch', 'Richter'],
+    'Belgique': ['Peeters', 'Lambert', 'De Smet', 'Maes', 'Willems', 'Claes', 'Vandenberg', 'Jacobs', 'Mertens'],
+    'Royaume-Uni': ['Smith', 'Johnson', 'Williams', 'Brown', 'Jones', 'Taylor', 'Davies', 'Wilson', 'Evans', 'Thomas']
+  };
+  const countryInfo: Array<{ country: string; cities: string[]; phone: string }> = [
+    { country: 'Sénégal', cities: ['Dakar', 'Saint-Louis', 'Thiès', 'Ziguinchor'], phone: '+221 7' },
+    { country: 'Tunisie', cities: ['Tunis', 'Sfax', 'Sousse', 'Monastir'], phone: '+216 2' },
+    { country: 'Côte d\'Ivoire', cities: ['Abidjan', 'Bouaké', 'Yamoussoukro'], phone: '+225 0' },
+    { country: 'Mali', cities: ['Bamako', 'Ségou', 'Sikasso'], phone: '+223 7' },
+    { country: 'Cameroun', cities: ['Yaoundé', 'Douala', 'Bafoussam'], phone: '+237 6' },
+    { country: 'Ghana', cities: ['Accra', 'Kumasi', 'Takoradi'], phone: '+233 2' },
+    { country: 'Nigeria', cities: ['Lagos', 'Abuja', 'Ibadan'], phone: '+234 8' },
+    { country: 'Guinée', cities: ['Conakry', 'Kankan', 'Labé'], phone: '+224 6' },
+    { country: 'Sierra Leone', cities: ['Freetown', 'Bo', 'Kenema'], phone: '+232 7' },
+    { country: 'Maroc', cities: ['Rabat', 'Casablanca', 'Marrakech'], phone: '+212 6' },
+    { country: 'Kenya', cities: ['Nairobi', 'Mombasa', 'Kisumu'], phone: '+254 7' },
+    { country: 'Égypte', cities: ['Le Caire', 'Alexandrie', 'Gizeh'], phone: '+20 1' },
+    { country: 'France', cities: ['Paris', 'Lyon', 'Bordeaux', 'Toulouse'], phone: '+33 6' },
+    { country: 'Allemagne', cities: ['Berlin', 'Munich', 'Hambourg'], phone: '+49 1' },
+    { country: 'Belgique', cities: ['Bruxelles', 'Liège', 'Gand'], phone: '+32 4' },
+    { country: 'Royaume-Uni', cities: ['Londres', 'Édimbourg', 'Manchester'], phone: '+44 7' }
+  ];
+  const affiliationsByCountry: Record<string, string[]> = {
+    'Sénégal': ['Université Cheikh Anta Diop', 'ISEP-Dakar', 'Université Gaston Berger', 'CESTI', 'Institut Panafricain de Développement'],
+    'Tunisie': ['Université de Tunis El Manar', 'Université de Sfax', 'INSAT', 'Université de Sousse'],
+    'Côte d\'Ivoire': ['Université Félix Houphouët-Boigny', 'Centre Suisse de Recherches Scientifiques', 'INP-HB'],
+    'Mali': ['Université de Bamako', 'INRSP', 'Institut Polytechnique Rural'],
+    'Cameroun': ['Université de Yaoundé I', 'GreenTech Afrique SARL', 'Université de Douala'],
+    'Ghana': ['University of Ghana', 'KNUST', 'University of Cape Coast'],
+    'Nigeria': ['University of Lagos', 'Lagos Innovates', 'Federal University of Technology Akure'],
+    'Guinée': ['Institut de Recherche Agronomique', 'Université de Conakry', 'Université de Labé'],
+    'Sierra Leone': ['Njala University', 'University of Sierra Leone', 'Fourah Bay College'],
+    'Maroc': ['Université Mohammed V', 'Université Internationale de Rabat', 'Université Hassan II'],
+    'Kenya': ['University of Nairobi', 'Strathmore University', 'Kenyatta University'],
+    'Égypte': ['Université du Caire', 'Université Américaine du Caire', 'Université d\'Alexandrie'],
+    'France': ['CNRS', 'INRAE', 'ENS Lyon', 'Université de Bordeaux', 'IRD'],
+    'Allemagne': ['TU Berlin', 'LMU Munich', 'Max Planck Institute'],
+    'Belgique': ['ULB', 'KU Leuven', 'Université de Liège'],
+    'Royaume-Uni': ['UCL', 'University of Edinburgh', 'University of Manchester']
+  };
+  const facultyDepartments = [
+    'Faculté des Sciences et Techniques', 'Département Informatique', 'Département de Biologie',
+    'Faculté des Sciences', 'School of Public Health', 'Laboratoire Énergie', 'Département Agriculture',
+    'Faculté de Médecine', 'École Polytechnique', 'Institut de Physique', 'Département de Chimie',
+    'Faculty of Engineering', 'Département de Mathématiques', 'Département des Sciences Sociales'
+  ];
+  const functionsList = [
+    'Professeur', 'Maître de conférences', 'Doctorant(e)', 'Chercheur postdoctoral', 'Lecturer',
+    'Senior Lecturer', 'Ingénieur de recherche', 'Chargé de recherche', 'Directeur de recherche', 'Assistant Lecturer'
+  ];
+  const allStages = [ResearchCareerStage.R1_FIRST_STAGE, ResearchCareerStage.R2_RECOGNIZED, ResearchCareerStage.R3_ESTABLISHED, ResearchCareerStage.R4_LEADING];
+
+  function slugify(value: string): string {
+    return value.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '.');
+  }
+
+  interface SeedContact {
+    firstName: string;
+    lastName: string;
+    email: string;
+    gender: Gender;
+    countryOfOrigin: string;
+    city: string;
+    phone: string;
+    affiliation: string;
+    function: string;
+    experience: string;
+    facultyDepartment: string;
+    researchCareerStage: ResearchCareerStage;
+    tags: string[];
+  }
+
+  const syntheticData: SeedContact[] = [];
+  for (let i = 0; i < SYNTHETIC_COUNT; i++) {
+    const info = countryInfo[i % countryInfo.length];
+    const surnames = lastNamesByCountry[info.country];
+    const lastName = surnames[Math.floor(i / countryInfo.length) % surnames.length];
+    const male = i % 2 === 0;
+    const firstName = male ? firstNamesMale[i % firstNamesMale.length] : firstNamesFemale[i % firstNamesFemale.length];
+    const stage = allStages[i % allStages.length];
+    const baseTags = stage === ResearchCareerStage.R1_FIRST_STAGE
+      ? ['Doctorant', 'Membre EURAXESS Africa']
+      : stage === ResearchCareerStage.R3_ESTABLISHED
+        ? ['Membre EURAXESS Africa', 'Chercheur Senior']
+        : stage === ResearchCareerStage.R4_LEADING
+          ? ['Chercheur Senior', 'VIP / Prioritaire', 'Université']
+          : ['Membre EURAXESS Africa'];
+    const tags = i % 3 === 0 && stage !== ResearchCareerStage.R4_LEADING
+      ? [...baseTags, 'Expert IA & Data']
+      : baseTags;
+
+    syntheticData.push({
+      firstName,
+      lastName,
+      email: `${slugify(firstName)}.${slugify(lastName)}.${1000 + i}@mail.euraxess-africa.org`,
+      gender: male ? Gender.MALE : Gender.FEMALE,
+      countryOfOrigin: info.country,
+      city: info.cities[i % info.cities.length],
+      phone: `${info.phone}${String(1000000 + i).slice(-7)}`,
+      affiliation: affiliationsByCountry[info.country][i % affiliationsByCountry[info.country].length],
+      function: functionsList[i % functionsList.length],
+      experience: `${2 + (i % 20)} ans d'expérience en recherche`,
+      facultyDepartment: facultyDepartments[i % facultyDepartments.length],
+      researchCareerStage: stage,
+      tags
+    });
+  }
+
+  // Emails temporaires issus d'imports (audit / outil count_temp_emails)
+  for (let i = 0; i < 8; i++) {
+    const info = countryInfo[i % countryInfo.length];
+    syntheticData.push({
+      firstName: 'Import', lastName: `Temp_${i}`,
+      email: `import_null_2026-08-13_${i}@temp.local`, gender: Gender.NOT_SPECIFIED,
+      countryOfOrigin: info.country, city: info.cities[0],
+      phone: '', affiliation: "Données d'import (temporaire)",
+      function: '', experience: '',
+      facultyDepartment: '', researchCareerStage: ResearchCareerStage.R1_FIRST_STAGE,
+      tags: []
+    });
+  }
+
+  for (const data of [...contactData, ...syntheticData]) {
     const existing = await prisma.contact.findUnique({ where: { email: data.email } });
     if (existing) continue;
 
@@ -247,7 +390,7 @@ async function main() {
       }
     });
   }
-  console.log(`Contacts ready: ${contactData.length}`);
+  console.log(`Contacts ready: ${contactData.length + syntheticData.length}`);
 
   // ── Segments ───────────────────────────────────────────
   const segmentData = [

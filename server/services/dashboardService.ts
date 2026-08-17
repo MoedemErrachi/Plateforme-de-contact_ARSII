@@ -2,7 +2,7 @@ import { prisma } from '../db/prisma';
 
 export class DashboardService {
   public async getDashboardStats() {
-    const [totalContacts, countryGroup, genderGroup, careerStageGroup, tagGroup] = await Promise.all([
+    const [totalContacts, countryGroup, genderGroup, careerStageGroup, tagGroup, countryGenderGroup] = await Promise.all([
       prisma.contact.count(),
       prisma.contact.groupBy({
         by: ['countryOfOrigin'],
@@ -19,6 +19,10 @@ export class DashboardService {
       prisma.tagOnContact.groupBy({
         by: ['tagId'],
         _count: { _all: true }
+      }),
+      prisma.contact.groupBy({
+        by: ['countryOfOrigin', 'gender'],
+        _count: { id: true }
       })
     ]);
 
@@ -83,6 +87,12 @@ export class DashboardService {
       .sort((a, b) => b.count - a.count)
       .slice(0, 10);
 
+    const distributionByCountryGender = countryGenderGroup.map(item => ({
+      country: item.countryOfOrigin || 'Inconnu',
+      gender: item.gender,
+      count: item._count.id
+    }));
+
     return {
       kpis: {
         totalContacts,
@@ -95,6 +105,7 @@ export class DashboardService {
       },
       distributionByCountry,
       distributionByGender,
+      distributionByCountryGender,
       distributionByCareerStage,
       distributionByTag
     };

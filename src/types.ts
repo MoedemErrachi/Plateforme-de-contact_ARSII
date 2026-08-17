@@ -85,6 +85,25 @@ export interface FilterState {
   countries: string[];
   genders: Gender[];
   careerStages: ResearchCareerStage[];
-  affiliations: string;
   tags: string[];
+}
+
+export type SelectionMode = 'none' | 'page' | 'partial' | 'all-filtered';
+
+export interface ContactSelection {
+  mode: SelectionMode;
+  ids: string[];
+  filters: FilterState;
+  totalCount: number;
+}
+
+export interface PaginationInfo {
+  page: number;
+  limit: number;
+  totalCount: number;
+  totalPages: number;
+  currentPage: number;
+  hasNextPage: boolean;
+  hasPrevPage: boolean;
+  totalRecords: number;
 }

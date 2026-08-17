@@ -1,6 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useParams, Navigate } from 'react-router-dom';
 import { Contact, GENDER_LABELS, CAREER_STAGE_LABELS } from '../types';
+import { apiFetch } from '../utils/api';
+import { mapContactFromApi } from '../utils/mapContact';
+import { formatFieldValue } from '../utils/formatFieldValue';
+import { ContactProfileSkeleton } from './Skeletons';
 import {
   ChevronRight,
   Building2,
@@ -15,19 +19,58 @@ import {
 } from 'lucide-react';
 
 interface ContactDetailViewProps {
-  contacts: Contact[];
+  contacts?: Contact[];
 }
 
 export const ContactDetailView: React.FC<ContactDetailViewProps> = ({
-  contacts
+  contacts = []
 }) => {
   const { id } = useParams<{ id: string }>();
-  const contact = contacts.find(c => c.id === id);
+  const [contact, setContact] = useState<Contact | null>(() => {
+    return contacts.find(c => c.id === id) || null;
+  });
+  const [loading, setLoading] = useState<boolean>(!contact);
+  const [error, setError] = useState<string | null>(null);
   const [copiedToast, setCopiedToast] = useState(false);
 
-  if (!contact) {
-    return <Navigate to="/contacts" replace />;
-  }
+  useEffect(() => {
+    if (!id) return;
+
+    const cached = contacts.find(c => c.id === id);
+    if (cached) {
+      setContact(cached);
+      setLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+
+    apiFetch(`/api/contacts/${id}`)
+      .then((data: any) => {
+        if (cancelled) return;
+        const raw = data?.data?.contact;
+        if (raw) {
+          setContact(mapContactFromApi(raw));
+        } else {
+          setError('Contact introuvable.');
+        }
+      })
+      .catch((err: any) => {
+        if (cancelled) return;
+        if (err?.status === 404) {
+          setError('Contact introuvable.');
+        } else {
+          setError('Erreur lors du chargement du contact.');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => { cancelled = true; };
+  }, [id, contacts]);
 
   const handleShare = () => {
     navigator.clipboard.writeText(window.location.href);
@@ -35,22 +78,26 @@ export const ContactDetailView: React.FC<ContactDetailViewProps> = ({
     setTimeout(() => setCopiedToast(false), 2000);
   };
 
-  const hasValue = (v?: string | null) => Boolean(v && v.trim() && v.trim() !== 'N/A');
+  if (loading) {
+    return <ContactProfileSkeleton />;
+  }
 
-  const dash = <span className="text-[#8A98A1]">—</span>;
+  if (error || !contact) {
+    return <Navigate to="/contacts" replace />;
+  }
 
   const identityFields: { label: string; value: React.ReactNode }[] = [
     { label: 'Genre', value: GENDER_LABELS[contact.gender] },
     { label: 'Stade de carrière', value: CAREER_STAGE_LABELS[contact.researchCareerStage] },
-    { label: 'Pays d\'origine', value: hasValue(contact.countryOfOrigin) ? contact.countryOfOrigin : dash },
-    { label: 'Ville', value: hasValue(contact.city) ? contact.city : dash }
+    { label: 'Pays d\'origine', value: formatFieldValue(contact.countryOfOrigin) },
+    { label: 'Ville', value: formatFieldValue(contact.city) }
   ];
 
   const riFields: { label: string; value: React.ReactNode }[] = [
-    { label: 'Affiliation', value: hasValue(contact.affiliation) ? contact.affiliation : dash },
-    { label: 'Fonction', value: hasValue(contact.function) ? contact.function : dash },
-    { label: 'Expérience', value: hasValue(contact.experience) ? contact.experience : dash },
-    { label: 'Faculté / Département', value: hasValue(contact.facultyDepartment) ? contact.facultyDepartment : dash }
+    { label: 'Affiliation', value: formatFieldValue(contact.affiliation) },
+    { label: 'Fonction', value: formatFieldValue(contact.function) },
+    { label: 'Expérience', value: formatFieldValue(contact.experience) },
+    { label: 'Faculté / Département', value: formatFieldValue(contact.facultyDepartment) }
   ];
 
   return (
@@ -96,7 +143,7 @@ export const ContactDetailView: React.FC<ContactDetailViewProps> = ({
                 <h1 className="text-2xl sm:text-3xl font-extrabold text-[#1C2529]">
                   {contact.name}
                 </h1>
-                {hasValue(contact.affiliation) && (
+                {contact.affiliation?.trim() && (
                   <span className="bg-[#BCD7EE] text-[#005596] px-3 py-0.5 rounded-full text-xs font-bold flex items-center gap-1">
                     <Building2 className="w-3.5 h-3.5" />
                     {contact.affiliation}
@@ -104,7 +151,7 @@ export const ContactDetailView: React.FC<ContactDetailViewProps> = ({
                 )}
               </div>
 
-              {hasValue(contact.function) && (
+              {contact.function?.trim() && (
                 <p className="text-sm font-medium text-[#55636B] mb-3">
                   {contact.function}
                 </p>
@@ -170,7 +217,7 @@ export const ContactDetailView: React.FC<ContactDetailViewProps> = ({
                 </div>
                 <div>
                   <p className="text-[11px] font-semibold text-[#55636B]">Téléphone</p>
-                  <p className="font-semibold text-[#1C2529]">{hasValue(contact.phone) ? contact.phone : dash}</p>
+                  <p className="font-semibold text-[#1C2529]">{formatFieldValue(contact.phone)}</p>
                 </div>
               </li>
 
@@ -181,7 +228,7 @@ export const ContactDetailView: React.FC<ContactDetailViewProps> = ({
                 <div>
                   <p className="text-[11px] font-semibold text-[#55636B]">Localisation</p>
                   <p className="font-semibold text-[#1C2529]">
-                    {[contact.countryOfOrigin, contact.city].filter(v => hasValue(v)).join(', ') || dash}
+                    {[contact.countryOfOrigin, contact.city].filter(v => v?.trim()).join(', ') || '\u2014'}
                   </p>
                 </div>
               </li>

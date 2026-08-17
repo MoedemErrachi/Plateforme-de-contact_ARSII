@@ -4,6 +4,7 @@ import cookieParser from 'cookie-parser';
 import path from 'path';
 import apiRouter from './routes';
 import { errorHandler } from './middleware/errorHandler';
+import { authenticateJWT } from './middleware/authenticateJWT';
 import { 
   helmetMiddleware, 
   globalApiRateLimiter, 
@@ -57,6 +58,16 @@ export function createApp() {
   // 6. CSRF Token Protection & Input Sanitization
   app.use('/api', csrfProtection);
   app.use('/api', sanitizeInput);
+
+  // 6bis. Global JWT authentication — tous les endpoints /api sont privés.
+  // Seuls le login, le SSO Google, la délivrance du token CSRF et le logout restent publics.
+  const PUBLIC_AUTH_PATHS = ['/auth/login', '/auth/google', '/auth/csrf-token', '/auth/logout'];
+  app.use('/api', (req, res, next) => {
+    if (PUBLIC_AUTH_PATHS.includes(req.path)) {
+      return next();
+    }
+    authenticateJWT(req, res, next);
+  });
 
   // 7. API Route Handlers
   app.use('/api', apiRouter);

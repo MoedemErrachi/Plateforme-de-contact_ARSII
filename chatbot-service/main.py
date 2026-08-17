@@ -12,6 +12,7 @@ from app.config import FRONTEND_ORIGINS
 from app.dependencies import get_llm_router, limiter, session_store, tool_runner
 from app.exceptions import ServiceUnavailableError
 from app.routes.chatbot_routes import router as chatbot_router
+from app.routes.ocr_routes import router as ocr_router
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -65,3 +66,4 @@ async def health() -> dict:
 
 
 app.include_router(chatbot_router)
+app.include_router(ocr_router)

@@ -1,7 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
-import { Contact, Tag, Segment, FilterState, User } from './types';
-import { formatFullName } from './utils/format';
+import { Contact, Tag, Segment, FilterState, User, ContactSelection, SelectionMode } from './types';
+import { apiFetch, getAuthToken } from './utils/api';
+import { mapContactFromApi } from './utils/mapContact';
+import { emptyFilterState, buildContactsExportQuery } from './utils/contactQuery';
+import { downloadFromEndpoint } from './utils/download';
 import { useToast } from './components/Toast';
 import { Header } from './components/Header';
 import { Footer } from './components/Footer';
@@ -17,52 +20,6 @@ import { AuthView } from './components/AuthView';
 import { ChatWidget } from './components/chat/ChatWidget';
 
 // --- API helper ---
-function mapContactFromApi(c: any): Contact {
-  const firstName = (c.firstName || '').trim();
-  const lastName = (c.lastName || '').trim();
-  const name = formatFullName(firstName, lastName);
-  const firstInit = firstName && firstName !== 'N/A' ? firstName[0] : '';
-  const lastInit = lastName && lastName !== 'N/A' ? lastName[0] : '';
-  return {
-    ...c,
-    firstName,
-    lastName,
-    name,
-    initials: `${firstInit}${lastInit}`.toUpperCase() || c.initials || 'NC',
-    gender: c.gender === 'MALE' ? 'MALE' : c.gender === 'FEMALE' ? 'FEMALE' : 'NOT_SPECIFIED',
-    researchCareerStage: c.researchCareerStage || 'R1_FIRST_STAGE',
-    countryOfOrigin: c.countryOfOrigin || '',
-    city: c.city ?? null,
-    phone: c.phone ?? null,
-    affiliation: c.affiliation || '',
-    tags: Array.isArray(c.tags)
-      ? c.tags.map((t: any) => t.tag?.name ?? t.name ?? t)
-      : []
-  };
-}
-
-async function apiFetch(path: string, options?: RequestInit) {
-  const res = await fetch(path, {
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
-    ...options
-  });
-  const json = await res.json();
-  if (!res.ok) {
-    throw new Error(json.error || json.message || `API error ${res.status}`);
-  }
-  return json;
-}
-
-function readStoredToken(): string | null {
-  try {
-    const value = localStorage.getItem('euraxess_token');
-    return value && value.trim() ? value.trim() : null;
-  } catch {
-    return null;
-  }
-}
-
 export default function App() {
   const { showToast } = useToast();
   const navigate = useNavigate();
@@ -71,19 +28,51 @@ export default function App() {
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [isLoadingData, setIsLoadingData] = useState<boolean>(true);
 
-  // Selected contacts in directory for bulk actions & export
-  const [selectedContactIds, setSelectedContactIds] = useState<string[]>(() => {
+  // Selection (4 modes) in directory for bulk actions & export
+  const [selection, setSelection] = useState<ContactSelection>(() => {
     try {
       const saved = localStorage.getItem('euraxess_contacts_selected_ids');
       if (saved) {
         const parsed = JSON.parse(saved);
-        return Array.isArray(parsed) ? parsed.filter(id => typeof id === 'string') : [];
+        // Migration de l'ancien format (simple tableau d'ids) → partial
+        if (Array.isArray(parsed)) {
+          const ids = parsed.filter((id: any) => typeof id === 'string');
+          return { mode: ids.length ? 'partial' : 'none', ids, filters: emptyFilterState(), totalCount: ids.length };
+        }
+        if (parsed && typeof parsed === 'object' && Array.isArray(parsed.ids)) {
+          const ids = parsed.ids.filter((id: any) => typeof id === 'string');
+          const validModes = ['none', 'page', 'partial', 'all-filtered'];
+          let mode: SelectionMode = validModes.includes(parsed.mode) ? parsed.mode : ids.length ? 'partial' : 'none';
+          // Après un rechargement, page / all-filtered perdent leur validité (filtres non rejoués)
+          if (mode === 'page' || mode === 'all-filtered') {
+            mode = ids.length ? 'partial' : 'none';
+          }
+          return {
+            mode,
+            ids,
+            filters: parsed.filters && typeof parsed.filters === 'object' ? { ...emptyFilterState(), ...parsed.filters } : emptyFilterState(),
+            totalCount: Number(parsed.totalCount) || 0
+          };
+        }
       }
     } catch {
       // ignore corrupted storage
     }
-    return [];
+    return { mode: 'none', ids: [], filters: emptyFilterState(), totalCount: 0 };
   });
+
+  // Persist selection across page refreshes (survives reload of /export)
+  useEffect(() => {
+    try {
+      if (selection.mode !== 'none') {
+        localStorage.setItem('euraxess_contacts_selected_ids', JSON.stringify(selection));
+      } else {
+        localStorage.removeItem('euraxess_contacts_selected_ids');
+      }
+    } catch {
+      // ignore
+    }
+  }, [selection]);
 
   // Pagination limit state across view switches (persisted locally)
   const [itemsPerPage, setItemsPerPage] = useState<number>(() => {
@@ -104,19 +93,6 @@ export default function App() {
     }
   }, [itemsPerPage]);
 
-  // Persist selected contact ids across page refreshes (survives reload of /export)
-  useEffect(() => {
-    try {
-      if (selectedContactIds.length > 0) {
-        localStorage.setItem('euraxess_contacts_selected_ids', JSON.stringify(selectedContactIds));
-      } else {
-        localStorage.removeItem('euraxess_contacts_selected_ids');
-      }
-    } catch {
-      // ignore
-    }
-  }, [selectedContactIds]);
-
   // Tags & Segments State
   const [tags, setTags] = useState<Tag[]>([]);
   const [segments, setSegments] = useState<Segment[]>([]);
@@ -125,7 +101,7 @@ export default function App() {
   // Authentication State (defaults to true for smooth start, can toggle to auth page)
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(true);
   const [user, setUser] = useState<User | null>(null);
-  const [authToken, setAuthToken] = useState<string | null>(readStoredToken);
+  const [authToken, setAuthToken] = useState<string | null>(getAuthToken);
   const [isSessionReady, setIsSessionReady] = useState(false);
 
   // ──────────────────────────────────────────────
@@ -134,7 +110,7 @@ export default function App() {
   const loadContacts = useCallback(async () => {
     setIsLoadingData(true);
     try {
-      const data = await apiFetch('/api/contacts?limit=200');
+      const data = await apiFetch('/api/contacts?limit=100');
       if (data?.data?.contacts) {
         setContacts(data.data.contacts.map(mapContactFromApi));
       }
@@ -184,7 +160,7 @@ export default function App() {
         if (!cancelled && data?.authenticated && data?.user) {
           setUser(data.user);
           setIsAuthenticated(true);
-          const token = typeof data.token === 'string' && data.token ? data.token : readStoredToken();
+          const token = typeof data.token === 'string' && data.token ? data.token : getAuthToken();
           setAuthToken(token);
           if (token) {
             try {
@@ -223,7 +199,7 @@ export default function App() {
   const handleLoginSuccess = (userData: User) => {
     setUser(userData);
     setIsAuthenticated(true);
-    setAuthToken(readStoredToken());
+    setAuthToken(getAuthToken());
     setIsSessionReady(true);
     navigate('/dashboard');
   };
@@ -286,8 +262,17 @@ export default function App() {
   };
 
   const handleExportAll = () => {
-    setSelectedContactIds(contacts.map(c => c.id));
-    navigate('/export', { state: { fromDashboard: true } });
+    setSelection({ mode: 'all-filtered', ids: [], filters: emptyFilterState(), totalCount: 0 });
+    navigate('/export');
+  };
+
+  const handleDirectExportAll = async () => {
+    try {
+      const query = buildContactsExportQuery(emptyFilterState(), []);
+      await downloadFromEndpoint(query, 'export.csv');
+    } catch (err) {
+      console.error('Export all failed:', err);
+    }
   };
 
   const handleAddContact = async (newContact: Contact) => {
@@ -336,12 +321,9 @@ export default function App() {
   // IMPORT
   // ──────────────────────────────────────────────
   const handleImportContacts = async (newContacts: Contact[], updatedContacts: Contact[] = []) => {
-    let res: Response;
     try {
-      res = await fetch('/api/contacts/bulk', {
+      const body = await apiFetch('/api/contacts/bulk', {
         method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           newContacts: newContacts.map(c => ({
             firstName: c.firstName,
@@ -374,27 +356,26 @@ export default function App() {
           }))
         })
       });
+
+      if (body?.status !== 'SUCCESS') {
+        const errorMessage = body?.errorMessage || body?.message || body?.error || 'Erreur serveur';
+        showToast(`Échec de l'importation : ${errorMessage}`, 'error');
+        return { ok: false, httpStatus: 200, status: body?.status || 'FAILED', errorMessage, data: null };
+      }
+
+      showToast(`Importation réussie : ${body.data?.createdCount || 0} créés, ${body.data?.updatedCount || 0} mis à jour.`, 'success');
+      await loadContacts();
+      return { ok: true, httpStatus: 200, status: body.status, errorMessage: '', data: body.data };
     } catch (err: any) {
-      showToast(`Erreur réseau lors de l'importation : ${err.message}`, 'error');
-      return { ok: false, httpStatus: 0, status: 'FAILED', errorMessage: err.message, data: null };
+      const httpStatus = err?.status || 0;
+      showToast(
+        httpStatus
+          ? `Échec de l'importation : ${err.message}`
+          : `Erreur réseau lors de l'importation : ${err.message}`,
+        'error'
+      );
+      return { ok: false, httpStatus, status: err?.data?.status || 'FAILED', errorMessage: err.message, data: null };
     }
-
-    let body: any = null;
-    try {
-      body = await res.json();
-    } catch {
-      body = null;
-    }
-
-    if (!res.ok || body?.status !== 'SUCCESS') {
-      const errorMessage = body?.errorMessage || body?.message || body?.error || `Erreur serveur (HTTP ${res.status})`;
-      showToast(`Échec de l'importation : ${errorMessage}`, 'error');
-      return { ok: false, httpStatus: res.status, status: body?.status || 'FAILED', errorMessage, data: null };
-    }
-
-    showToast(`Importation réussie : ${body.data?.createdCount || 0} créés, ${body.data?.updatedCount || 0} mis à jour.`, 'success');
-    await loadContacts();
-    return { ok: true, httpStatus: res.status, status: body.status, errorMessage: '', data: body.data };
   };
 
   // ──────────────────────────────────────────────
@@ -602,7 +583,7 @@ export default function App() {
   // Clear bulk-selection when returning to the directory (export scope lock)
   useEffect(() => {
     if (location.pathname === '/contacts') {
-      setSelectedContactIds([]);
+      setSelection({ mode: 'none', ids: [], filters: emptyFilterState(), totalCount: 0 });
       try {
         localStorage.removeItem('euraxess_contacts_selected_ids');
       } catch {
@@ -634,6 +615,7 @@ export default function App() {
         isAuthenticated={isAuthenticated}
         user={user}
         onLogout={handleLogout}
+        onExportAll={handleDirectExportAll}
         isHeaderVisible={isHeaderVisible}
       />
 
@@ -668,7 +650,6 @@ export default function App() {
           path="/contacts"
           element={
             <ContactsView
-              contacts={contacts}
               segments={segments}
               tags={tags}
               activeSegmentId={activeSegmentId}
@@ -678,9 +659,8 @@ export default function App() {
               onDeleteContact={handleDeleteContact}
               itemsPerPage={itemsPerPage}
               onItemsPerPageChange={setItemsPerPage}
-              selectedContactIds={selectedContactIds}
-              onSelectContactIds={setSelectedContactIds}
-              isLoading={isLoadingData}
+              selection={selection}
+              onSelectionChange={setSelection}
             />
           }
         />
@@ -732,8 +712,8 @@ export default function App() {
           path="/export"
           element={
             <ExportView
-              contacts={contacts}
-              selectedContactIds={selectedContactIds}
+              selection={selection}
+              tags={tags}
             />
           }
         />
@@ -764,7 +744,7 @@ export default function App() {
       <Footer />
 
       {isSessionReady && (
-        <ChatWidget contacts={contacts} getToken={getChatToken} />
+        <ChatWidget getToken={getChatToken} />
       )}
     </div>
   );

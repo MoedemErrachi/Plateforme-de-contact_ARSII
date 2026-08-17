@@ -1,3 +1,5 @@
+import { apiFetch } from './api';
+
 export const ALLOWED_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
 export const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5MB
 
@@ -12,17 +14,11 @@ export function validateImageFile(file: File): string | null {
 }
 
 export async function uploadImage(dataUrl: string): Promise<string> {
-  const res = await fetch('/api/uploads/avatar', {
+  const json = await apiFetch('/api/uploads/avatar', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
     body: JSON.stringify({ dataUrl })
   });
-  const json = await res.json();
-  if (!res.ok) {
-    throw new Error(json.error || json.message || `API error ${res.status}`);
-  }
-  return json.url;
+  return json?.url ?? json?.dataUrl;
 }
 
 export function readFileAsDataUrl(file: File): Promise<string> {

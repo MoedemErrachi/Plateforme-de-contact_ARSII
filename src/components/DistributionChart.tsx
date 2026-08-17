@@ -1,8 +1,16 @@
 import React, { useMemo, useState } from 'react';
 import { Contact, Gender, GENDER_LABELS } from '../types';
 
+export interface DistributionServerData {
+  distributionByCountry: { country: string; count: number }[];
+  distributionByGender: { gender: string; count: number }[];
+  distributionByCountryGender: { country: string; gender: string; count: number }[];
+  totalCount: number;
+}
+
 interface DistributionChartProps {
   contacts: Contact[];
+  serverData?: DistributionServerData | null;
 }
 
 type Mode = 'countryGender' | 'country' | 'gender';
@@ -32,21 +40,33 @@ function toGender(value?: string): Gender {
   return value === 'MALE' ? 'MALE' : value === 'FEMALE' ? 'FEMALE' : 'NOT_SPECIFIED';
 }
 
-export const DistributionChart: React.FC<DistributionChartProps> = ({ contacts }) => {
+export const DistributionChart: React.FC<DistributionChartProps> = ({ contacts, serverData }) => {
   const [mode, setMode] = useState<Mode>('countryGender');
   const [hovered, setHovered] = useState<HoveredSegment | null>(null);
 
+  const modeOptions: Mode[] = ['countryGender', 'country', 'gender'];
+
   const genderTotals = useMemo(() => {
     const totals: Record<Gender, number> = { FEMALE: 0, MALE: 0, NOT_SPECIFIED: 0 };
-    contacts.forEach(c => {
-      totals[toGender(c.gender)] += 1;
-    });
+    if (serverData) {
+      serverData.distributionByGender.forEach(d => {
+        const g = toGender(d.gender);
+        totals[g] += d.count;
+      });
+    } else {
+      contacts.forEach(c => {
+        totals[toGender(c.gender)] += 1;
+      });
+    }
     return totals;
-  }, [contacts]);
+  }, [contacts, serverData]);
 
-  const totalCount = contacts.length;
+  const totalCount = serverData?.totalCount ?? contacts.length;
 
   const countryData = useMemo(() => {
+    if (serverData) {
+      return serverData.distributionByCountry.slice(0, 6);
+    }
     const totals: Record<string, number> = {};
     contacts.forEach(c => {
       const raw = c.countryOfOrigin?.trim();
@@ -57,9 +77,25 @@ export const DistributionChart: React.FC<DistributionChartProps> = ({ contacts }
       .map(([country, count]) => ({ country, count }))
       .sort((a, b) => b.count - a.count)
       .slice(0, 6);
-  }, [contacts]);
+  }, [contacts, serverData]);
 
   const countryGenderData = useMemo(() => {
+    if (serverData?.distributionByCountryGender?.length) {
+      const matrix: Record<string, Record<Gender, number>> = {};
+      serverData.distributionByCountryGender.forEach(item => {
+        if (!matrix[item.country]) {
+          matrix[item.country] = { FEMALE: 0, MALE: 0, NOT_SPECIFIED: 0 };
+        }
+        matrix[item.country][toGender(item.gender)] += item.count;
+      });
+      return Object.entries(matrix)
+        .map(([country, genderCounts]) => {
+          const total = Object.values(genderCounts).reduce((s, n) => s + n, 0);
+          return { country, total, genderCounts };
+        })
+        .sort((a, b) => b.total - a.total)
+        .slice(0, 6);
+    }
     const matrix: Record<string, Record<Gender, number>> = {};
     contacts.forEach(c => {
       const raw = c.countryOfOrigin?.trim();
@@ -76,7 +112,7 @@ export const DistributionChart: React.FC<DistributionChartProps> = ({ contacts }
       })
       .sort((a, b) => b.total - a.total)
       .slice(0, 6);
-  }, [contacts]);
+  }, [contacts, serverData]);
 
   const maxCountryCount = Math.max(...countryData.map(d => d.count), 1);
 
@@ -90,17 +126,17 @@ export const DistributionChart: React.FC<DistributionChartProps> = ({ contacts }
     <div className="space-y-4">
       {/* Segmented toggle */}
       <div className="flex flex-wrap gap-1.5">
-        {MODE_OPTIONS.map(opt => (
+        {modeOptions.map(modeKey => (
           <button
-            key={opt.value}
-            onClick={() => { setMode(opt.value); setHovered(null); }}
+            key={modeKey}
+            onClick={() => { setMode(modeKey); setHovered(null); }}
             className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-              mode === opt.value
+              mode === modeKey
                 ? 'bg-[#E8F1F8] text-[#005596] ring-1 ring-[#BCD7EE]'
                 : 'bg-white border border-[#C9D4DE] text-[#55636B] hover:bg-slate-50'
             }`}
           >
-            {opt.label}
+            {MODE_OPTIONS.find(o => o.value === modeKey)?.label}
           </button>
         ))}
       </div>
