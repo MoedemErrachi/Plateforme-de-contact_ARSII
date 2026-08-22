@@ -4,6 +4,7 @@ import logging
 import os
 import traceback
 
+import jwt as pyjwt
 from fastapi import APIRouter, File, Header, HTTPException, Request, UploadFile, status
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -86,6 +87,25 @@ async def extract_from_image(
                 detail="Empty Bearer token",
             )
 
+        _jwt_secret = os.getenv("JWT_SECRET")
+        if not _jwt_secret:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Service temporairement indisponible.",
+            )
+        try:
+            pyjwt.decode(token, _jwt_secret, algorithms=["HS256"])
+        except pyjwt.ExpiredSignatureError:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token expired",
+            )
+        except pyjwt.InvalidTokenError:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token",
+            )
+
         if image.content_type and image.content_type not in ALLOWED_MIME:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -123,5 +143,5 @@ async def extract_from_image(
         logger.error("OCR extraction error: %s\n%s", exc, traceback.format_exc())
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"OCR extraction failed: {str(exc)}",
+            detail="Une erreur interne est survenue lors de l'extraction OCR.",
         )

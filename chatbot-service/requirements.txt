@@ -11,3 +11,4 @@ python-multipart>=0.0.9
 Pillow>=10.0
 pytesseract>=0.3.10
 mediapipe>=0.10.14
+PyJWT>=2.8

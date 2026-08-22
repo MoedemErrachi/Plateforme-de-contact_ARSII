@@ -139,6 +139,21 @@ class GeminiProvider(LLMProvider):
                     function = tool_call.get("function", {})
                     arguments = function.get("arguments", "{}")
                     thought_signature = function.get("thought_signature")
+
+                    # GEMINI-SPECIFIC — les appels d'outils provenant d'autres providers
+                    # (Mistral, Groq) n'ont pas de thought_signature. Gemini 3.x exige
+                    # cette signature pour chaque functionCall dans l'historique, sinon
+                    # 400 INVALID_ARGUMENT. On convertit ces appels étrangers en texte
+                    # brut pour éviter le crash.
+                    if not thought_signature:
+                        name = function.get("name", "unknown")
+                        try:
+                            args_str = json.dumps(arguments, ensure_ascii=False) if isinstance(arguments, dict) else str(arguments)
+                        except (ValueError, TypeError):
+                            args_str = str(arguments)
+                        parts.append(types.Part(text=f"[Outil: {name}({args_str})]"))
+                        continue
+
                     try:
                         arguments_dict = json.loads(arguments) if isinstance(arguments, str) else (arguments or {})
                     except (ValueError, TypeError):

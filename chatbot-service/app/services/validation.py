@@ -56,10 +56,6 @@ def record_failure(provider: str, failure_type: str, note: str | None = None) ->
     logger.warning("LLM failure telemetry: %s", event)
 
 
-def get_failure_stats() -> dict[str, int]:
-    return dict(FAILURE_COUNTER)
-
-
 def validate_tool_call(tool_call: ToolCall) -> ToolCall:
     """Valide qu'un tool_call est exécutable (outil connu + arguments conformes)."""
     spec = TOOLS_BY_NAME.get(tool_call.name)

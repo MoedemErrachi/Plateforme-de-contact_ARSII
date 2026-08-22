@@ -13,6 +13,8 @@ class SessionRecord:
 
 
 class SessionStore:
+    MAX_SESSIONS = 1000
+
     def __init__(self, max_messages: int = 10, ttl_seconds: int = 3600):
         self.max_messages = max_messages
         self.ttl_seconds = ttl_seconds
@@ -24,6 +26,11 @@ class SessionStore:
         record = self._sessions.get(session_id)
         if record is None or now - record.updated_at > self.ttl_seconds:
             record = SessionRecord()
+            if len(self._sessions) >= self.MAX_SESSIONS:
+                self._prune_expired()
+            if len(self._sessions) >= self.MAX_SESSIONS:
+                oldest_sid = min(self._sessions, key=lambda k: self._sessions[k].updated_at)
+                del self._sessions[oldest_sid]
             self._sessions[session_id] = record
         record.messages.append({"role": "user", "content": user_message})
         record.messages.append({"role": "assistant", "content": assistant_message})

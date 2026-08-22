@@ -5,7 +5,10 @@ from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
-MAIN_API_BASE_URL = os.getenv("MAIN_API_BASE_URL", "http://localhost:4000").rstrip("/")
+HOST = os.getenv("HOST", "0.0.0.0")
+PORT = int(os.getenv("PORT", "8000"))
+
+MAIN_API_BASE_URL = os.getenv("MAIN_API_BASE_URL", "http://localhost:5000").rstrip("/")
 
 MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY", "")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")

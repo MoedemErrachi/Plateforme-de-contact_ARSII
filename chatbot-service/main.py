@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from slowapi.errors import RateLimitExceeded
 
-from app.config import FRONTEND_ORIGINS
+from app.config import FRONTEND_ORIGINS, HOST, PORT
 from app.dependencies import get_llm_router, limiter, session_store, tool_runner
 from app.exceptions import ServiceUnavailableError
 from app.routes.chatbot_routes import router as chatbot_router
@@ -32,21 +32,14 @@ async def lifespan(_app: FastAPI):
 app = FastAPI(title="Chatbot CRM Service", version="1.0.0", lifespan=lifespan)
 app.state.limiter = limiter
 
-origins = [
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-    "http://localhost:5173",
-]
-for origin in FRONTEND_ORIGINS:
-    if origin and origin != "*" and origin not in origins:
-        origins.append(origin)
+origins = [o for o in FRONTEND_ORIGINS if o and o != "*"]
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 
@@ -67,3 +60,8 @@ async def health() -> dict:
 
 app.include_router(chatbot_router)
 app.include_router(ocr_router)
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("main:app", host=HOST, port=PORT, reload=True)

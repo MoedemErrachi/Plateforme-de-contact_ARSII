@@ -1,12 +1,8 @@
 from __future__ import annotations
 
-import base64
-import io
 import json
 import logging
 import re
-import uuid
-from pathlib import Path
 
 from app.ocr.models import ExtractedContactInfo, ExtractedField, FieldConfidence
 
@@ -67,19 +63,6 @@ def parse_extraction_response(raw_text: str) -> ExtractedContactInfo:
     for key in ("firstName", "lastName", "email", "phone", "affiliation", "function", "city", "countryOfOrigin"):
         fields[key] = _make_field(data.get(key))
     return ExtractedContactInfo(**fields)
-
-
-def save_photo_to_uploads(photo_bytes: bytes, upload_dir: str = "uploads/contact-photos") -> str | None:
-    """Save photo bytes to disk. Returns relative URL path or None on failure."""
-    try:
-        path = Path(upload_dir)
-        path.mkdir(parents=True, exist_ok=True)
-        filename = f"{uuid.uuid4().hex}.jpg"
-        (path / filename).write_bytes(photo_bytes)
-        return f"/uploads/contact-photos/{filename}"
-    except Exception:
-        logger.warning("Failed to save OCR photo", exc_info=True)
-        return None
 
 
 def extract_email_from_text(text: str) -> str | None:

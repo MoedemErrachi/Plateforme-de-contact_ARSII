@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import logging
+import os
 import re
 import traceback
 import unicodedata
 
+import jwt as pyjwt
 from fastapi import APIRouter, Header, HTTPException, Request, status
 
 from app.config import CHATBOT_RATE_LIMIT, MAX_TOOL_ROUNDS
@@ -84,6 +86,25 @@ async def chatbot_message(
                 detail="Empty Bearer token",
             )
 
+        jwt_secret = os.getenv("JWT_SECRET")
+        if not jwt_secret:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Service temporairement indisponible.",
+            )
+        try:
+            pyjwt.decode(token, jwt_secret, algorithms=["HS256"])
+        except pyjwt.ExpiredSignatureError:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token expired",
+            )
+        except pyjwt.InvalidTokenError:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token",
+            )
+
         session_id = str(payload.session_id)
 
         if should_short_circuit(payload.message):
@@ -138,5 +159,5 @@ async def chatbot_message(
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Internal chatbot processing error: {str(exc)}",
+            detail="Une erreur interne est survenue lors du traitement.",
         )

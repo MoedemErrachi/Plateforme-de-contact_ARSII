@@ -10,8 +10,10 @@ from PIL import Image
 logger = logging.getLogger(__name__)
 
 
-def detect_and_crop_face(image_bytes: bytes, upload_dir: str = "uploads/contact-photos") -> str | None:
+def detect_and_crop_face(image_bytes: bytes, upload_dir: str | None = None) -> str | None:
     """Detect face using mediapipe, crop, save to upload_dir. Returns relative URL or None."""
+    if upload_dir is None:
+        upload_dir = str(Path(__file__).resolve().parents[3] / "uploads" / "contact-photos")
     try:
         import mediapipe as mp
     except ImportError:

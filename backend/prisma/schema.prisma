@@ -1,0 +1,166 @@
+datasource db {
+  provider = "postgresql"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  ADMIN
+  USER
+}
+
+enum Privilege {
+  READ
+  READ_WRITE
+  FULL_ACCESS
+}
+
+enum LogType {
+  IMPORT
+  EXPORT
+}
+
+enum LogFormat {
+  CSV
+  XLSX
+  // Valeur conservée en base : PostgreSQL ne permet pas de supprimer une valeur
+  // d'enum existante. Le format PDF n'est plus supporté côté application.
+  PDF
+  JSON
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  NOT_SPECIFIED
+}
+
+enum ResearchCareerStage {
+  R1_FIRST_STAGE
+  R2_RECOGNIZED
+  R3_ESTABLISHED
+  R4_LEADING
+}
+
+model User {
+  id                String              @id @default(uuid())
+  email             String              @unique
+  name              String
+  passwordHash      String?
+  avatarUrl         String?
+  role              Role                @default(USER)
+  privilege         Privilege           @default(FULL_ACCESS)
+  tokenVersion      Int                 @default(0)
+  mustChangePassword Boolean            @default(false)
+  lastLogin         DateTime?
+  logs              ImportExportLog[]
+  segments          Segment[]
+  savedSearches     SavedSearch[]
+  passwordResets    PasswordResetToken[]
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+}
+
+model PasswordResetToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  // Lookup des jetons actifs d'un utilisateur (purge / révocation).
+  @@index([userId])
+}
+
+model Tag {
+  id          String         @id @default(uuid())
+  name        String         @unique
+  color       String?
+  description String?
+  contacts    TagOnContact[]
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+}
+
+model Contact {
+  id                    String               @id @default(uuid())
+  email                 String               @unique
+  firstName             String
+  lastName              String
+  gender                Gender               @default(NOT_SPECIFIED)
+  countryOfOrigin       String?
+  city                  String?
+  phone                 String?
+  affiliation           String?
+  function              String?
+  experience            String?
+  facultyDepartment     String?
+  researchCareerStage   ResearchCareerStage
+  avatarUrl             String?
+  tags                  TagOnContact[]
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+
+  // Filtres serveur fréquents (annuaire, segments, exports par pays).
+  @@index([countryOfOrigin])
+}
+
+model TagOnContact {
+  contactId String
+  tagId     String
+  contact   Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  tag       Tag     @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([contactId, tagId])
+
+  // Sens inverse du PK composite : tous les contacts d'un tag.
+  @@index([tagId])
+}
+
+model Segment {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  icon        String?  @default("Filter")
+  filters     Json
+  userId      String?
+  user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId])
+}
+
+// Recherche de contacts sauvegardée par un utilisateur (indépendante des
+// segments : filtres purs, sans nommage d'audience).
+model SavedSearch {
+  id        String   @id @default(uuid())
+  name      String   @db.VarChar(100)
+  filters   Json
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+model ImportExportLog {
+  id           String    @id @default(uuid())
+  type         LogType
+  format       LogFormat
+  fileName     String
+  recordCount  Int       @default(0)
+  status       String    @default("SUCCESS")
+  errorMessage String?
+  performedBy  String?
+  userId       String?
+  user         User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  createdAt    DateTime  @default(now())
+
+  // Historique par utilisateur, du plus récent au plus ancien.
+  @@index([userId, createdAt])
+}
