@@ -10,13 +10,13 @@ services:
     envVars:
       # ── Backend connection ──
       - key: MAIN_API_BASE_URL
-        value: https://YOUR_BACKEND_SERVICE.onrender.com
+        value: https://arsii-backend.onrender.com
       # ── Security ──
       - key: JWT_SECRET
         sync: false # must match backend JWT_SECRET exactly
       # ── Frontend CORS ──
       - key: FRONTEND_ORIGINS
-        value: https://YOUR_PROJECT.vercel.app
+        value: https://arsii-frontend-l41t2c1sl-errachimoedem34-5070s-projects.vercel.app
       # ── LLM Providers ──
       - key: MISTRAL_API_KEY
         sync: false

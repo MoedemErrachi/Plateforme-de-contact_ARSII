@@ -5,7 +5,7 @@ services:
     region: frankfurt # eu — closest to Supabase eu-west-2
     plan: free
     rootDir: backend
-    buildCommand: npm install --include=dev && npm run build && npx prisma migrate deploy
+    buildCommand: npm install --include=dev && npx prisma generate && npm run build && npx prisma migrate deploy
     startCommand: npm start
     healthCheckPath: /api/health
     envVars:
@@ -28,9 +28,9 @@ services:
         generateValue: true
       # ── Frontend URL (password-reset links + CORS) ──
       - key: FRONTEND_URL
-        value: https://YOUR_PROJECT.vercel.app
+        value: https://arsii-frontend-l41t2c1sl-errachimoedem34-5070s-projects.vercel.app
       - key: CORS_ORIGINS
-        value: https://YOUR_PROJECT.vercel.app
+        value: https://arsii-frontend-l41t2c1sl-errachimoedem34-5070s-projects.vercel.app
       # ── SMTP ──
       - key: GMAIL_USER
         sync: false
