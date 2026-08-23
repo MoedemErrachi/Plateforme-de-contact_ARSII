@@ -6,7 +6,7 @@
   "rewrites": [
     {
       "source": "/chatbot-api/:path*",
-      "destination": "https://CHATBOT_SERVICE_URL.onrender.com/:path*"
+      "destination": "https://arsii-chatbot.onrender.com/:path*"
     },
     {
       "source": "/api/:path*",
@@ -21,7 +21,10 @@
     {
       "source": "/assets/(.*)",
       "headers": [
-        { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=31536000, immutable"
+        }
       ]
     }
   ]
