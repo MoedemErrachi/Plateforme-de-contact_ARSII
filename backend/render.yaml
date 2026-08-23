@@ -28,9 +28,9 @@ services:
         generateValue: true
       # ── Frontend URL (password-reset links + CORS) ──
       - key: FRONTEND_URL
-        value: https://arsii-frontend-l41t2c1sl-errachimoedem34-5070s-projects.vercel.app
+        value: https://arsii-frontend.vercel.app
       - key: CORS_ORIGINS
-        value: https://arsii-frontend-l41t2c1sl-errachimoedem34-5070s-projects.vercel.app
+        value: https://arsii-frontend.vercel.app
       # ── SMTP ──
       - key: GMAIL_USER
         sync: false
