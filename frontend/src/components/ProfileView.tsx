@@ -12,8 +12,7 @@ import {
   BadgeCheck,
   Lock,
   Eye,
-  EyeOff,
-  X
+  EyeOff
 } from 'lucide-react';
 import { User } from '../types';
 import { useToast } from './Toast';
@@ -369,22 +368,19 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ user, onUserUpdate, on
         </div>
       </form>
 
-      {/* Panneau latéral : modification du mot de passe */}
-      <Modal open={showChangePassword} onClose={closePasswordDrawer} variant="drawer">
-        <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-6 pt-5 pb-4 shrink-0">
+      {/* Modale centrée : modification du mot de passe */}
+      <Modal
+        open={showChangePassword}
+        onClose={closePasswordDrawer}
+        maxWidth="max-w-md"
+        title={
           <div className="flex items-center gap-2">
             <Lock className="w-5 h-5 text-[#005596]" />
-            <h2 className="text-base font-bold text-[#1C2529]">Modifier le mot de passe</h2>
+            <span>Modifier le mot de passe</span>
           </div>
-          <button
-            onClick={closePasswordDrawer}
-            className="p-1 hover:bg-slate-100 rounded-full text-slate-400 transition-colors cursor-pointer shrink-0"
-            aria-label="Fermer"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-        <form onSubmit={handleChangePassword} className="p-6 space-y-4">
+        }
+      >
+        <form onSubmit={handleChangePassword} className="space-y-4 text-xs">
           <div className="flex flex-col gap-1.5">
             <label htmlFor="current-password" className="text-[11px] font-extrabold text-[#55636B] uppercase tracking-wider">
               Mot de passe actuel

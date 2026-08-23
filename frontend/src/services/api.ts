@@ -6,7 +6,7 @@ const TOKEN_STORAGE_KEY = 'euraxess_token';
 // ─────────────────────────────────────────────────────────────────────────────
 // Timeouts par défaut (ms) — surchargables par appel via `timeoutMs`
 // ─────────────────────────────────────────────────────────────────────────────
-export const DEFAULT_TIMEOUT_MS = 20000;
+export const DEFAULT_TIMEOUT_MS = 30000;
 export const OCR_TIMEOUT_MS = 90000;
 export const CHAT_TIMEOUT_MS = 45000;
 export const DOWNLOAD_TIMEOUT_MS = 60000;

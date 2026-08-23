@@ -258,6 +258,11 @@ export default function App() {
   // rendus transitoires sur un lien d'authentification juste après connexion.
   const lastLoginAtRef = useRef(0);
 
+  // Flag : True quand PublicOnlyRoute déclenche une déconnexion pour un lien
+  // d'authentification. Lorsqu'il est actif, le handler auth:expired ne
+  // montre aucun toast (la déconnexion est attendue et gérée par PublicOnlyRoute).
+  const suppressAuthExpiredToast = useRef(false);
+
   // Compteur de rafraîchissement : incrémenté après chaque mutation de contact
   // (création, import, suppression simple ou en lot) pour que ContactsView
   // recharge sa liste depuis la base — source de vérité unique.
@@ -404,7 +409,13 @@ export default function App() {
       setIsAuthenticated(false);
       setAuthToken(null);
       clearStoredAuth();
-      showToast('Votre session a expiré. Veuillez vous reconnecter.', 'error');
+      // Lors d'une déconnexion provoked par un lien d'authentification
+      // (reset-password, invitation), la fermeture de session est attendue
+      // — pas besoin de toast d'erreur.
+      if (!suppressAuthExpiredToast.current) {
+        showToast('Votre session a expiré. Veuillez vous reconnecter.', 'error');
+      }
+      suppressAuthExpiredToast.current = false;
       navigate('/login');
     };
     window.addEventListener('auth:expired', onAuthExpired);
@@ -434,12 +445,12 @@ export default function App() {
   // On purge la session locale puis on laisse la page cible s'afficher à
   // la même URL — d'où l'absence de navigate('/login') ici.
   const forceSignOutForAuthLink = () => {
+    suppressAuthExpiredToast.current = true;
     setUser(null);
     setIsAuthenticated(false);
     setAuthToken(null);
     clearStoredAuth();
     fetch('/api/auth/logout', { method: 'POST', credentials: 'include', headers: csrfHeaders() }).catch(() => {});
-    showToast('Votre session active a été fermée pour traiter ce lien.', 'info');
   };
 
   const handleLogout = () => {
@@ -666,7 +677,7 @@ export default function App() {
 
   const handleSaveCurrentAsSegment = async (segmentName: string, filters: FilterState) => {
     try {
-      const res = await apiFetch('/api/segments', {
+      await apiFetch('/api/segments', {
         method: 'POST',
         body: JSON.stringify({
           name: segmentName,
@@ -674,15 +685,7 @@ export default function App() {
           filters
         })
       });
-      const newSeg: Segment = {
-        id: res.data.segment.id,
-        name: res.data.segment.name,
-        description: res.data.segment.description,
-        icon: res.data.segment.icon,
-        filters: res.data.segment.filters
-      };
-      setSegments(prev => [...prev, newSeg]);
-      setActiveSegmentId(newSeg.id);
+      await loadTagsAndSegments();
     } catch (err: any) {
       console.error('Error saving segment:', err.message);
       if (!isServiceUnreachable(err)) showToast(`Erreur lors de l'enregistrement du segment : ${err.message}`, 'error');
@@ -691,7 +694,7 @@ export default function App() {
 
   const handleCreateSegment = async (segment: Segment) => {
     try {
-      const res = await apiFetch('/api/segments', {
+      await apiFetch('/api/segments', {
         method: 'POST',
         body: JSON.stringify({
           name: segment.name,
@@ -700,14 +703,7 @@ export default function App() {
           filters: segment.filters
         })
       });
-      const newSeg: Segment = {
-        id: res.data.segment.id,
-        name: res.data.segment.name,
-        description: res.data.segment.description,
-        icon: res.data.segment.icon,
-        filters: res.data.segment.filters
-      };
-      setSegments(prev => [...prev, newSeg]);
+      await loadTagsAndSegments();
     } catch (err: any) {
       console.error('Error creating segment:', err.message);
       if (!isServiceUnreachable(err)) showToast(`Erreur lors de la création du segment : ${err.message}`, 'error');
@@ -716,7 +712,7 @@ export default function App() {
 
   const handleUpdateSegment = async (updated: Segment) => {
     try {
-      const res = await apiFetch(`/api/segments/${updated.id}`, {
+      await apiFetch(`/api/segments/${updated.id}`, {
         method: 'PUT',
         body: JSON.stringify({
           name: updated.name,
@@ -725,8 +721,7 @@ export default function App() {
           filters: updated.filters
         })
       });
-      const saved = res.data.segment;
-      setSegments(prev => prev.map(s => s.id === saved.id ? { ...s, ...saved } : s));
+      await loadTagsAndSegments();
     } catch (err: any) {
       console.error('Error updating segment:', err.message);
       if (!isServiceUnreachable(err)) showToast(`Erreur lors de la mise à jour du segment : ${err.message}`, 'error');

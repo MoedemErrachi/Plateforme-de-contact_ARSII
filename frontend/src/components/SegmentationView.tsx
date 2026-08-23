@@ -866,9 +866,10 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
               </h3>
             </div>
           }
+          noPadding
         >
 
-            <form onSubmit={handleSaveTag} className="space-y-4 text-xs">
+            <form onSubmit={handleSaveTag} className="p-4 space-y-3 text-xs">
               <div>
                 <label className="font-bold text-slate-700 block mb-1">Nom du Tag *</label>
                 <input

@@ -1,0 +1,43 @@
+services:
+  - type: web
+    name: arsii-backend
+    runtime: node
+    region: frankfurt # eu — closest to Supabase eu-west-2
+    plan: free
+    rootDir: backend
+    buildCommand: npm ci && npm run build && npx prisma migrate deploy
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # ── Database (Supabase) ──
+      - key: DATABASE_URL
+        sync: false # set manually — contains credentials
+      - key: DIRECT_URL
+        sync: false
+      # ── Supabase Storage ──
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      # ── Security ──
+      - key: JWT_SECRET
+        generateValue: true
+      - key: CSRF_SECRET
+        generateValue: true
+      # ── Frontend URL (password-reset links + CORS) ──
+      - key: FRONTEND_URL
+        value: https://YOUR_PROJECT.vercel.app
+      - key: CORS_ORIGINS
+        value: https://YOUR_PROJECT.vercel.app
+      # ── SMTP ──
+      - key: GMAIL_USER
+        sync: false
+      - key: GMAIL_APP_PASSWORD
+        sync: false
+      # ── Seed ──
+      - key: SEED_ADMIN_PASSWORD
+        generateValue: true
+      - key: SEED_DEMO_PASSWORD
+        generateValue: true

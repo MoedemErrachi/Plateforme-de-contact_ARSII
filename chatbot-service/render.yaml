@@ -1,0 +1,43 @@
+services:
+  - type: web
+    name: arsii-chatbot
+    runtime: docker
+    region: frankfurt
+    plan: free
+    rootDir: chatbot-service
+    dockerfilePath: Dockerfile
+    healthCheckPath: /health
+    envVars:
+      # ── Backend connection ──
+      - key: MAIN_API_BASE_URL
+        value: https://YOUR_BACKEND_SERVICE.onrender.com
+      # ── Security ──
+      - key: JWT_SECRET
+        sync: false # must match backend JWT_SECRET exactly
+      # ── Frontend CORS ──
+      - key: FRONTEND_ORIGINS
+        value: https://YOUR_PROJECT.vercel.app
+      # ── LLM Providers ──
+      - key: MISTRAL_API_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: MISTRAL_MODEL
+        value: mistral-small-2603
+      - key: GROQ_MODEL
+        value: openai/gpt-oss-120b
+      - key: GEMINI_MODEL
+        value: gemini-3.5-flash
+      - key: GEMINI_FALLBACK_MODEL
+        value: gemini-3.5-flash-lite
+      # ── Session / Limits ──
+      - key: SESSION_TTL_SECONDS
+        value: "3600"
+      - key: SESSION_MAX_MESSAGES
+        value: "10"
+      - key: CHATBOT_RATE_LIMIT
+        value: 20/minute
+      - key: MAX_TOOL_ROUNDS
+        value: "3"

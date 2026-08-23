@@ -125,7 +125,7 @@ export const NewContactView: React.FC<NewContactViewProps> = ({
   const [email, setEmail] = useState(contactToEdit?.email || '');
   const [phone, setPhone] = useState(contactToEdit?.phone || '');
   const [gender, setGender] = useState<Gender>(contactToEdit?.gender || 'NOT_SPECIFIED');
-  const [countryOfOrigin, setCountryOfOrigin] = useState(contactToEdit?.countryOfOrigin || 'Sénégal');
+  const [countryOfOrigin, setCountryOfOrigin] = useState(contactToEdit?.countryOfOrigin || '');
   const [city, setCity] = useState(contactToEdit?.city || '');
   const [affiliation, setAffiliation] = useState(contactToEdit?.affiliation || '');
   const [fonction, setFonction] = useState(contactToEdit?.function || '');
@@ -154,7 +154,7 @@ export const NewContactView: React.FC<NewContactViewProps> = ({
       setEmail(contactToEdit.email || '');
       setPhone(contactToEdit.phone || '');
       setGender(contactToEdit.gender || 'NOT_SPECIFIED');
-      setCountryOfOrigin(contactToEdit.countryOfOrigin || 'Sénégal');
+      setCountryOfOrigin(contactToEdit.countryOfOrigin || '');
       setCity(contactToEdit.city || '');
       setAffiliation(contactToEdit.affiliation || '');
       setFonction(contactToEdit.function || '');
@@ -263,7 +263,7 @@ export const NewContactView: React.FC<NewContactViewProps> = ({
         email: email.trim(),
         phone: phone.trim(),
         gender: gender || 'NOT_SPECIFIED',
-        countryOfOrigin: countryOfOrigin.trim() || 'Sénégal',
+        countryOfOrigin: countryOfOrigin.trim() || '',
         city: city.trim(),
         affiliation: affiliation.trim(),
         function: fonction.trim() || undefined,
