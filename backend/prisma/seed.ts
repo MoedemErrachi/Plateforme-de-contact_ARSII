@@ -20,8 +20,11 @@ async function main() {
   console.log('Seeding EURAXESS Africa database...');
 
   // ── Users ──────────────────────────────────────────────
-  const adminPassword = process.env.SEED_ADMIN_PASSWORD || 'admin123';
-  const demoPassword = process.env.SEED_DEMO_PASSWORD || 'demo1234';
+  const adminPassword = process.env.SEED_ADMIN_PASSWORD;
+  const demoPassword = process.env.SEED_DEMO_PASSWORD;
+  if (!adminPassword || !demoPassword) {
+    throw new Error('SEED_ADMIN_PASSWORD and SEED_DEMO_PASSWORD must be set to run the seed script.');
+  }
   const passwordHash = bcrypt.hashSync(adminPassword, 10);
   const demoHash = bcrypt.hashSync(demoPassword, 10);
 

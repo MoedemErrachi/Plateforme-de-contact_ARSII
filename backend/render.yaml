@@ -36,8 +36,3 @@ services:
         sync: false
       - key: GMAIL_APP_PASSWORD
         sync: false
-      # ── Seed ──
-      - key: SEED_ADMIN_PASSWORD
-        generateValue: true
-      - key: SEED_DEMO_PASSWORD
-        generateValue: true
