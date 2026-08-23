@@ -277,10 +277,9 @@ router.post('/forgot-password', async (req, res) => {
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
     const resetUrl = `${frontendUrl}/reset-password/${token}`;
 
-    const emailSent = await sendPasswordResetEmail(user.email, resetUrl);
-    if (!emailSent) {
-      console.error('[Auth] Failed to send password reset email to:', user.email);
-    }
+    sendPasswordResetEmail(user.email, resetUrl).catch(err =>
+      console.error('[Auth] Failed to send password reset email to:', user.email, err)
+    );
 
     return res.json({ success: true, message: 'Si un compte existe avec cette adresse, un e-mail de réinitialisation a été envoyé.' });
   } catch (err) {

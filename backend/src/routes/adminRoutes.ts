@@ -105,10 +105,9 @@ router.post('/users', async (req: AuthenticatedRequest, res: Response) => {
     });
 
     // Send credentials email (best-effort)
-    const emailSent = await sendUserCreatedEmail(user.email, user.name, tempPassword);
-    if (!emailSent) {
-      console.warn('[Admin] Failed to send credentials email to:', user.email, '. Temporary password:', tempPassword);
-    }
+    sendUserCreatedEmail(user.email, user.name, tempPassword).catch(err =>
+      console.warn('[Admin] Failed to send credentials email to:', user.email, '. Temporary password:', tempPassword, err)
+    );
 
     return res.status(201).json({
       user,
