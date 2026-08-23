@@ -10,7 +10,7 @@
     },
     {
       "source": "/api/:path*",
-      "destination": "https://BACKEND_SERVICE_URL.onrender.com/api/:path*"
+      "destination": "https://arsii-backend.onrender.com/api/:path*"
     },
     {
       "source": "/((?!assets/).*)",
