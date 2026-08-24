@@ -229,7 +229,7 @@ export const AuthView: React.FC<AuthViewProps> = ({ onLoginSuccess }) => {
 
         {/* Network Copyright Anchor */}
         <p className="text-center mt-6 text-xs font-semibold text-[#55636B]/70">
-          © 2024 EURAXESS Africa Recherche & Innovation
+          © {new Date().getFullYear()} EURAXESS Africa Recherche & Innovation
         </p>
 
       </main>
