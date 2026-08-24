@@ -15,6 +15,22 @@ import {
 
 const router = Router();
 
+const TAG_COLORS = [
+  'bg-emerald-100 text-emerald-800 border-emerald-300',
+  'bg-[#005596]/15 text-[#005596] border-[#005596]/30',
+  'bg-[#B8167C]/15 text-[#B8167C] border-[#B8167C]/30',
+  'bg-amber-100 text-amber-800 border-amber-300',
+  'bg-rose-100 text-rose-800 border-rose-300',
+  'bg-blue-100 text-blue-800 border-blue-300',
+  'bg-cyan-100 text-cyan-800 border-cyan-300',
+  'bg-purple-100 text-purple-800 border-purple-300',
+  'bg-slate-100 text-slate-800 border-slate-300',
+];
+
+function randomTagColor(): string {
+  return TAG_COLORS[Math.floor(Math.random() * TAG_COLORS.length)];
+}
+
 // Segment routes
 router.get('/', getSegments);
 router.post('/', requirePrivilege('READ_WRITE'), validate(createSegmentSchema), createSegment);
@@ -36,7 +52,7 @@ router.post('/tags', requirePrivilege('READ_WRITE'), validate(createTagSchema), 
   try {
     const { name, color, description } = req.body;
     const tag = await prisma.tag.create({
-      data: { name, color: color || null, description }
+      data: { name, color: color || randomTagColor(), description }
     });
     res.status(201).json({ status: 'success', data: { tag } });
   } catch (error) { next(error); }

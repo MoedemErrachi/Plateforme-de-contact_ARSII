@@ -281,7 +281,7 @@ export default function App() {
   const loadContacts = useCallback(async () => {
     setIsLoadingData(true);
     try {
-      const data = await apiFetch('/api/contacts?limit=100');
+      const data = await apiFetch('/api/contacts?limit=10000');
       if (data?.data?.contacts) {
         setContacts(data.data.contacts.map(mapContactFromApi));
       }
@@ -601,10 +601,48 @@ export default function App() {
   // ──────────────────────────────────────────────
   const handleImportContacts = async (newContacts: Contact[], updatedContacts: Contact[] = []) => {
     try {
+      // ── Auto-create missing tags before bulk save ──
+      const allTagNames = new Set<string>();
+      for (const c of [...newContacts, ...updatedContacts]) {
+        for (const name of (c.tags || [])) {
+          if (name && !tags.find(t => t.name.toLowerCase() === name.toLowerCase())) {
+            allTagNames.add(name);
+          }
+        }
+      }
+
+      let localTags = [...tags];
+      for (const name of allTagNames) {
+        try {
+          const res = await apiFetch('/api/segments/tags', {
+            suppressGlobalError: true,
+            method: 'POST',
+            body: JSON.stringify({ name, color: null })
+          });
+          const created = res?.data?.tag;
+          if (created) {
+            localTags = [...localTags, created];
+          }
+        } catch {
+          // Tag creation failed — will be silently skipped in tag resolution below
+        }
+      }
+      if (allTagNames.size > 0) {
+        setTags(localTags);
+      }
+
+      const resolveTagIds = (tagNames: string[]) =>
+        (tagNames || [])
+          .map(name => localTags.find(t => t.name.toLowerCase() === name.toLowerCase())?.id)
+          .filter(Boolean);
+
       const body = await apiFetch('/api/contacts/bulk', {
-        suppressGlobalError: true, // le wizard affiche lui-même le retour contextuel
+        suppressGlobalError: true,
+        timeoutMs: 120000,
         method: 'POST',
         body: JSON.stringify({
+          format: 'CSV',
+          fileName: 'import_contacts.csv',
           newContacts: newContacts.map(c => ({
             firstName: c.firstName,
             lastName: c.lastName,
@@ -617,7 +655,9 @@ export default function App() {
             function: c.function,
             experience: c.experience,
             facultyDepartment: c.facultyDepartment,
-            researchCareerStage: c.researchCareerStage
+            researchCareerStage: c.researchCareerStage,
+            avatarUrl: c.avatarUrl || null,
+            tagIds: resolveTagIds(c.tags)
           })),
           updatedContacts: updatedContacts.map(c => ({
             id: c.id,
@@ -632,7 +672,9 @@ export default function App() {
             function: c.function,
             experience: c.experience,
             facultyDepartment: c.facultyDepartment,
-            researchCareerStage: c.researchCareerStage
+            researchCareerStage: c.researchCareerStage,
+            avatarUrl: c.avatarUrl || null,
+            tagIds: resolveTagIds(c.tags)
           }))
         })
       });
@@ -645,10 +687,17 @@ export default function App() {
 
       const createdCount = body.data?.createdCount || 0;
       const updatedCount = body.data?.updatedCount || 0;
-      // Doublons détectés à l'import (OCR / CSV) : les fiches existantes ont
-      // été enrichies plutôt que dupliquées.
-      if (createdCount === 0 && updatedCount > 0) {
-        showToast('Contact existant détecté : les informations ont été mises à jour.', 'success');
+      const errors = body.data?.errors || [];
+
+      if (errors.length > 0) {
+        const firstErrors = errors.slice(0, 3).map((e: { row: number; message: string }) => `L${e.row}: ${e.message}`).join(' | ');
+        const more = errors.length > 3 ? ` (+${errors.length - 3} autres)` : '';
+        showToast(
+          `Importation partielle : ${createdCount} créés, ${updatedCount} mis à jour, ${errors.length} erreur(s). ${firstErrors}${more}`,
+          'info'
+        );
+      } else if (createdCount === 0 && updatedCount > 0) {
+        showToast(`Importation réussie : ${updatedCount} contacts mis à jour.`, 'success');
       } else {
         showToast(`Importation réussie : ${createdCount} créés, ${updatedCount} mis à jour.`, 'success');
       }

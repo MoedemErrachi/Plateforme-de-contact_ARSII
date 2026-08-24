@@ -207,23 +207,54 @@ export const bulkSaveContacts = async (req: AuthenticatedRequest, res: Response,
     const { newContacts = [], updatedContacts = [] } = req.body;
     const result = await contactService.bulkSave(newContacts, updatedContacts);
 
-    await logService.createLog({
-      type: 'IMPORT',
-      format: 'CSV',
-      fileName: 'import_contacts.csv',
-      recordCount: result.createdCount,
-      performedBy: req.user?.name,
-      userId: req.user?.id
-    });
+    const format = (req.body.format as string) || 'CSV';
+    const fileName = (req.body.fileName as string) || 'import_contacts.csv';
+    const totalRecords = result.createdCount + result.updatedCount;
+    const hasErrors = result.errors && result.errors.length > 0;
 
-    res.status(200).json({ status: 'SUCCESS', data: result });
+    try {
+      await logService.createLog({
+        type: 'IMPORT',
+        format: format.toUpperCase(),
+        fileName,
+        recordCount: totalRecords,
+        performedBy: req.user?.name,
+        userId: req.user?.id,
+        status: hasErrors ? 'PARTIAL' : 'SUCCESS'
+      } as any);
+    } catch (logErr) {
+      console.error('[bulkSave] audit log failed (import not affected):', logErr);
+    }
+
+    res.status(200).json({
+      status: 'SUCCESS',
+      data: {
+        createdCount: result.createdCount,
+        updatedCount: result.updatedCount,
+        errors: result.errors
+      }
+    });
   } catch (error: any) {
     res.status(500).json({ status: 'FAILED', errorMessage: extractBulkErrorMessage(error) });
   }
 };
 
 function extractBulkErrorMessage(error: any): string {
-  const raw = error?.message || 'Erreur inconnue lors de l\'enregistrement des contacts.';
+  const code = error?.code as string | undefined;
+  const raw: string = error?.message || 'Erreur inconnue lors de l\'enregistrement des contacts.';
+
+  if (code === 'P2002') {
+    const target = (error?.meta?.target as string[]) || [];
+    const field = target.length ? target.join(', ') : 'champ unique';
+    return `Contrainte d'unicité violée sur ${field}. Un enregistrement avec cette valeur existe déjà.`;
+  }
+  if (code === 'P2003') {
+    return 'Référence introuvable : un tag ou un contact lié n\'existe pas dans la base.';
+  }
+  if (code === 'P2025') {
+    return 'Enregistrement introuvable lors de la mise à jour.';
+  }
+
   const meaningfulLines = raw
     .split('\n')
     .map(line => line.trim())

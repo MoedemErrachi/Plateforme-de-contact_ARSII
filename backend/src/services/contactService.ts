@@ -8,6 +8,21 @@ import { csvCell } from '../utils/csv';
 
 const NA = 'N/A';
 
+function friendlyRowError(err: any, context: string): string {
+  const raw: string = err?.message || 'Erreur inconnue';
+  if (raw.includes('Unique constraint') || raw.includes('unique constraint')) {
+    return `${context} : e-mail déjà existant`;
+  }
+  if (raw.includes('Foreign key') || raw.includes('foreign key') || raw.includes('Record to connect')) {
+    return `${context} : référence introuvable (tag ou contact absent)`;
+  }
+  if (raw.includes('Invalid input') || raw.includes('invalid input')) {
+    return `${context} : données invalides (${raw.slice(0, 120)})`;
+  }
+  const short = raw.length > 150 ? raw.slice(0, 150) + '…' : raw;
+  return `${context} : ${short}`;
+}
+
 // ---- Schéma d'export canonique (source de vérité partagée : list + export) ----
 // Aligné sur `FieldKey`/`FIELD_HEADERS` du frontend (src/utils/exportCsv.ts).
 export type ExportFieldKey =
@@ -97,6 +112,109 @@ function foldTerm(value: string): string {
     .split('')
     .map((char) => FOLD_MAP.get(char) ?? char)
     .join('');
+}
+
+// ── Normalisation des pays ──────────────────────────────────────────
+// Map canonique : nom replié (sans accents, minuscule) → nom français canonical.
+// Construite à partir de la liste ISO 3166-1 utilisée côté frontend.
+const COUNTRY_CANONICAL = new Map<string, string>();
+
+const COUNTRY_FRENCH: [string, string][] = [
+  ['AF', 'Afghanistan'], ['AL', 'Albanie'], ['DZ', 'Algérie'], ['AD', 'Andorre'], ['AO', 'Angola'],
+  ['AG', 'Antigua-et-Barbude'], ['AR', 'Argentine'], ['AM', 'Arménie'], ['AU', 'Australie'], ['AT', 'Autriche'],
+  ['AZ', 'Azerbaïdjan'], ['BS', 'Bahamas'], ['BH', 'Bahreïn'], ['BD', 'Bangladesh'], ['BB', 'Barbade'],
+  ['BY', 'Biélorussie'], ['BE', 'Belgique'], ['BZ', 'Belize'], ['BJ', 'Bénin'], ['BT', 'Bhoutan'],
+  ['BO', 'Bolivie'], ['BA', 'Bosnie-Herzégovine'], ['BW', 'Botswana'], ['BR', 'Brésil'], ['BN', 'Brunei'],
+  ['BG', 'Bulgarie'], ['BF', 'Burkina Faso'], ['BI', 'Burundi'], ['CV', 'Cap-Vert'], ['KH', 'Cambodge'],
+  ['CM', 'Cameroun'], ['CA', 'Canada'], ['CF', 'République centrafricaine'], ['TD', 'Tchad'], ['CL', 'Chili'],
+  ['CN', 'Chine'], ['CO', 'Colombie'], ['KM', 'Comores'], ['CG', 'Congo'], ['CD', 'Rép. dém. du Congo'],
+  ['CR', 'Costa Rica'], ["CI", "Côte d'Ivoire"], ['HR', 'Croatie'], ['CU', 'Cuba'], ['CY', 'Chypre'],
+  ['CZ', 'République tchèque'], ['DK', 'Danemark'], ['DJ', 'Djibouti'], ['DM', 'Dominique'], ['DO', 'Rép. dominicaine'],
+  ['EC', 'Équateur'], ['EG', 'Égypte'], ['SV', 'Salvador'], ['GQ', 'Guinée équatoriale'], ['ER', 'Érythrée'],
+  ['EE', 'Estonie'], ['SZ', 'Eswatini'], ['ET', 'Éthiopie'], ['FJ', 'Fidji'], ['FI', 'Finlande'],
+  ['FR', 'France'], ['GA', 'Gabon'], ['GM', 'Gambie'], ['GE', 'Géorgie'], ['DE', 'Allemagne'],
+  ['GH', 'Ghana'], ['GR', 'Grèce'], ['GD', 'Grenade'], ['GT', 'Guatemala'], ['GN', 'Guinée'],
+  ['GW', 'Guinée-Bissau'], ['GY', 'Guyana'], ['HT', 'Haïti'], ['HN', 'Honduras'], ['HU', 'Hongrie'],
+  ['IS', 'Islande'], ['IN', 'Inde'], ['ID', 'Indonésie'], ['IR', 'Iran'], ['IQ', 'Irak'],
+  ['IE', 'Irlande'], ['IL', 'Israël'], ['IT', 'Italie'], ['JM', 'Jamaïque'], ['JP', 'Japon'],
+  ['JO', 'Jordanie'], ['KZ', 'Kazakhstan'], ['KE', 'Kenya'], ['KI', 'Kiribati'], ['KP', 'Corée du Nord'],
+  ['KR', 'Corée du Sud'], ['KW', 'Koweït'], ['KG', 'Kirghizistan'], ['LA', 'Laos'], ['LV', 'Lettonie'],
+  ['LB', 'Liban'], ['LS', 'Lesotho'], ['LR', 'Libéria'], ['LY', 'Libye'], ['LI', 'Liechtenstein'],
+  ['LT', 'Lituanie'], ['LU', 'Luxembourg'], ['MG', 'Madagascar'], ['MW', 'Malawi'], ['MY', 'Malaisie'],
+  ['MV', 'Maldives'], ['ML', 'Mali'], ['MT', 'Malte'], ['MH', 'Îles Marshall'], ['MR', 'Mauritanie'],
+  ['MU', 'Maurice'], ['MX', 'Mexique'], ['FM', 'Micronésie'], ['MD', 'Moldavie'], ['MC', 'Monaco'],
+  ['MN', 'Mongolie'], ['ME', 'Monténégro'], ['MA', 'Maroc'], ['MZ', 'Mozambique'], ['MM', 'Myanmar'],
+  ['NA', 'Namibie'], ['NR', 'Nauru'], ['NP', 'Népal'], ['NL', 'Pays-Bas'], ['NZ', 'Nouvelle-Zélande'],
+  ['NI', 'Nicaragua'], ['NE', 'Niger'], ['NG', 'Nigeria'], ['MK', 'Macédoine du Nord'], ['NO', 'Norvège'],
+  ['OM', 'Oman'], ['PK', 'Pakistan'], ['PW', 'Palaos'], ['PS', 'Palestine'], ['PA', 'Panama'],
+  ['PG', 'Papouasie-Nouvelle-Guinée'], ['PY', 'Paraguay'], ['PE', 'Pérou'], ['PH', 'Philippines'],
+  ['PL', 'Pologne'], ['PT', 'Portugal'], ['QA', 'Qatar'], ['RO', 'Roumanie'], ['RU', 'Russie'],
+  ['RW', 'Rwanda'], ['KN', 'Saint-Christophe-et-Niévès'], ['LC', 'Sainte-Lucie'], ['VC', 'Saint-Vincent-et-les-Grenadines'],
+  ['WS', 'Samoa'], ['SM', 'San Marin'], ['ST', 'São Tomé-et-Principe'], ['SA', 'Arabie saoudite'],
+  ['SN', 'Sénégal'], ['RS', 'Serbie'], ['SC', 'Seychelles'], ['SL', 'Sierra Leone'], ['SG', 'Singapour'],
+  ['SK', 'Slovaquie'], ['SI', 'Slovénie'], ['SB', 'Îles Salomon'], ['SO', 'Somalie'], ['ZA', 'Afrique du Sud'],
+  ['SS', 'Soudan du Sud'], ['ES', 'Espagne'], ['LK', 'Sri Lanka'], ['SD', 'Soudan'], ['SR', 'Suriname'],
+  ['SE', 'Suède'], ['CH', 'Suisse'], ['SY', 'Syrie'], ['TW', 'Taïwan'], ['TJ', 'Tadjikistan'],
+  ['TZ', 'Tanzanie'], ['TH', 'Thaïlande'], ['TL', 'Timor oriental'], ['TG', 'Togo'], ['TO', 'Tonga'],
+  ['TT', 'Trinité-et-Tobago'], ['TN', 'Tunisie'], ['TR', 'Turquie'], ['TM', 'Turkménistan'], ['TV', 'Tuvalu'],
+  ['UG', 'Ouganda'], ['UA', 'Ukraine'], ['AE', 'Émirats arabes unis'], ['GB', 'Royaume-Uni'],
+  ['US', 'États-Unis'], ['UY', 'Uruguay'], ['UZ', 'Ouzbékistan'], ['VU', 'Vanuatu'], ['VE', 'Venezuela'],
+  ['VN', 'Vietnam'], ['YE', 'Yémen'], ['ZM', 'Zambie'], ['ZW', 'Zimbabwe'],
+];
+for (const [, name] of COUNTRY_FRENCH) {
+  COUNTRY_CANONICAL.set(foldTerm(name), name);
+}
+
+/**
+ * Normalise un nom de pays :
+ *  1. Supprime les caractères de contrôle.
+ *  2. Pour chaque \uFFFD (caractère corrompu), essaie les 26 lettres a-z
+ *     et vérifie si la combinaison resulte en un nom canonique connu.
+ *  3. Si pas de \uFFFD, lookup direct (folded + case-insensitive).
+ *  4. Fallback : valeur nettoyée.
+ */
+function normalizeCountry(raw?: string | null): string {
+  const trimmed = (raw || '').trim();
+  if (!trimmed) return '';
+  const controlStripped = trimmed.replace(/[\u0000-\u001F\u007F]/g, '').trim();
+  if (!controlStripped) return '';
+
+  // Fast path: no replacement characters — direct lookup
+  if (!controlStripped.includes('\uFFFD')) {
+    const canonical = COUNTRY_CANONICAL.get(controlStripped.toLowerCase());
+    if (canonical) return canonical;
+    const canonicalFolded = COUNTRY_CANONICAL.get(foldTerm(controlStripped));
+    if (canonicalFolded) return canonicalFolded;
+    return controlStripped.charAt(0).toUpperCase() + controlStripped.slice(1);
+  }
+
+  // Slow path: \uFFFD present — expand each placeholder with a-z and test
+  const MAX_PLACEHOLDERS = 3;
+  const placeholderCount = (controlStripped.match(/\uFFFD/g) || []).length;
+  if (placeholderCount <= MAX_PLACEHOLDERS) {
+    const candidates = expandPlaceholders(controlStripped);
+    for (const candidate of candidates) {
+      const canonical = COUNTRY_CANONICAL.get(foldTerm(candidate));
+      if (canonical) return canonical;
+    }
+  }
+
+  // Fallback: strip all \uFFFD and return cleaned
+  const stripped = controlStripped.replace(/\uFFFD/g, '').trim();
+  return stripped.charAt(0).toUpperCase() + stripped.slice(1);
+}
+
+/** Replace each \uFFFD with a-z recursively (up to MAX_PLACEHOLDERS). */
+function expandPlaceholders(input: string): string[] {
+  const idx = input.indexOf('\uFFFD');
+  if (idx === -1) return [input];
+  const results: string[] = [];
+  const before = input.slice(0, idx);
+  const after = input.slice(idx + 1);
+  for (let c = 97; c <= 122; c++) {
+    results.push(...expandPlaceholders(before + String.fromCharCode(c) + after));
+  }
+  return results;
 }
 
 /** Échappe les jokers LIKE pour une correspondance littérale. */
@@ -303,7 +421,7 @@ export class ContactService {
 
   public async getContacts(params: QueryContactsParams) {
     const page = Math.max(1, params.page || 1);
-    const limit = Math.max(1, Math.min(100, params.limit || 20));
+    const limit = Math.max(1, Math.min(10000, params.limit || 20));
     const skip = (page - 1) * limit;
 
     const conditions = this.buildWhereConditions(params);
@@ -586,7 +704,7 @@ export class ContactService {
         lastName: names.lastName,
         email: emailClean,
         gender: normalizeGender(payload.gender),
-        countryOfOrigin: clean(payload.countryOfOrigin) || null,
+        countryOfOrigin: normalizeCountry(payload.countryOfOrigin) || null,
         city: clean(payload.city) || null,
         phone: clean(payload.phone) || null,
         affiliation: clean(payload.affiliation) || null,
@@ -630,7 +748,7 @@ export class ContactService {
     if (payload.lastName !== undefined) dataToUpdate.lastName = clean(payload.lastName) || NA;
     if (payload.email !== undefined) dataToUpdate.email = payload.email.toLowerCase().trim();
     if (payload.gender !== undefined) dataToUpdate.gender = normalizeGender(payload.gender);
-    if (payload.countryOfOrigin !== undefined) dataToUpdate.countryOfOrigin = clean(payload.countryOfOrigin) || null;
+    if (payload.countryOfOrigin !== undefined) dataToUpdate.countryOfOrigin = normalizeCountry(payload.countryOfOrigin) || null;
     if (payload.city !== undefined) dataToUpdate.city = clean(payload.city) || null;
     if (payload.phone !== undefined) dataToUpdate.phone = clean(payload.phone) || null;
     if (payload.affiliation !== undefined) dataToUpdate.affiliation = clean(payload.affiliation) || null;
@@ -676,83 +794,256 @@ export class ContactService {
     return { success: true, deletedCount: result.count };
   }
 
+  /**
+   * Bulk-create / update contacts inside a single Prisma interactive
+   * transaction.  On failure the entire batch is rolled back so no partial
+   * writes leak through.
+   *
+   * tagIds: when supplied on a new or updated payload the corresponding
+   *         ContactTag rows are created inside the same transaction.
+   *         Tags are synced idempotently: existing tags are kept, only
+   *         missing tags are added and extra tags are removed.
+   */
   public async bulkSave(newContactsPayloads: CreateContactPayload[], updatedContactsPayloads: Array<{ id: string } & UpdateContactPayload>) {
-    let createdCount = 0;
-    let updatedCount = 0;
+    const result = await prisma.$transaction(async (tx) => {
+      let createdCount = 0;
+      let updatedCount = 0;
+      const errors: Array<{ row: number; message: string }> = [];
 
-    for (const payload of newContactsPayloads) {
-      const emailClean = resolveEmail(payload.email);
-      const existing = await prisma.contact.findUnique({ where: { email: emailClean } });
-      if (existing) {
-        // Doublon détecté : on met à jour la fiche existante avec les
-        // nouvelles informations au lieu de créer un doublon.
-        const names = resolveNames(payload);
-        await prisma.contact.update({
-          where: { id: existing.id },
-          data: {
-            firstName: names.firstName,
-            lastName: names.lastName,
-            gender: normalizeGender(payload.gender),
-            countryOfOrigin: clean(payload.countryOfOrigin) || null,
-            city: clean(payload.city) || null,
-            phone: clean(payload.phone) || null,
-            affiliation: clean(payload.affiliation) || null,
-            function: clean(payload.function) || null,
-            experience: clean(payload.experience) || null,
-            facultyDepartment: clean(payload.facultyDepartment) || null,
-            researchCareerStage: normalizeCareerStage(payload.researchCareerStage)
-          }
-        });
-        updatedCount++;
-        continue;
+      // ── Step 1: Resolve emails and pre-fetch existing contacts (1 query) ──
+      const resolvedEmails = newContactsPayloads.map(p => resolveEmail(p.email));
+      const allExistingRows = await tx.contact.findMany({
+        where: { email: { in: resolvedEmails } },
+        select: { id: true, email: true }
+      });
+      const existingByEmail = new Map(allExistingRows.map(r => [r.email, r.id]));
+
+      // ── Step 1b: Validate tagIds — discard any that don't exist in DB ──
+      const allTagIds = new Set<string>();
+      for (const p of newContactsPayloads) {
+        if (p.tagIds) p.tagIds.forEach(id => allTagIds.add(id));
       }
-      const names = resolveNames(payload);
-      await prisma.contact.create({
-        data: {
+      for (const p of updatedContactsPayloads) {
+        if (p.tagIds) p.tagIds.forEach(id => allTagIds.add(id));
+      }
+      const validTagIds = new Set<string>();
+      if (allTagIds.size > 0) {
+        const existingTags = await tx.tag.findMany({
+          where: { id: { in: Array.from(allTagIds) } },
+          select: { id: true }
+        });
+        for (const t of existingTags) validTagIds.add(t.id);
+      }
+
+      // ── Step 2: Partition new payloads into creates vs updates ──
+      const createPayloads: any[] = [];
+      const createEmails: string[] = [];
+      const emailsToTagIds = new Map<string, string[]>();
+
+      for (let i = 0; i < newContactsPayloads.length; i++) {
+        const payload = newContactsPayloads[i];
+        const emailClean = resolveEmail(payload.email);
+        const names = resolveNames(payload);
+
+        if (payload.tagIds && payload.tagIds.length > 0) {
+          emailsToTagIds.set(emailClean, payload.tagIds.filter(id => validTagIds.has(id)));
+        }
+
+        if (existingByEmail.has(emailClean)) {
+          // Already in DB → will be updated in the parallel update step below
+          continue;
+        }
+
+        createPayloads.push({
           firstName: names.firstName,
           lastName: names.lastName,
           email: emailClean,
           gender: normalizeGender(payload.gender),
-        countryOfOrigin: clean(payload.countryOfOrigin) || null,
+          countryOfOrigin: normalizeCountry(payload.countryOfOrigin) || null,
           city: clean(payload.city) || null,
           phone: clean(payload.phone) || null,
-        affiliation: clean(payload.affiliation) || null,
+          affiliation: clean(payload.affiliation) || null,
           function: clean(payload.function) || null,
           experience: clean(payload.experience) || null,
           facultyDepartment: clean(payload.facultyDepartment) || null,
-          researchCareerStage: normalizeCareerStage(payload.researchCareerStage)
+          researchCareerStage: normalizeCareerStage(payload.researchCareerStage),
+          avatarUrl: clean(payload.avatarUrl) || null
+        });
+        createEmails.push(emailClean);
+        // Register so within-batch duplicates become updates
+        existingByEmail.set(emailClean, '__pending__');
+      }
+
+      // ── Step 3: Bulk create (1 query) ──
+      if (createPayloads.length > 0) {
+        try {
+          await tx.contact.createMany({ data: createPayloads, skipDuplicates: true });
+          createdCount = createPayloads.length;
+        } catch (err: any) {
+          // If the entire batch fails, fall back to row-by-row for creates
+          createdCount = 0;
+          for (let i = 0; i < createPayloads.length; i++) {
+            try {
+              await tx.contact.create({ data: createPayloads[i] });
+              createdCount++;
+            } catch (rowErr: any) {
+              errors.push({ row: i + 1, message: friendlyRowError(rowErr, `Ligne ${i + 1} (création ${createEmails[i]})`) });
+            }
+          }
         }
-      });
-      createdCount++;
+
+        // Fetch back to get IDs for tag assignment
+        const createdRows = await tx.contact.findMany({
+          where: { email: { in: createEmails } },
+          select: { id: true, email: true }
+        });
+        for (const r of createdRows) {
+          existingByEmail.set(r.email, r.id);
+        }
+      }
+
+      // ── Step 4: Bulk update existing contacts (chunked parallel) ──
+      const updateItems = updatedContactsPayloads.filter(u => u.id);
+      const updateOps: Array<{ id: string; data: any }> = [];
+
+      for (let i = 0; i < updateItems.length; i++) {
+        const item = updateItems[i];
+        try {
+          const row = await tx.contact.findUnique({ where: { id: item.id }, select: { id: true } });
+          if (!row) {
+            errors.push({ row: i + 1, message: `Contact ${item.id} non trouvé` });
+            continue;
+          }
+
+          const dataToUpdate: any = {};
+          if (item.firstName !== undefined) dataToUpdate.firstName = clean(item.firstName) || NA;
+          if (item.lastName !== undefined) dataToUpdate.lastName = clean(item.lastName) || NA;
+          if (item.email !== undefined) dataToUpdate.email = item.email.toLowerCase().trim();
+          if (item.gender !== undefined) dataToUpdate.gender = normalizeGender(item.gender);
+          if (item.countryOfOrigin !== undefined) dataToUpdate.countryOfOrigin = normalizeCountry(item.countryOfOrigin) || null;
+          if (item.city !== undefined) dataToUpdate.city = clean(item.city) || null;
+          if (item.phone !== undefined) dataToUpdate.phone = clean(item.phone) || null;
+          if (item.affiliation !== undefined) dataToUpdate.affiliation = clean(item.affiliation) || null;
+          if (item.function !== undefined) dataToUpdate.function = clean(item.function) || null;
+          if (item.experience !== undefined) dataToUpdate.experience = clean(item.experience) || null;
+          if (item.facultyDepartment !== undefined) dataToUpdate.facultyDepartment = clean(item.facultyDepartment) || null;
+          if (item.researchCareerStage !== undefined) dataToUpdate.researchCareerStage = normalizeCareerStage(item.researchCareerStage);
+          if (item.avatarUrl !== undefined) dataToUpdate.avatarUrl = clean(item.avatarUrl) || null;
+
+          if (Object.keys(dataToUpdate).length > 0) {
+            updateOps.push({ id: item.id, data: dataToUpdate });
+          }
+
+          if (item.tagIds && item.tagIds.length > 0) {
+            emailsToTagIds.set(item.email.toLowerCase().trim(), item.tagIds.filter(id => validTagIds.has(id)));
+          }
+          updatedCount++;
+        } catch (rowErr: any) {
+          errors.push({ row: i + 1, message: friendlyRowError(rowErr, `Ligne ${i + 1} (mise à jour ${item.id})`) });
+        }
+      }
+
+      // Execute updates in chunks of 50 for parallelism
+      const BATCH = 50;
+      for (let i = 0; i < updateOps.length; i += BATCH) {
+        const chunk = updateOps.slice(i, i + BATCH);
+        const results = await Promise.allSettled(
+          chunk.map(op => tx.contact.update({ where: { id: op.id }, data: op.data }))
+        );
+        for (let j = 0; j < results.length; j++) {
+          if (results[j].status === 'rejected') {
+            const reason = (results[j] as PromiseRejectedResult).reason;
+            errors.push({ row: i + j + 1, message: friendlyRowError(reason, `Ligne ${i + j + 1} (mise à jour)`) });
+          }
+        }
+      }
+
+      // Also handle tags for new contacts that were already in DB
+      // (emails from newContactsPayloads that matched existingByEmail above)
+      for (let i = 0; i < newContactsPayloads.length; i++) {
+        const payload = newContactsPayloads[i];
+        const emailClean = resolveEmail(payload.email);
+        const contactId = existingByEmail.get(emailClean);
+        if (contactId && contactId !== '__pending__' && payload.tagIds && payload.tagIds.length > 0) {
+          emailsToTagIds.set(emailClean, payload.tagIds.filter(id => validTagIds.has(id)));
+        }
+      }
+
+      // ── Step 5: Idempotent tag sync (2 queries) ──
+      // Collect all contact IDs that have tags to sync
+      const allTagEmails = Array.from(emailsToTagIds.keys()).filter(e => existingByEmail.get(e) && existingByEmail.get(e) !== '__pending__');
+      const allContactIds = allTagEmails.map(e => existingByEmail.get(e)!).filter(Boolean);
+
+      if (allContactIds.length > 0) {
+        // Fetch existing tag associations (1 query)
+        const existingTags = await tx.tagOnContact.findMany({
+          where: { contactId: { in: allContactIds } },
+          select: { contactId: true, tagId: true }
+        });
+        const existingTagSet = new Map<string, Set<string>>();
+        for (const t of existingTags) {
+          if (!existingTagSet.has(t.contactId)) existingTagSet.set(t.contactId, new Set());
+          existingTagSet.get(t.contactId)!.add(t.tagId);
+        }
+
+        const tagsToAdd: Array<{ contactId: string; tagId: string }> = [];
+        const tagsToRemove: Array<{ contactId: string; tagId: string }> = [];
+
+        for (const email of allTagEmails) {
+          const contactId = existingByEmail.get(email)!;
+          const desired = new Set(emailsToTagIds.get(email) || []);
+          const existing = existingTagSet.get(contactId) || new Set();
+
+          // Add tags that are desired but not existing
+          for (const tagId of desired) {
+            if (!existing.has(tagId)) {
+              tagsToAdd.push({ contactId, tagId });
+            }
+          }
+          // Remove tags that exist but are not desired
+          for (const tagId of existing) {
+            if (!desired.has(tagId)) {
+              tagsToRemove.push({ contactId, tagId });
+            }
+          }
+        }
+
+        // Batch write (≤2 queries)
+        if (tagsToAdd.length > 0) {
+          await tx.tagOnContact.createMany({ data: tagsToAdd, skipDuplicates: true });
+        }
+        if (tagsToRemove.length > 0) {
+          // Delete each stale tag pair — Prisma has no bulk delete by composite key,
+          // but we can batch by contactId groups
+          const byContact = new Map<string, string[]>();
+          for (const t of tagsToRemove) {
+            if (!byContact.has(t.contactId)) byContact.set(t.contactId, []);
+            byContact.get(t.contactId)!.push(t.tagId);
+          }
+          const removeChunks: Array<Promise<any>> = [];
+          for (const [contactId, tagIds] of byContact) {
+            removeChunks.push(
+              tx.tagOnContact.deleteMany({
+                where: { contactId, tagId: { in: tagIds } }
+              })
+            );
+          }
+          await Promise.all(removeChunks);
+        }
+      }
+
+      return { createdCount, updatedCount, errors };
+    }, { maxWait: 15000, timeout: 60000 });
+
+    return result;
+  }
+
+  /** Replace all TagOnContact rows for a contact within the given tx client. */
+  private async syncContactTags(tx: Prisma.TransactionClient, contactId: string, tagIds: string[]) {
+    await tx.tagOnContact.deleteMany({ where: { contactId } });
+    for (const tagId of tagIds) {
+      await tx.tagOnContact.create({ data: { contactId, tagId } });
     }
-
-    for (const updateItem of updatedContactsPayloads) {
-      if (!updateItem.id) continue;
-      const existing = await prisma.contact.findUnique({ where: { id: updateItem.id } });
-      if (!existing) continue;
-
-      const dataToUpdate: any = {};
-      if (updateItem.firstName !== undefined) dataToUpdate.firstName = clean(updateItem.firstName) || NA;
-      if (updateItem.lastName !== undefined) dataToUpdate.lastName = clean(updateItem.lastName) || NA;
-      if (updateItem.email !== undefined) dataToUpdate.email = updateItem.email.toLowerCase().trim();
-      if (updateItem.gender !== undefined) dataToUpdate.gender = normalizeGender(updateItem.gender);
-      if (updateItem.countryOfOrigin !== undefined) dataToUpdate.countryOfOrigin = clean(updateItem.countryOfOrigin) || null;
-      if (updateItem.city !== undefined) dataToUpdate.city = clean(updateItem.city) || null;
-      if (updateItem.phone !== undefined) dataToUpdate.phone = clean(updateItem.phone) || null;
-      if (updateItem.affiliation !== undefined) dataToUpdate.affiliation = clean(updateItem.affiliation) || null;
-      if (updateItem.function !== undefined) dataToUpdate.function = clean(updateItem.function) || null;
-      if (updateItem.experience !== undefined) dataToUpdate.experience = clean(updateItem.experience) || null;
-      if (updateItem.facultyDepartment !== undefined) dataToUpdate.facultyDepartment = clean(updateItem.facultyDepartment) || null;
-      if (updateItem.researchCareerStage !== undefined) dataToUpdate.researchCareerStage = normalizeCareerStage(updateItem.researchCareerStage);
-
-      await prisma.contact.update({
-        where: { id: updateItem.id },
-        data: dataToUpdate
-      });
-      updatedCount++;
-    }
-
-    return { createdCount, updatedCount };
   }
 
   public async importContactsPreview(rows: Array<Partial<CreateContactPayload>>) {

@@ -38,7 +38,7 @@ export const deleteSegmentSchema = z.object({
 export const createTagSchema = z.object({
   body: z.object({
     name: z.string().trim().min(1, 'Le nom du tag est requis').max(50),
-    color: z.string().max(30).optional().nullable(),
+    color: z.string().max(100).optional().nullable(),
     description: z.string().max(500).optional().nullable()
   })
 });
@@ -48,7 +48,7 @@ export const updateTagSchema = z.object({
   body: z
     .object({
       name: z.string().trim().min(1, 'Le nom du tag est requis').max(50).optional(),
-      color: z.string().max(30).optional().nullable(),
+      color: z.string().max(100).optional().nullable(),
       description: z.string().max(500).optional().nullable()
     })
     .refine(body => Object.keys(body).length > 0, {

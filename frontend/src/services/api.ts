@@ -133,6 +133,7 @@ function firstServerMessage(json: any): string {
   if (typeof json?.error === 'string' && json.error) return json.error;
   if (typeof json?.message === 'string' && json.message) return json.message;
   if (typeof json?.detail === 'string' && json.detail) return json.detail;
+  if (typeof json?.errorMessage === 'string' && json.errorMessage) return json.errorMessage;
   return '';
 }
 

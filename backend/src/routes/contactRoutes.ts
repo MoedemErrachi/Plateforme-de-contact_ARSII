@@ -9,7 +9,8 @@ import {
   deleteContact,
   bulkDeleteContacts,
   bulkSaveContacts,
-  exportContacts
+  exportContacts,
+  importContacts
 } from '../controllers/contactController';
 import { validate } from '../middleware/validate';
 import { authenticateJWT } from '../middleware/authenticateJWT';
@@ -25,7 +26,8 @@ import {
   queryContactSchema,
   exportQuerySchema,
   countContactsQuerySchema,
-  bulkSaveContactsSchema
+  bulkSaveContactsSchema,
+  importContactsSchema
 } from '../validators/contactValidator';
 
 const router = Router();
@@ -33,6 +35,7 @@ const router = Router();
 router.get('/', validate(queryContactSchema), getContacts);
 router.post('/', requirePrivilege('READ_WRITE'), validate(createContactSchema), createContact);
 router.post('/bulk', authenticateJWT, importRateLimiter, requirePrivilege('READ_WRITE'), validateBulkImportPayload, validate(bulkSaveContactsSchema), bulkSaveContacts);
+router.post('/bulk/preview', authenticateJWT, importRateLimiter, requirePrivilege('READ_WRITE'), validate(importContactsSchema), importContacts);
 // La route /bulk (DELETE) doit être déclarée avant /:id pour éviter toute capture.
 router.delete('/bulk', authenticateJWT, requirePrivilege('FULL_ACCESS'), validate(bulkDeleteContactsSchema), bulkDeleteContacts);
 router.get('/export', authenticateJWT, validate(exportQuerySchema), exportContacts);

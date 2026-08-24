@@ -1,7 +1,10 @@
-import React, { useState, useRef, useMemo } from 'react';
+import React, { useState, useRef, useMemo, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { Contact, Gender, ResearchCareerStage, CAREER_STAGE_LABELS } from '../types';
 import { splitFullName } from '../utils/format';
+import { apiFetch } from '../services/api';
+import { predictAllMappings } from '../utils/importMapping';
+import { parseFile } from '../utils/fileParsing';
 import { OcrImportTab } from './OcrImportTab';
 import { 
   Check, 
@@ -30,7 +33,7 @@ export interface ImportResult {
   httpStatus: number;
   status: string;
   errorMessage: string;
-  data: { createdCount: number; updatedCount: number } | null;
+  data: { createdCount: number; updatedCount: number; errors: Array<{ row: number; message: string }> } | null;
 }
 
 interface ImportWizardViewProps {
@@ -81,6 +84,7 @@ const SYSTEM_FIELDS: SystemFieldDef[] = [
   { key: 'firstName', label: '👤 Prénom', description: 'Prénom' },
   { key: 'lastName', label: '👤 Nom de famille', description: 'Nom de famille' },
   { key: 'fullName', label: '👥 Nom Complet', description: 'Prénom + Nom sur une colonne' },
+  { key: 'gender', label: '⚧️ Genre', description: 'MALE, FEMALE ou NOT_SPECIFIED' },
   { key: 'countryOfOrigin', label: '🌍 Pays d\'origine', description: 'Pays d\'origine du chercheur' },
   { key: 'city', label: '🏙️ Ville', description: 'Ville de résidence' },
   { key: 'phone', label: '📞 Téléphone', description: 'Numéro de contact' },
@@ -124,8 +128,13 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
     errors: ParsedContactCandidate[];
   }>({ importedNew: 0, updatedMerged: 0, skippedIgnored: 0, errors: [] });
   const [importError, setImportError] = useState<string | null>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [showEmailWarning, setShowEmailWarning] = useState(false);
+  const [autoGenerateEmails, setAutoGenerateEmails] = useState(false);
+  const [sheetInfo, setSheetInfo] = useState<{ sheetCount: number; sheetName: string; headerRowIndex: number } | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const serverDuplicateEmailsRef = useRef<Set<string>>(new Set());
 
   // Reset file handler
   const handleResetFile = () => {
@@ -136,6 +145,10 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
     setCandidates([]);
     setFileError(null);
     setImportError(null);
+    setIsAnalyzing(false);
+    setShowEmailWarning(false);
+    setAutoGenerateEmails(false);
+    setSheetInfo(null);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
@@ -151,7 +164,11 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
     setCandidates([]);
     setFilterStatus('all');
     setIsExecuting(false);
+    setIsAnalyzing(false);
+    setShowEmailWarning(false);
+    setAutoGenerateEmails(false);
     setImportError(null);
+    setSheetInfo(null);
     setSummaryReport({ importedNew: 0, updatedMerged: 0, skippedIgnored: 0, errors: [] });
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
@@ -159,156 +176,100 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
     setCurrentStep(1);
   };
 
-  // Auto-matching algorithm for standard headers
-  const autoMatchHeader = (header: string): string => {
-    const clean = header.toLowerCase().trim();
-    if (['email', 'e-mail', 'courriel', 'mail', 'adresse email'].some(k => clean.includes(k))) return 'email';
-    if (clean === 'prénom' || clean === 'prenom' || clean === 'first name' || clean === 'firstname') return 'firstName';
-    if (clean === 'nom' || clean === 'last name' || clean === 'lastname' || clean === 'family name') return 'lastName';
-    if (['nom complet', 'nom & prénom', 'nom et prénom', 'contact', 'full name', 'fullname'].some(k => clean.includes(k))) return 'fullName';
-    if (['pays d\'origine', 'pays', 'pays de provenance', 'country of origin', 'country'].some(k => clean.includes(k))) return 'countryOfOrigin';
-    if (['ville', 'city', 'town'].some(k => clean.includes(k))) return 'city';
-    if (['téléphone', 'telephone', 'tél', 'tel', 'phone', 'mobile', 'cell'].some(k => clean.includes(k))) return 'phone';
-    if (['affiliation', 'organisation', 'organisme', 'société', 'societe', 'entreprise', 'institution', 'company', 'company name'].some(k => clean.includes(k))) return 'affiliation';
-    if (['fonction', 'poste', 'titre', 'job', 'position', 'role', 'rôle'].some(k => clean.includes(k))) return 'function';
-    if (['expérience', 'experience', 'années d\'expérience', 'ans d\'expérience'].some(k => clean.includes(k))) return 'experience';
-    if (['faculté', 'faculte', 'département', 'departement', 'faculty', 'department', 'faculty/department', 'faculté / département'].some(k => clean.includes(k))) return 'facultyDepartment';
-    if (['stade de carrière', 'stade de carriere', 'carrière', 'career stage', 'career', 'research career stage'].some(k => clean.includes(k))) return 'researchCareerStage';
-    if (['tags', 'mots-clés', 'mots clés', 'keywords'].some(k => clean.includes(k))) return 'tags';
-    return '__ignore__';
+  // ── Normalization helpers ──────────────────────────────────────────
+
+  const normalizeGenderInput = (raw: string): Gender => {
+    const v = raw.toLowerCase().trim();
+    if (['f', 'femme', 'female', 'woman', 'féminin', 'feminin'].some(k => v === k || v.startsWith(k))) return 'FEMALE';
+    if (['m', 'homme', 'male', 'man', 'masculin'].some(k => v === k || v.startsWith(k))) return 'MALE';
+    return 'NOT_SPECIFIED';
   };
 
-  // Helper to process parsed 2D array of rows
-  const processParsedData = (rowsMatrix: any[][]) => {
-    if (!rowsMatrix || rowsMatrix.length < 2) {
-      setFileError("Impossible de lire ce fichier. Veuillez vérifier le format (.csv ou .xlsx) et vous assurer qu'il contient des données.");
-      return;
-    }
-
-    // Header extraction
-    const rawHeaders = rowsMatrix[0].map((h, i) => String(h || `Colonne_${i + 1}`).trim());
-    const validHeaders = rawHeaders.filter(h => h.length > 0);
-
-    if (validHeaders.length === 0) {
-      setFileError("Impossible de lire ce fichier. Veuillez vérifier le format (.csv ou .xlsx) et vous assurer qu'il contient des données.");
-      return;
-    }
-
-    // Build raw row objects
-    const dataRows: RawRowData[] = [];
-    for (let r = 1; r < rowsMatrix.length; r++) {
-      const rowArr = rowsMatrix[r];
-      if (!rowArr || rowArr.every(cell => cell === null || cell === undefined || String(cell).trim() === '')) {
-        continue; // Skip completely empty rows
-      }
-
-      const rowObj: Record<string, string> = {};
-      rawHeaders.forEach((h, colIdx) => {
-        rowObj[h] = rowArr[colIdx] !== undefined && rowArr[colIdx] !== null ? String(rowArr[colIdx]).trim() : '';
-      });
-      dataRows.push({ rowIndex: r + 1, originalData: rowObj });
-    }
-
-    if (dataRows.length === 0) {
-      setFileError("Impossible de lire ce fichier. Veuillez vérifier le format (.csv ou .xlsx) et vous assurer qu'il contient des données.");
-      return;
-    }
-
-    // Auto mapping
-    const initialMapping: Record<string, string> = {};
-    rawHeaders.forEach(h => {
-      initialMapping[h] = autoMatchHeader(h);
-    });
-
-    setHeaders(rawHeaders);
-    setRawRows(dataRows);
-    setColumnMapping(initialMapping);
-    setFileError(null);
+  const COUNTRY_CODE_MAP: Record<string, string> = {
+    AF: 'Afghanistan', AL: 'Albanie', DZ: 'Algérie', AD: 'Andorre', AO: 'Angola',
+    AG: 'Antigua-et-Barbude', AR: 'Argentine', AM: 'Arménie', AU: 'Australie', AT: 'Autriche',
+    AZ: 'Azerbaïdjan', BS: 'Bahamas', BH: 'Bahreïn', BD: 'Bangladesh', BB: 'Barbade',
+    BY: 'Biélorussie', BE: 'Belgique', BZ: 'Belize', BJ: 'Bénin', BT: 'Bhoutan',
+    BO: 'Bolivie', BA: 'Bosnie-Herzégovine', BW: 'Botswana', BR: 'Brésil', BN: 'Brunei',
+    BG: 'Bulgarie', BF: 'Burkina Faso', BI: 'Burundi', CV: 'Cap-Vert', KH: 'Cambodge',
+    CM: 'Cameroun', CA: 'Canada', CF: 'République centrafricaine', TD: 'Tchad', CL: 'Chili',
+    CN: 'Chine', CO: 'Colombie', KM: 'Comores', CG: 'Congo', CD: 'Rép. dém. du Congo',
+    CR: 'Costa Rica', CI: 'Côte d\'Ivoire', HR: 'Croatie', CU: 'Cuba', CY: 'Chypre',
+    CZ: 'République tchèque', DK: 'Danemark', DJ: 'Djibouti', DM: 'Dominique', DO: 'Rép. dominicaine',
+    EC: 'Équateur', EG: 'Égypte', SV: 'Salvador', GQ: 'Guinée équatoriale', ER: 'Érythrée',
+    EE: 'Estonie', SZ: 'Eswatini', ET: 'Éthiopie', FJ: 'Fidji', FI: 'Finlande',
+    FR: 'France', GA: 'Gamie', GM: 'Gambie', GE: 'Géorgie', DE: 'Allemagne',
+    GH: 'Ghana', GR: 'Grèce', GD: 'Grenade', GT: 'Guatemala', GN: 'Guinée',
+    GW: 'Guinée-Bissau', GY: 'Guyana', HT: 'Haïti', HN: 'Honduras', HU: 'Hongrie',
+    IS: 'Islande', IN: 'Inde', ID: 'Indonésie', IR: 'Iran', IQ: 'Irak',
+    IE: 'Irlande', IL: 'Israël', IT: 'Italie', JM: 'Jamaïque', JP: 'Japon',
+    JO: 'Jordanie', KZ: 'Kazakhstan', KE: 'Kenya', KI: 'Kiribati', KP: 'Corée du Nord',
+    KR: 'Corée du Sud', KW: 'Koweït', KG: 'Kirghizistan', LA: 'Laos', LV: 'Lettonie',
+    LB: 'Liban', LS: 'Lesotho', LR: 'Libéria', LY: 'Libye', LI: 'Liechtenstein',
+    LT: 'Lituanie', LU: 'Luxembourg', MG: 'Madagascar', MW: 'Malawi', MY: 'Malaisie',
+    MV: 'Maldives', ML: 'Mali', MT: 'Malte', MH: 'Îles Marshall', MR: 'Mauritanie',
+    MU: 'Maurice', MX: 'Mexique', FM: 'Micronésie', MD: 'Moldavie', MC: 'Monaco',
+    MN: 'Mongolie', ME: 'Monténégro', MA: 'Maroc', MZ: 'Mozambique', MM: 'Myanmar',
+    NA: 'Namibie', NR: 'Nauru', NP: 'Népal', NL: 'Pays-Bas', NZ: 'Nouvelle-Zélande',
+    NI: 'Nicaragua', NE: 'Niger', NG: 'Nigeria', MK: 'Macédoine du Nord', NO: 'Norvège',
+    OM: 'Oman', PK: 'Pakistan', PW: 'Palaos', PS: 'Palestine', PA: 'Panama',
+    PG: 'Papouasie-Nouvelle-Guinée', PY: 'Paraguay', PE: 'Pérou', PH: 'Philippines',
+    PL: 'Pologne', PT: 'Portugal', QA: 'Qatar', RO: 'Roumanie', RU: 'Russie',
+    RW: 'Rwanda', KN: 'Saint-Christophe-et-Niévès', LC: 'Sainte-Lucie', VC: 'Saint-Vincent-et-les-Grenadines',
+    WS: 'Samoa', SM: 'San Marin', ST: 'São Tomé-et-Principe', SA: 'Arabie saoudite',
+    SN: 'Sénégal', RS: 'Serbie', SC: 'Seychelles', SL: 'Sierra Leone', SG: 'Singapour',
+    SK: 'Slovaquie', SI: 'Slovénie', SB: 'Îles Salomon', SO: 'Somalie', ZA: 'Afrique du Sud',
+    SS: 'Soudan du Sud', ES: 'Espagne', LK: 'Sri Lanka', SD: 'Soudan', SR: 'Suriname',
+    SE: 'Suède', CH: 'Suisse', SY: 'Syrie', TW: 'Taïwan', TJ: 'Tadjikistan',
+    TZ: 'Tanzanie', TH: 'Thaïlande', TL: 'Timor oriental', TG: 'Togo', TO: 'Tonga',
+    TT: 'Trinité-et-Tobago', TN: 'Tunisie', TR: 'Turquie', TM: 'Turkménistan', TV: 'Tuvalu',
+    UG: 'Ouganda', UA: 'Ukraine', AE: 'Émirats arabes unis', GB: 'Royaume-Uni',
+    US: 'États-Unis', UY: 'Uruguay', UZ: 'Ouzbékistan', VU: 'Vanuatu', VE: 'Venezuela',
+    VN: 'Vietnam', YE: 'Yémen', ZM: 'Zambie', ZW: 'Zimbabwe'
   };
 
-  // Parse Excel file (.xlsx, .xls)
-  // exceljs est chargé dynamiquement : il ne pèse dans le bundle initial que
-  // lorsqu'un fichier Excel est réellement analysé (code splitting).
-  const parseExcelFile = async (fileObj: File) => {
-    try {
-      const ExcelJS = (await import('exceljs')).default;
-      const arrayBuffer = await fileObj.arrayBuffer();
-      const workbook = new ExcelJS.Workbook();
-      await (workbook.xlsx as any).load(arrayBuffer);
-
-      const worksheet = workbook.worksheets[0];
-      if (!worksheet) {
-        throw new Error('Aucune feuille de calcul trouvée.');
-      }
-
-      const matrix: any[][] = [];
-      worksheet.eachRow({ includeEmpty: false }, (row) => {
-        const rowValues = Array.isArray(row.values) ? row.values.slice(1) : [];
-        const cleanedValues = rowValues.map(cell => {
-          if (cell === null || cell === undefined) return '';
-          if (typeof cell === 'object' && !(cell instanceof Date)) {
-            const cellObj = cell as any;
-            if ('result' in cellObj) return cellObj.result ?? '';
-            if ('text' in cellObj) return cellObj.text ?? '';
-            if ('richText' in cellObj && Array.isArray(cellObj.richText)) {
-              return cellObj.richText.map((rt: any) => rt.text || '').join('');
-            }
-            if ('hyperlink' in cellObj) return cellObj.text || cellObj.hyperlink || '';
-          }
-          return String(cell);
-        });
-        matrix.push(cleanedValues);
-      });
-
-      processParsedData(matrix);
-    } catch (err) {
-      setFileError("Impossible de lire ce fichier. Veuillez vérifier le format (.csv ou .xlsx) et vous assurer qu'il contient des données.");
-    }
+  const normalizeCountry = (raw: string): string => {
+    const trimmed = raw.trim();
+    if (!trimmed) return '';
+    const upper = trimmed.toUpperCase();
+    if (upper.length === 2 && COUNTRY_CODE_MAP[upper]) return COUNTRY_CODE_MAP[upper];
+    return trimmed;
   };
 
-  // Parse CSV file (.csv) — papaparse chargé à la demande (code splitting).
-  const parseCSVFile = async (fileObj: File) => {
-    const Papa = (await import('papaparse')).default;
-    Papa.parse(fileObj, {
-      skipEmptyLines: 'greedy',
-      complete: (results) => {
-        if (results.errors && results.errors.length > 0 && results.data.length === 0) {
-          setFileError("Impossible de lire ce fichier. Veuillez vérifier le format (.csv ou .xlsx) et vous assurer qu'il contient des données.");
-          return;
-        }
-        processParsedData(results.data as any[][]);
-      },
-      error: () => {
-        setFileError("Impossible de lire ce fichier. Veuillez vérifier le format (.csv ou .xlsx) et vous assurer qu'il contient des données.");
-      }
-    });
-  };
-
-  // File selection handler
-  const handleFileSelect = (selectedFile: File) => {
+  // Unified file load + auto-mapping pipeline
+  const loadAndMapFile = async (selectedFile: File) => {
     setFileError(null);
     setFile(selectedFile);
-    
-    const nameLower = selectedFile.name.toLowerCase();
-    if (nameLower.endsWith('.xlsx') || nameLower.endsWith('.xls')) {
-      parseExcelFile(selectedFile);
-    } else if (nameLower.endsWith('.csv') || nameLower.endsWith('.txt')) {
-      parseCSVFile(selectedFile);
-    } else {
-      setFileError("Format non supporté. Veuillez sélectionner un fichier .csv, .xlsx ou .xls.");
+    try {
+      const parsed = await parseFile(selectedFile);
+      const fieldMap = predictAllMappings(parsed.headers);
+      setHeaders(parsed.headers);
+      setRawRows(parsed.rows);
+      setColumnMapping(fieldMap);
+      setSheetInfo({ sheetCount: parsed.sheetCount, sheetName: parsed.sheetName, headerRowIndex: parsed.headerRowIndex });
+      setCandidates([]);
+      setSummaryReport({ importedNew: 0, updatedMerged: 0, skippedIgnored: 0, errors: [] });
+      setFilterStatus('all');
+      setAutoGenerateEmails(false);
+      setShowEmailWarning(false);
+      setCurrentStep(1);
+      setFileError(null);
+    } catch (err: any) {
+      setFileError(err.message || 'Erreur lors de la lecture du fichier.');
     }
   };
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      handleFileSelect(e.dataTransfer.files[0]);
+      loadAndMapFile(e.dataTransfer.files[0]);
     }
   };
 
   // Parse raw career stage string to enum value
   const parseCareerStage = (raw: string): ResearchCareerStage => {
     const clean = raw.toLowerCase().trim();
+    if (!clean) return 'R1_FIRST_STAGE';
     if (['r1', 'r1_first_stage', 'r1 —', '1', 'debutant', 'débutant', 'first stage'].some(k => clean.includes(k))) return 'R1_FIRST_STAGE';
     if (['r2', 'r2_recognized', 'r2 —', '2', 'reconnu', 'recognised', 'recognized'].some(k => clean.includes(k))) return 'R2_RECOGNIZED';
     if (['r3', 'r3_established', 'r3 —', '3', 'établi', 'etabli', 'established'].some(k => clean.includes(k))) return 'R3_ESTABLISHED';
@@ -320,15 +281,112 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
   const isEmailMapped = Object.values(columnMapping).includes('email');
   const isNameMapped = Object.values(columnMapping).some(k => ['lastName', 'firstName', 'fullName'].includes(k as string));
 
+  // Set of fields currently taken by other columns (for disabling in dropdown)
+  const takenFields = useMemo(() => {
+    const set = new Set<string>();
+    Object.entries(columnMapping).forEach(([header, field]) => {
+      if (field !== '__ignore__') set.add(field);
+    });
+    return set;
+  }, [columnMapping]);
+
+  // Handles mapping change with mutual exclusion rules:
+  // - Two columns cannot map to the same system field
+  // - fullName and firstName/lastName are mutually exclusive
+  const handleColumnMappingChange = (header: string, newKey: string) => {
+    const oldKey = columnMapping[header] || '__ignore__';
+    if (oldKey === newKey) return;
+
+    const updated = { ...columnMapping, [header]: newKey };
+
+    // Rule 1: If selecting a field already taken by another column, reset the other
+    if (newKey !== '__ignore__') {
+      Object.entries(updated).forEach(([h, f]) => {
+        if (h !== header && f === newKey) {
+          updated[h] = '__ignore__';
+        }
+      });
+    }
+
+    // Rule 2: fullName ↔ firstName/lastName mutual exclusion
+    const nameFields = ['firstName', 'lastName'];
+    if (newKey === 'fullName') {
+      // Reset any firstName/lastName mappings
+      Object.entries(updated).forEach(([h, f]) => {
+        if (h !== header && nameFields.includes(f)) {
+          updated[h] = '__ignore__';
+        }
+      });
+    } else if (nameFields.includes(newKey)) {
+      // Reset any fullName mapping
+      Object.entries(updated).forEach(([h, f]) => {
+        if (h !== header && f === 'fullName') {
+          updated[h] = '__ignore__';
+        }
+      });
+    }
+
+    setColumnMapping(updated);
+    setAutoGenerateEmails(false);
+    setShowEmailWarning(false);
+    if (candidates.length > 0) setCandidates([]);
+  };
+
+  // Which fields are disabled (taken by another column) for a given header
+  const isFieldTakenByOther = (header: string, fieldKey: string) => {
+    if (fieldKey === '__ignore__') return false;
+    if (columnMapping[header] === fieldKey) return false;
+    return takenFields.has(fieldKey);
+  };
+
   // Step 2 -> Step 3: Execute Row-by-Row Analysis & Conflict Resolution
-  const analyzeRowsAndProceedToStep3 = () => {
+  const analyzeRowsAndProceedToStep3 = useCallback(async () => {
+    setIsAnalyzing(true);
+    try {
+    // Build candidate payloads for server-side duplicate preview
+    const serverRows = rawRows.map(row => {
+      const getVal = (sysKey: string): string => {
+        const headerMatch = Object.keys(columnMapping).find(h => columnMapping[h] === sysKey);
+        return headerMatch ? row.originalData[headerMatch] || '' : '';
+      };
+      return {
+        email: getVal('email').trim(),
+        firstName: getVal('firstName').trim(),
+        lastName: getVal('lastName').trim(),
+        fullName: getVal('fullName').trim()
+      };
+    }).filter(r => r.email || r.firstName || r.lastName || r.fullName);
+
+    let duplicateEmails = new Set<string>();
+    try {
+      const preview = await apiFetch('/api/contacts/bulk/preview', {
+        method: 'POST',
+        suppressGlobalError: true,
+        body: JSON.stringify({ rows: serverRows })
+      });
+      if (preview?.data?.preview) {
+        for (const p of preview.data.preview) {
+          if (p.status === 'DUPLICATE' && p.existingContactId) {
+            const email = p.inputData?.email;
+            if (email) duplicateEmails.add(email.toLowerCase());
+          }
+        }
+      }
+    } catch {
+      // Fallback: client-side check against existingContacts prop
+      for (const c of existingContacts) {
+        if (c.email) duplicateEmails.add(c.email.toLowerCase());
+      }
+    }
+    serverDuplicateEmailsRef.current = duplicateEmails;
     const analyzed: ParsedContactCandidate[] = rawRows.map(row => {
       const getVal = (sysKey: string): string => {
         const headerMatch = Object.keys(columnMapping).find(h => columnMapping[h] === sysKey);
         return headerMatch ? row.originalData[headerMatch] || '' : '';
       };
 
-      const email = getVal('email').trim();
+      const rawEmail = getVal('email').trim();
+      const email = rawEmail.includes('@') ? rawEmail : (autoGenerateEmails ? `import_${row.rowIndex}_${Math.random().toString(36).slice(2, 6)}@euraxess.africa` : rawEmail);
       let firstName = getVal('firstName').trim();
       let lastName = getVal('lastName').trim();
       const fullNameVal = getVal('fullName').trim();
@@ -341,8 +399,9 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
         lastName = split.lastName;
       }
 
-      const gender: Gender = 'NOT_SPECIFIED';
-      const countryOfOrigin = getVal('countryOfOrigin').trim() || 'Sénégal';
+      const genderRaw = getVal('gender').trim();
+      const gender: Gender = genderRaw ? normalizeGenderInput(genderRaw) : 'NOT_SPECIFIED';
+      const countryOfOrigin = normalizeCountry(getVal('countryOfOrigin').trim());
       const city = getVal('city').trim();
       const phone = getVal('phone').trim() || '';
       const affiliation = getVal('affiliation').trim() || '';
@@ -352,7 +411,7 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
       const researchCareerStage = parseCareerStage(getVal('researchCareerStage'));
 
       const rawTags = getVal('tags');
-      const tags = rawTags ? rawTags.split(/[,;/]/).map(s => s.trim()).filter(Boolean) : ['Importation'];
+      const tags = rawTags ? rawTags.split(/[,;|/]/).map(s => s.trim()).filter(Boolean) : ['Importation'];
 
       // Derive fullName
       let finalFullName = fullNameVal;
@@ -368,11 +427,9 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
       const isValidEmailFormat = !email || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
       const cleanEmail = email.toLowerCase();
 
-      // Check duplicate against existing contacts
-      const duplicateMatch = existingContacts.find(c =>
-        (cleanEmail && c.email.toLowerCase() === cleanEmail) ||
-        (finalFullName.toLowerCase() === c.name.toLowerCase() && affiliation.toLowerCase() === c.affiliation.toLowerCase())
-      );
+      // Check duplicate against server-side results (all DB contacts, not just first 100)
+      const isDuplicate = Boolean(cleanEmail && duplicateEmails.has(cleanEmail));
+      const duplicateMatch = isDuplicate ? (existingContacts.find(c => c.email.toLowerCase() === cleanEmail) || { id: 'server-match', email: cleanEmail } as Contact) : undefined;
 
       let status: 'valid' | 'duplicate' | 'invalid' = 'valid';
       let errorReason: string | undefined = undefined;
@@ -383,7 +440,7 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
       } else if (!email && !firstName && !lastName && !fullNameVal) {
         status = 'invalid';
         errorReason = 'Identifiant manquant (E-mail ou Nom absent)';
-      } else if (duplicateMatch) {
+      } else if (isDuplicate) {
         status = 'duplicate';
       }
 
@@ -415,7 +472,10 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
 
     setCandidates(analyzed);
     setCurrentStep(3);
-  };
+    } finally {
+      setIsAnalyzing(false);
+    }
+  }, [rawRows, columnMapping, existingContacts]);
 
   // Resolution action change for a candidate in Step 3
   const handleCandidateResolutionChange = (id: string, action: 'import' | 'overwrite' | 'skip' | 'create_new') => {
@@ -440,9 +500,7 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
       const emailValid = !updated.email || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(updated.email);
       const cleanEmail = updated.email.toLowerCase();
       
-      const duplicateMatch = existingContacts.find(ex => 
-        (cleanEmail && ex.email.toLowerCase() === cleanEmail)
-      );
+      const isServerDuplicate = cleanEmail && serverDuplicateEmailsRef.current.has(cleanEmail);
 
       if (!emailValid) {
         updated.status = 'invalid';
@@ -452,9 +510,9 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
         updated.status = 'invalid';
         updated.errorReason = 'Identifiant manquant';
         updated.resolutionAction = 'skip';
-      } else if (duplicateMatch) {
+      } else if (isServerDuplicate) {
         updated.status = 'duplicate';
-        updated.duplicateMatch = duplicateMatch;
+        updated.duplicateMatch = updated.duplicateMatch || { id: 'server-match', email: cleanEmail } as Contact;
         updated.errorReason = undefined;
         if (updated.resolutionAction === 'skip') updated.resolutionAction = 'overwrite';
       } else {
@@ -551,11 +609,35 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
     }
 
     setImportError(null);
+    const serverErrors = result.data?.errors || [];
     setSummaryReport({
-      importedNew: countNew,
-      updatedMerged: countMerged,
-      skippedIgnored: skippedList.length,
-      errors: skippedList
+      importedNew: result.data?.createdCount ?? countNew,
+      updatedMerged: result.data?.updatedCount ?? countMerged,
+      skippedIgnored: skippedList.length + serverErrors.length,
+      errors: skippedList.length > 0
+        ? skippedList
+        : serverErrors.map((e: { row: number; message: string }) => ({
+            id: `err-${e.row}`,
+            rowIndex: e.row,
+            fullName: '',
+            firstName: '',
+            lastName: '',
+            email: '',
+            gender: 'NOT_SPECIFIED' as const,
+            phone: '',
+            affiliation: '',
+            countryOfOrigin: '',
+            city: '',
+            function: '',
+            experience: '',
+            facultyDepartment: '',
+            researchCareerStage: 'R1_FIRST_STAGE' as const,
+            tags: [],
+            status: 'invalid' as const,
+            errorReason: e.message,
+            resolutionAction: 'skip' as const,
+            originalData: {}
+          }))
     });
 
     setCurrentStep(4);
@@ -612,7 +694,7 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
             Importation & Synchronisation des Contacts
           </h1>
           <p className="text-sm text-[#55636B] mt-1">
-            Intégrez vos fichiers CSV, XLSX ou XLS dans la base réseau EURAXESS Africa avec détection intelligente des doublons.
+            Intégrez vos fichiers CSV ou XLSX dans la base réseau EURAXESS Africa avec détection intelligente des doublons.
           </p>
         </div>
 
@@ -654,7 +736,7 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
       {activeTab === 'file' && (<>
       {/* 4-Step Stepper Progress Bar */}
       <div className="px-2 py-4 bg-white rounded-2xl border border-[#C9D4DE]/50 shadow-sm overflow-x-auto scrollbar-none">
-        <div className="flex items-center w-full justify-between relative min-w-[500px] max-w-4xl mx-auto px-4">
+        <div className="flex items-center w-full justify-between relative min-w-[360px] max-w-4xl mx-auto px-4">
           
           {/* Step 1 */}
           <button 
@@ -712,15 +794,12 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
           {/* Step 3 */}
           <button 
             type="button"
-            disabled={rawRows.length === 0}
+            disabled={rawRows.length === 0 || isAnalyzing}
             onClick={() => {
-              if (rawRows.length > 0) {
-                if (candidates.length === 0) {
-                  analyzeRowsAndProceedToStep3();
-                } else {
-                  setCurrentStep(3);
-                }
-              }
+              if (rawRows.length > 0 && candidates.length === 0 && !isAnalyzing) {
+                if (!isEmailMapped && !autoGenerateEmails) { setShowEmailWarning(true); return; }
+                analyzeRowsAndProceedToStep3();
+              } else if (candidates.length > 0) setCurrentStep(3);
             }}
             className={`flex flex-col items-center gap-1.5 z-10 bg-transparent border-0 outline-none ${
               rawRows.length > 0 ? 'cursor-pointer group' : 'cursor-not-allowed opacity-50'
@@ -776,11 +855,11 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
 
       {/* STEP 1: FILE VALIDATION & PARSING */}
       {currentStep === 1 && (
-        <div className="bg-white rounded-2xl border border-[#C9D4DE]/60 p-8 shadow-[0_6px_18px_rgba(0,0,0,0.06)] max-w-4xl mx-auto space-y-6">
+        <div className="bg-white rounded-2xl border border-[#C9D4DE]/60 p-4 sm:p-6 lg:p-8 shadow-[0_6px_18px_rgba(0,0,0,0.06)] max-w-4xl mx-auto space-y-6">
           <div className="text-center space-y-2">
             <h2 className="text-xl font-extrabold text-[#1C2529]">Étape 1 : Sélectionner le fichier de contacts</h2>
             <p className="text-xs text-[#55636B]">
-              Formats supportés : <strong className="text-[#005596]">.csv, .xlsx, .xls</strong>. Assurez-vous que la première ligne contient les en-têtes de colonnes.
+              Formats supportés : <strong className="text-[#005596]">.csv, .json, .xlsx, .xls</strong>. Assurez-vous que la première ligne contient les en-têtes de colonnes.
             </p>
           </div>
 
@@ -800,7 +879,7 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
             onDragOver={(e) => e.preventDefault()}
             onDrop={handleDrop}
             onClick={() => fileInputRef.current?.click()}
-            className={`border-3 border-dashed rounded-2xl p-10 text-center cursor-pointer transition-all space-y-4 group ${
+            className={`border-3 border-dashed rounded-2xl p-6 sm:p-10 text-center cursor-pointer transition-all space-y-4 group ${
               file && !fileError
                 ? 'border-[#005596] bg-[#E8F1F8]/40'
                 : 'border-[#005596]/50 hover:border-[#005596] bg-slate-50/50 hover:bg-[#E8F1F8]/30'
@@ -809,8 +888,8 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
             <input 
               type="file" 
               ref={fileInputRef} 
-              onChange={(e) => e.target.files?.[0] && handleFileSelect(e.target.files[0])} 
-              accept=".csv,.xlsx,.xls,.txt" 
+              onChange={(e) => e.target.files?.[0] && loadAndMapFile(e.target.files[0])} 
+              accept=".csv,.xlsx,.xls,.json,.txt" 
               className="hidden" 
             />
             
@@ -822,7 +901,7 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
               <p className="font-bold text-sm text-[#1C2529]">
                 Glissez-déposez votre fichier ici ou <span className="text-[#005596] underline">parcourez vos fichiers</span>
               </p>
-              <p className="text-xs text-[#55636B] mt-1">Accepte les fichiers .csv et Excel (.xlsx, .xls)</p>
+              <p className="text-xs text-[#55636B] mt-1">Accepte les fichiers .csv, .json et Excel (.xlsx, .xls)</p>
             </div>
           </div>
 
@@ -838,7 +917,7 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
                     <div className="flex items-center gap-2 flex-wrap">
                       <p className="font-bold text-sm text-emerald-950">{file.name}</p>
                       <span className="px-2 py-0.5 bg-emerald-200/80 text-emerald-900 text-[10px] font-extrabold rounded-md uppercase">
-                        {file.name.endsWith('.xlsx') || file.name.endsWith('.xls') ? '.xlsx / excel' : '.csv'}
+                        {file.name.endsWith('.xlsx') ? '.xlsx' : file.name.endsWith('.xls') ? '.xls' : file.name.endsWith('.json') ? '.json' : '.csv'}
                       </span>
                       <span className="text-xs text-emerald-700 font-semibold">
                         ({(file.size / 1024).toFixed(1)} KB)
@@ -847,6 +926,16 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
                     <p className="text-xs text-emerald-800 font-medium flex items-center gap-1.5">
                       <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                       {rawRows.length} lignes valides détectées • {headers.length} colonnes identifiées
+                      {sheetInfo && sheetInfo.sheetCount > 1 && (
+                        <span className="ml-2 px-1.5 py-0.5 bg-emerald-200/60 text-emerald-900 text-[10px] font-bold rounded">
+                          {sheetInfo.sheetCount} feuilles • "{sheetInfo.sheetName}"
+                        </span>
+                      )}
+                      {sheetInfo && sheetInfo.headerRowIndex > 0 && (
+                        <span className="ml-2 px-1.5 py-0.5 bg-amber-200/60 text-amber-900 text-[10px] font-bold rounded">
+                          En-têtes ligne {sheetInfo.headerRowIndex + 1}
+                        </span>
+                      )}
                     </p>
                   </div>
                 </div>
@@ -914,7 +1003,11 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
               {/* Header Mapping Table */}
               <div className="space-y-3">
                 {headers.map((header) => {
-                  const sampleValue = rawRows[0]?.originalData[header] || 'Exemple de donnée';
+                  const sampleValues = rawRows
+                    .map(r => r.originalData[header])
+                    .filter(v => v?.trim())
+                    .slice(0, 3);
+                  const display = sampleValues.length > 0 ? sampleValues : [rawRows[0]?.originalData[header] || '—'];
                   const currentMappedKey = columnMapping[header] || '__ignore__';
 
                   return (
@@ -933,8 +1026,12 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
                             </span>
                           )}
                         </div>
-                        <p className="text-xs text-slate-500 truncate" title={sampleValue}>
-                          Aperçu Ligne 1: <span className="italic font-mono text-slate-700">"{sampleValue}"</span>
+                        <p className="text-xs text-slate-500 truncate" title={display.join(' | ')}>
+                          Aperçu: <span className="italic font-mono text-slate-700">
+                            {display.map((v, i) => (
+                              <span key={i}>{i > 0 && <span className="text-slate-400 not-italic"> / </span>}"{v}"</span>
+                            ))}
+                          </span>
                         </p>
                       </div>
 
@@ -942,14 +1039,17 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
                         <span className="text-xs font-bold text-slate-400 hidden min-[1380px]:inline shrink-0">➡️</span>
                         <select
                           value={currentMappedKey}
-                          onChange={(e) => setColumnMapping(prev => ({ ...prev, [header]: e.target.value }))}
+                          onChange={(e) => handleColumnMappingChange(header, e.target.value)}
                           className="w-full max-w-full bg-white border border-[#C9D4DE] text-[#1C2529] font-semibold text-xs rounded-xl p-2.5 focus:ring-2 focus:ring-[#005596] outline-none cursor-pointer truncate"
                         >
-                          {SYSTEM_FIELDS.map(sys => (
-                            <option key={sys.key} value={sys.key} className="truncate">
-                              {sys.label}
-                            </option>
-                          ))}
+                          {SYSTEM_FIELDS.map(sys => {
+                            const disabled = isFieldTakenByOther(header, sys.key);
+                            return (
+                              <option key={sys.key} value={sys.key} className="truncate" disabled={disabled}>
+                                {sys.label}{disabled ? ' ✖ (utilisé)' : ''}
+                              </option>
+                            );
+                          })}
                         </select>
                       </div>
                     </div>
@@ -977,12 +1077,38 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
               </ul>
 
               <div className="pt-4 border-t border-slate-100 space-y-2">
+                {showEmailWarning && !isEmailMapped && (
+                  <div className="p-4 bg-amber-50 border border-amber-300 rounded-xl space-y-3">
+                    <div className="flex items-start gap-2">
+                      <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                      <div className="text-xs text-amber-900">
+                        <p className="font-bold">Aucune colonne e-mail détectée</p>
+                        <p className="mt-1">Des adresses e-mail temporaires seront générées automatiquement pour chaque contact (<code className="bg-amber-100 px-1 rounded">import_[ligne]_[id]@euraxess.africa</code>).</p>
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => { setAutoGenerateEmails(true); setShowEmailWarning(false); analyzeRowsAndProceedToStep3(); }}
+                        className="flex-1 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer"
+                      >
+                        Générer automatiquement
+                      </button>
+                      <button
+                        onClick={() => setShowEmailWarning(false)}
+                        className="flex-1 py-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 rounded-lg text-xs font-bold transition-colors cursor-pointer"
+                      >
+                        Revenir au mapping
+                      </button>
+                    </div>
+                  </div>
+                )}
                 <button
-                  onClick={analyzeRowsAndProceedToStep3}
-                  className="w-full py-3.5 bg-[#005596] hover:bg-[#004275] text-white rounded-xl font-bold text-sm shadow hover:shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer"
+                  disabled={isAnalyzing}
+                  onClick={() => { if (!isAnalyzing) { if (!isEmailMapped && !autoGenerateEmails) { setShowEmailWarning(true); return; } analyzeRowsAndProceedToStep3(); } }}
+                  className="w-full py-3.5 bg-[#005596] hover:bg-[#004275] text-white rounded-xl font-bold text-sm shadow hover:shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Lancer l'Analyse des Lignes (Étape 3)
-                  <ArrowRight className="w-4 h-4" />
+                  {isAnalyzing ? 'Analyse en cours…' : "Lancer l'Analyse des Lignes (Étape 3)"}
+                  {!isAnalyzing && <ArrowRight className="w-4 h-4" />}
                 </button>
 
                 <button
@@ -1000,14 +1126,14 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
 
       {/* STEP 3: ROW-BY-ROW ANALYSIS & CONFLICT RESOLUTION */}
       {currentStep === 3 && (
-        <div className="space-y-6">
+        <div className="space-y-4 max-w-[1440px] mx-auto">
           
           {/* Top Status Summary Bar */}
-          <div className="bg-white rounded-2xl border border-[#C9D4DE]/50 p-6 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div className="flex flex-wrap items-center gap-3">
+          <div className="bg-white rounded-2xl border border-[#C9D4DE]/50 p-3 sm:p-6 shadow-sm">
+            <div className="flex flex-wrap items-center gap-2 sm:gap-3">
               <button
                 onClick={() => setFilterStatus('all')}
-                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                className={`px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl text-[10px] sm:text-xs font-bold transition-all cursor-pointer ${
                   filterStatus === 'all' ? 'bg-[#005596] text-white shadow' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
                 }`}
               >
@@ -1016,44 +1142,44 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
               
               <button
                 onClick={() => setFilterStatus('valid')}
-                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                className={`px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl text-[10px] sm:text-xs font-bold transition-all cursor-pointer flex items-center gap-1 sm:gap-1.5 ${
                   filterStatus === 'valid' ? 'bg-emerald-700 text-white shadow' : 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100'
                 }`}
               >
-                <CheckCircle2 className="w-4 h-4" /> Valides ({validCount})
+                <CheckCircle2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> <span className="hidden sm:inline">Valides</span> ({validCount})
               </button>
 
               <button
                 onClick={() => setFilterStatus('duplicate')}
-                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                className={`px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl text-[10px] sm:text-xs font-bold transition-all cursor-pointer flex items-center gap-1 sm:gap-1.5 ${
                   filterStatus === 'duplicate' ? 'bg-amber-600 text-white shadow' : 'bg-amber-50 text-amber-900 hover:bg-amber-100'
                 }`}
               >
-                <Copy className="w-4 h-4" /> Doublons ({duplicateCount})
+                <Copy className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> <span className="hidden sm:inline">Doublons</span> ({duplicateCount})
               </button>
 
               <button
                 onClick={() => setFilterStatus('invalid')}
-                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                className={`px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl text-[10px] sm:text-xs font-bold transition-all cursor-pointer flex items-center gap-1 sm:gap-1.5 ${
                   filterStatus === 'invalid' ? 'bg-red-600 text-white shadow' : 'bg-red-50 text-red-900 hover:bg-red-100'
                 }`}
               >
-                <AlertTriangle className="w-4 h-4" /> Invalides ({invalidCount})
+                <AlertTriangle className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> <span className="hidden sm:inline">Invalides</span> ({invalidCount})
               </button>
             </div>
 
             {duplicateCount > 0 && (
-              <div className="flex items-center gap-2 text-xs bg-amber-50 border border-amber-200 p-2 rounded-xl">
-                <span className="font-bold text-amber-900">Action groupée sur les doublons :</span>
+              <div className="flex flex-wrap items-center gap-2 text-xs bg-amber-50 border border-amber-200 p-2 rounded-xl mt-2">
+                <span className="font-bold text-amber-900 text-[10px] sm:text-xs">Doublons :</span>
                 <button
                   onClick={() => handleBulkDuplicateAction('overwrite')}
-                  className="px-2.5 py-1 bg-amber-600 text-white rounded-lg font-bold hover:bg-amber-700 cursor-pointer text-[11px]"
+                  className="px-2 sm:px-2.5 py-1 bg-amber-600 text-white rounded-lg font-bold hover:bg-amber-700 cursor-pointer text-[10px] sm:text-[11px]"
                 >
                   Tout Mettre à jour
                 </button>
                 <button
                   onClick={() => handleBulkDuplicateAction('skip')}
-                  className="px-2.5 py-1 bg-slate-600 text-white rounded-lg font-bold hover:bg-slate-700 cursor-pointer text-[11px]"
+                  className="px-2 sm:px-2.5 py-1 bg-slate-600 text-white rounded-lg font-bold hover:bg-slate-700 cursor-pointer text-[10px] sm:text-[11px]"
                 >
                   Tout Ignorer
                 </button>
@@ -1063,16 +1189,16 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
 
           {/* Table of Candidates */}
           <div className="bg-white rounded-2xl border border-[#C9D4DE]/50 shadow-sm overflow-hidden">
-            <div className="overflow-x-auto text-xs border rounded-lg">
-              <table className="w-full text-left font-medium min-w-[800px]">
-                <thead>
-                  <tr className="bg-[#E8F1F8]/60 text-[#55636B] border-b border-[#C9D4DE]/40 text-[11px] font-bold uppercase">
-                    <th className="px-4 py-3 min-w-[70px]">LIGNE</th>
-                    <th className="px-4 py-3 min-w-[170px]">NOM COMPLET</th>
-                    <th className="px-4 py-3 min-w-[190px]">E-MAIL</th>
-                    <th className="px-4 py-3 min-w-[150px]">AFFILIATION</th>
-                    <th className="px-4 py-3 min-w-[140px]">STATUT</th>
-                    <th className="px-4 py-3 text-center min-w-[210px]">DECISION D'IMPORTATION</th>
+            <div className="overflow-x-auto text-xs border rounded-lg max-h-[60vh]">
+              <table className="w-full text-left font-medium">
+                <thead className="sticky top-0 z-10">
+                  <tr className="bg-[#E8F1F8]/60 text-[#55636B] border-b border-[#C9D4DE]/40 text-[10px] sm:text-[11px] font-bold uppercase">
+                    <th className="px-2 sm:px-4 py-2 sm:py-3 w-[40px]">#</th>
+                    <th className="px-2 sm:px-4 py-2 sm:py-3">NOM COMPLET</th>
+                    <th className="px-2 sm:px-4 py-2 sm:py-3">E-MAIL</th>
+                    <th className="px-2 sm:px-4 py-2 sm:py-3 hidden lg:table-cell">AFFILIATION</th>
+                    <th className="px-2 sm:px-4 py-2 sm:py-3">STATUT</th>
+                    <th className="px-2 sm:px-4 py-2 sm:py-3 text-center">ACTION</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -1084,90 +1210,90 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
                         cand.status === 'invalid' ? 'bg-red-50/40 hover:bg-red-50/80' : 'hover:bg-slate-50'
                       }`}
                     >
-                      <td className="px-4 py-3 text-slate-400 font-mono font-bold">#{cand.rowIndex}</td>
+                      <td className="px-2 sm:px-4 py-2 sm:py-3 text-slate-400 font-mono font-bold text-[10px] sm:text-xs">#{cand.rowIndex}</td>
 
                       {/* Name Editable */}
-                      <td className="px-4 py-3">
+                      <td className="px-2 sm:px-4 py-2 sm:py-3">
                         <input
                           type="text"
                           value={cand.fullName}
                           onChange={(e) => handleUpdateCandidateField(cand.id, 'fullName', e.target.value)}
-                          className="font-bold text-[#1C2529] bg-transparent border-b border-transparent hover:border-slate-300 focus:border-[#005596] focus:bg-white outline-none px-1 rounded transition-all"
+                          className="font-bold text-[#1C2529] bg-transparent border-b border-transparent hover:border-slate-300 focus:border-[#005596] focus:bg-white outline-none px-0.5 sm:px-1 rounded transition-all w-full min-w-0 text-xs sm:text-sm"
                         />
-                        <p className="text-[11px] text-slate-500 px-1">{CAREER_STAGE_LABELS[cand.researchCareerStage]} • {cand.countryOfOrigin}</p>
+                        <p className="text-[10px] sm:text-[11px] text-slate-500 px-0.5 sm:px-1 hidden sm:block">{CAREER_STAGE_LABELS[cand.researchCareerStage]} • {cand.countryOfOrigin}</p>
                       </td>
 
                       {/* Email Editable */}
-                      <td className="px-4 py-3">
+                      <td className="px-2 sm:px-4 py-2 sm:py-3">
                         <input
                           type="text"
                           value={cand.email}
                           onChange={(e) => handleUpdateCandidateField(cand.id, 'email', e.target.value)}
                           placeholder="email@domaine.org"
-                          className={`font-mono font-semibold bg-transparent border-b hover:border-slate-300 focus:bg-white outline-none px-1 rounded transition-all ${
+                          className={`font-mono font-semibold bg-transparent border-b hover:border-slate-300 focus:bg-white outline-none px-0.5 sm:px-1 rounded transition-all w-full min-w-0 text-[10px] sm:text-xs ${
                             cand.status === 'invalid' ? 'border-red-400 text-red-700' : 'border-transparent text-[#55636B] focus:border-[#005596]'
                           }`}
                         />
                       </td>
 
                       {/* Affiliation Editable */}
-                      <td className="px-4 py-3">
+                      <td className="px-2 sm:px-4 py-2 sm:py-3 hidden lg:table-cell">
                         <input
                           type="text"
                           value={cand.affiliation}
                           onChange={(e) => handleUpdateCandidateField(cand.id, 'affiliation', e.target.value)}
-                          className="text-[#55636B] bg-transparent border-b border-transparent hover:border-slate-300 focus:border-[#005596] focus:bg-white outline-none px-1 rounded transition-all"
+                          className="text-[#55636B] bg-transparent border-b border-transparent hover:border-slate-300 focus:border-[#005596] focus:bg-white outline-none px-0.5 sm:px-1 rounded transition-all w-full min-w-0 text-xs"
                         />
                       </td>
 
                       {/* Status Badge */}
-                      <td className="px-4 py-3">
+                      <td className="px-2 sm:px-4 py-2 sm:py-3 whitespace-nowrap">
                         {cand.status === 'valid' && (
-                          <span className="px-2.5 py-1 bg-emerald-100 text-emerald-800 rounded-full font-bold text-[10px] flex items-center gap-1 w-fit">
-                            <CheckCircle2 className="w-3 h-3" /> Valide
+                          <span className="px-1.5 sm:px-2.5 py-0.5 sm:py-1 bg-emerald-100 text-emerald-800 rounded-full font-bold text-[9px] sm:text-[10px] flex items-center gap-0.5 sm:gap-1 w-fit">
+                            <CheckCircle2 className="w-3 h-3" /> <span className="hidden sm:inline">Valide</span>
                           </span>
                         )}
                         {cand.status === 'duplicate' && (
                           <div className="space-y-0.5">
-                            <span className="px-2.5 py-1 bg-amber-100 text-amber-900 rounded-full font-bold text-[10px] flex items-center gap-1 w-fit">
-                              <Copy className="w-3 h-3" /> Doublon décelé
+                            <span className="px-1.5 sm:px-2.5 py-0.5 sm:py-1 bg-amber-100 text-amber-900 rounded-full font-bold text-[9px] sm:text-[10px] flex items-center gap-0.5 sm:gap-1 w-fit">
+                              <Copy className="w-3 h-3" /> <span className="hidden sm:inline">Doublon</span>
                             </span>
                             {cand.duplicateMatch && (
-                              <p className="text-[10px] text-amber-800 italic">
-                                Existe déjà: {cand.duplicateMatch.name}
+                              <p className="text-[9px] sm:text-[10px] text-amber-800 italic hidden sm:block">
+                                → {cand.duplicateMatch.name}
                               </p>
                             )}
                           </div>
                         )}
                         {cand.status === 'invalid' && (
-                          <span className="px-2.5 py-1 bg-red-100 text-red-900 rounded-full font-bold text-[10px] flex items-center gap-1 w-fit" title={cand.errorReason}>
-                            <AlertTriangle className="w-3 h-3" /> {cand.errorReason || 'Invalide'}
+                          <span className="px-1.5 sm:px-2.5 py-0.5 sm:py-1 bg-red-100 text-red-900 rounded-full font-bold text-[9px] sm:text-[10px] flex items-center gap-0.5 sm:gap-1 w-fit" title={cand.errorReason}>
+                            <AlertTriangle className="w-3 h-3" /> <span className="hidden sm:inline">{cand.errorReason || 'Invalide'}</span>
                           </span>
                         )}
                       </td>
 
                       {/* Action Decision Dropdown */}
-                      <td className="px-4 py-3 text-center">
+                      <td className="px-2 sm:px-4 py-2 sm:py-3 text-center">
                         <select
                           value={cand.resolutionAction}
                           onChange={(e) => handleCandidateResolutionChange(cand.id, e.target.value as any)}
-                          className="bg-white border border-[#C9D4DE] font-bold text-xs rounded-xl px-3 py-1.5 focus:ring-2 focus:ring-[#005596] outline-none cursor-pointer shadow-sm"
+                          className="bg-white border border-[#C9D4DE] font-bold text-[10px] sm:text-xs rounded-lg sm:rounded-xl px-1.5 sm:px-3 py-1 sm:py-1.5 focus:ring-2 focus:ring-[#005596] outline-none cursor-pointer shadow-sm max-w-full"
                         >
                           {cand.status === 'duplicate' ? (
                             <>
-                              <option value="overwrite">🔄 Mettre à jour / Fusionner</option>
-                              <option value="create_new">➕ Créer nouveau doublon</option>
-                              <option value="skip">🚫 Ignorer cette ligne</option>
+                              <option value="overwrite">Mettre à jour</option>
+                              <option value="create_new">Créer doublon</option>
+                              <option value="skip">Ignorer</option>
                             </>
                           ) : cand.status === 'invalid' ? (
                             <>
-                              <option value="skip">🚫 Ignorer (Non valide)</option>
-                              <option value="import">⚡ Tenter l'importation</option>
+                              <option value="skip">Ignorer</option>
+                              <option value="import">Importer</option>
                             </>
                           ) : (
                             <>
-                              <option value="import">✅ Importer comme nouveau</option>
-                              <option value="skip">🚫 Ignorer</option>
+                              <option value="import">Importer</option>
+                              <option value="skip">Ignorer</option>
                             </>
                           )}
                         </select>
@@ -1180,7 +1306,7 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
           </div>
 
           {/* Bottom Action CTA */}
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-[#C9D4DE]/50 shadow-sm">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 sm:gap-4 bg-white p-3 sm:p-6 rounded-2xl border border-[#C9D4DE]/50 shadow-sm">
             <button
               onClick={() => setCurrentStep(2)}
               className="px-5 py-2.5 text-slate-600 hover:text-slate-900 font-bold text-xs rounded-xl hover:bg-slate-100 transition-colors cursor-pointer flex items-center gap-2"

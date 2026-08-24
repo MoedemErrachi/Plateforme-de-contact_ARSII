@@ -208,11 +208,12 @@ function sanitizeObject(obj: any): any {
     }
     return sanitized;
   } else if (typeof obj === 'string') {
-    // Strip dangerous script tags and inline event handlers
+    // Strip dangerous script tags and inline event handlers.
+    // Only strip `javascript:` at string start (URL context), not embedded text.
     return obj
       .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
       .replace(/on\w+="[^"]*"/gi, '')
-      .replace(/javascript:/gi, '');
+      .replace(/^javascript:/gi, '');
   }
   return obj;
 }

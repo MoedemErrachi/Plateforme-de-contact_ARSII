@@ -1,9 +1,10 @@
-import React, { useState, useRef } from 'react';
-import { Camera, Upload, Check, X, Loader2, Info } from 'lucide-react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
+import { Camera, Upload, Check, X, Loader2, Info, Crop, Move } from 'lucide-react';
 import { Contact, Gender, ResearchCareerStage } from '../types';
 import { OcrResultSkeleton } from './Skeletons';
 import { apiFetch, OCR_TIMEOUT_MS, isServiceUnreachable } from '../services/api';
 import { useToast } from './Toast';
+import { uploadImage } from '../utils/upload';
 
 // Le service d'extraction (FastAPI) est appelé via le même origine que le
 // frontend : en dev le proxy Vite /chatbot-api relaie vers VITE_CHATBOT_API_URL,
@@ -84,8 +85,14 @@ export const OcrImportTab: React.FC<OcrImportTabProps> = ({ onSaveContact }) => 
 
   const [isSaving, setIsSaving] = useState(false);
   const [saveResult, setSaveResult] = useState<'success' | null>(null);
+  const [cropMode, setCropMode] = useState(false);
+  const [cropRect, setCropRect] = useState({ x: 10, y: 10, w: 80, h: 80 });
+  const [croppedPreview, setCroppedPreview] = useState<string | null>(null);
+  const [isCropping, setIsCropping] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dropRef = useRef<HTMLDivElement>(null);
+  const cropImgRef = useRef<HTMLImageElement>(null);
+  const dragRef = useRef<{ startX: number; startY: number; startRect: typeof cropRect; mode: 'move' | 'resize' } | null>(null);
 
   const reset = () => {
     setImageFile(null);
@@ -94,6 +101,10 @@ export const OcrImportTab: React.FC<OcrImportTabProps> = ({ onSaveContact }) => 
     setExtracted(null);
     setSourceProvider('');
     setPhotoUrl(null);
+    setCropMode(false);
+    setCropRect({ x: 10, y: 10, w: 80, h: 80 });
+    setCroppedPreview(null);
+    setIsCropping(false);
     setEditable({ firstName: '', lastName: '', email: '', phone: '', affiliation: '', function: '', city: '', countryOfOrigin: '' });
     setConfidence({});
     setSaveResult(null);
@@ -177,6 +188,18 @@ export const OcrImportTab: React.FC<OcrImportTabProps> = ({ onSaveContact }) => 
     setIsSaving(true);
     setSaveResult(null);
 
+    // Upload cropped image to Supabase if available
+    let persistentAvatarUrl: string | null = null;
+    if (croppedPreview) {
+      try {
+        persistentAvatarUrl = await uploadImage(croppedPreview);
+      } catch {
+        // Upload failed — save without avatar
+      }
+    } else if (photoUrl) {
+      persistentAvatarUrl = `${CHATBOT_API_PREFIX}${photoUrl}`;
+    }
+
     const contact: Contact = {
       id: '',
       firstName: editable.firstName,
@@ -191,7 +214,7 @@ export const OcrImportTab: React.FC<OcrImportTabProps> = ({ onSaveContact }) => 
       experience: '',
       facultyDepartment: '',
       researchCareerStage: 'R1_FIRST_STAGE' as ResearchCareerStage,
-      avatarUrl: photoUrl ? `${CHATBOT_API_PREFIX}${photoUrl}` : null,
+      avatarUrl: persistentAvatarUrl,
       tags: [],
     };
 
@@ -208,6 +231,75 @@ export const OcrImportTab: React.FC<OcrImportTabProps> = ({ onSaveContact }) => 
   const updateField = (key: keyof typeof editable, value: string) => {
     setEditable(prev => ({ ...prev, [key]: value }));
   };
+
+  // ── Manual crop handlers ──────────────────────────────────
+  const clampCrop = (r: typeof cropRect) => ({
+    x: Math.max(0, Math.min(100 - r.w, r.x)),
+    y: Math.max(0, Math.min(100 - r.h, r.y)),
+    w: Math.max(10, Math.min(100, r.w)),
+    h: Math.max(10, Math.min(100, r.h)),
+  });
+
+  const handleCropMouseDown = useCallback((e: React.MouseEvent, mode: 'move' | 'resize') => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragRef.current = { startX: e.clientX, startY: e.clientY, startRect: { ...cropRect }, mode };
+  }, [cropRect]);
+
+  useEffect(() => {
+    if (!cropMode) return;
+    const onMove = (e: MouseEvent) => {
+      if (!dragRef.current || !cropImgRef.current) return;
+      const img = cropImgRef.current;
+      const rect = img.getBoundingClientRect();
+      const dx = ((e.clientX - dragRef.current.startX) / rect.width) * 100;
+      const dy = ((e.clientY - dragRef.current.startY) / rect.height) * 100;
+      const s = dragRef.current.startRect;
+      if (dragRef.current.mode === 'move') {
+        setCropRect(clampCrop({ x: s.x + dx, y: s.y + dy, w: s.w, h: s.h }));
+      } else {
+        setCropRect(clampCrop({ x: s.x, y: s.y, w: Math.max(10, s.w + dx), h: Math.max(10, s.h + dy) }));
+      }
+    };
+    const onUp = () => { dragRef.current = null; };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+    return () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    };
+  }, [cropMode]);
+
+  const applyCrop = useCallback(async () => {
+    if (!imagePreview) return;
+    setIsCropping(true);
+    try {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      await new Promise<void>((resolve, reject) => {
+        img.onload = () => resolve();
+        img.onerror = () => reject(new Error('Failed to load image'));
+        img.src = imagePreview;
+      });
+      const sx = (cropRect.x / 100) * img.naturalWidth;
+      const sy = (cropRect.y / 100) * img.naturalHeight;
+      const sw = (cropRect.w / 100) * img.naturalWidth;
+      const sh = (cropRect.h / 100) * img.naturalHeight;
+      const canvas = document.createElement('canvas');
+      canvas.width = sw;
+      canvas.height = sh;
+      const ctx = canvas.getContext('2d')!;
+      ctx.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
+      setCroppedPreview(dataUrl);
+      setCropMode(false);
+      showToast('Photo recadrée avec succès.', 'success');
+    } catch {
+      showToast('Échec du recadrage.', 'error');
+    } finally {
+      setIsCropping(false);
+    }
+  }, [imagePreview, cropRect, showToast]);
 
   const fields: { key: keyof typeof editable; label: string }[] = [
     { key: 'firstName', label: 'Prénom' },
@@ -313,15 +405,66 @@ export const OcrImportTab: React.FC<OcrImportTabProps> = ({ onSaveContact }) => 
           </div>
 
           {/* Photo de profil détectée automatiquement par le service */}
-          {photoUrl ? (
+          {(photoUrl || croppedPreview) ? (
             <div className="p-3 bg-[#E8F1F8]/40 rounded-xl flex items-center gap-3">
-              <img src={`${CHATBOT_API_PREFIX}${photoUrl}`} alt="Photo détectée" className="w-12 h-12 rounded-full object-cover border-2 border-[#005596]/30" />
-              <span className="text-xs text-[#55636B] font-medium">Photo de profil détectée automatiquement</span>
+              <img src={croppedPreview || `${CHATBOT_API_PREFIX}${photoUrl}`} alt="Photo détectée" className="w-12 h-12 rounded-full object-cover border-2 border-[#005596]/30" />
+              <span className="text-xs text-[#55636B] font-medium">
+                {croppedPreview ? 'Photo recadrée manuellement' : 'Photo de profil détectée automatiquement'}
+              </span>
+              {croppedPreview && (
+                <button onClick={() => setCroppedPreview(null)} className="text-xs text-[#55636B] hover:text-red-600 underline ml-auto">Annuler le recadrage</button>
+              )}
+            </div>
+          ) : cropMode ? (
+            <div className="space-y-3">
+              <p className="text-xs font-bold text-[#55636B] flex items-center gap-1.5"><Move className="w-3.5 h-3.5" /> Déplacez et redimensionnez le cadre de recadrage</p>
+              <div className="relative inline-block max-w-full rounded-xl overflow-hidden border border-[#C9D4DE]/50 select-none">
+                <img ref={cropImgRef} src={imagePreview || ''} alt="Recadrage" className="block max-h-[50vh] w-full object-contain pointer-events-none" draggable={false} />
+                {/* Dark overlay */}
+                <div className="absolute inset-0 pointer-events-none" style={{
+                  background: `linear-gradient(to right, rgba(0,0,0,0.55) ${cropRect.x}%, transparent ${cropRect.x}%, transparent ${cropRect.x + cropRect.w}%, rgba(0,0,0,0.55) ${cropRect.x + cropRect.w}%),
+                    linear-gradient(to bottom, rgba(0,0,0,0.55) ${cropRect.y}%, transparent ${cropRect.y}%, transparent ${cropRect.y + cropRect.h}%, rgba(0,0,0,0.55) ${cropRect.y + cropRect.h}%)`
+                }} />
+                {/* Crop frame */}
+                <div
+                  className="absolute border-2 border-white/90 cursor-move shadow-lg"
+                  style={{ left: `${cropRect.x}%`, top: `${cropRect.y}%`, width: `${cropRect.w}%`, height: `${cropRect.h}%` }}
+                  onMouseDown={e => handleCropMouseDown(e, 'move')}
+                >
+                  {/* Resize handle (bottom-right corner) */}
+                  <div
+                    className="absolute bottom-0 right-0 w-4 h-4 cursor-se-resize"
+                    onMouseDown={e => handleCropMouseDown(e, 'resize')}
+                  >
+                    <div className="absolute bottom-1 right-1 w-2.5 h-2.5 border-r-2 border-b-2 border-white/80" />
+                  </div>
+                  {/* Corner marks */}
+                  {['top-left', 'top-right', 'bottom-left'].map(pos => (
+                    <div key={pos} className={`absolute w-3 h-3 border-white/60 ${
+                      pos === 'top-left' ? 'top-0 left-0 border-t-2 border-l-2' :
+                      pos === 'top-right' ? 'top-0 right-0 border-t-2 border-r-2' :
+                      'bottom-0 left-0 border-b-2 border-l-2'
+                    }`} />
+                  ))}
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <button onClick={applyCrop} disabled={isCropping} className="flex items-center gap-2 px-4 py-2 bg-[#005596] text-white text-xs font-bold rounded-lg hover:bg-[#003d6d] disabled:opacity-50">
+                  {isCropping ? <Loader2 className="w-4 h-4 animate-spin" /> : <Crop className="w-4 h-4" />}
+                  {isCropping ? 'Recadrage...' : 'Appliquer le recadrage'}
+                </button>
+                <button onClick={() => setCropMode(false)} className="px-3 py-2 text-xs font-bold text-[#55636B] hover:text-red-600 transition-colors">Annuler</button>
+              </div>
             </div>
           ) : (
             <div className="p-3 bg-slate-50 rounded-xl flex items-center gap-3">
               <div className="w-12 h-12 rounded-full bg-slate-200 flex items-center justify-center text-slate-400 text-xs font-bold">N/A</div>
               <span className="text-xs text-[#55636B] font-medium">Aucune photo détectée</span>
+              {imagePreview && (
+                <button onClick={() => { setCropMode(true); setCropRect({ x: 10, y: 10, w: 80, h: 80 }); }} className="ml-auto flex items-center gap-1.5 px-3 py-1.5 bg-[#005596]/10 text-[#005596] text-xs font-bold rounded-lg hover:bg-[#005596]/20 transition-colors">
+                  <Crop className="w-3.5 h-3.5" /> Recadrer manuellement
+                </button>
+              )}
             </div>
           )}
 

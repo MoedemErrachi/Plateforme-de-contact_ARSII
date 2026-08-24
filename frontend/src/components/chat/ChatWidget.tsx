@@ -392,16 +392,7 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ getToken }) => {
       const tokenInfo = getToken ? { token: getToken() ?? '', source: 'getToken prop' } : resolveAuthToken();
       const token = tokenInfo.token || null;
       if (!token) {
-        setMessages(prev => [
-          ...prev,
-          { id: generateSessionId(), role: 'user', content: text },
-          {
-            id: generateSessionId(),
-            role: 'assistant',
-            content: "Vous devez être connecté pour utiliser l'assistant IA. Veuillez rafraîchir la page ou vous reconnecter.",
-            isError: true
-          }
-        ]);
+        showToast("Vous devez être connecté pour utiliser l'assistant IA.", 'error');
         return;
       }
       setMessages(prev => [
@@ -460,17 +451,13 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ getToken }) => {
       } catch (err) {
         // Normalisation centralisée : plus aucun « Failed to fetch » brut.
         const apiErr = toApiError(err);
-        if (isServiceUnreachable(apiErr)) {
-          setServiceStatus('offline');
-          showToast('Assistant IA momentanément indisponible. Veuillez réessayer plus tard.', 'error');
-        }
         const content = apiErr.kind === 'server' || apiErr.kind === 'network' || apiErr.kind === 'timeout'
           ? 'Le service d\'assistance est actuellement injoignable. Veuillez réessayer dans un instant.'
           : apiErr.message;
-        setMessages(prev => [
-          ...prev,
-          { id: generateSessionId(), role: 'assistant', content, isError: true }
-        ]);
+        showToast(content, 'error');
+        if (isServiceUnreachable(apiErr)) {
+          setServiceStatus('offline');
+        }
       } finally {
         // Nettoyage unique : abort() sur un contrôleur déjà stabilisé est un no-op.
         clearTimeout(timeout);
@@ -512,7 +499,7 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ getToken }) => {
           // journalisation non bloquante
         }
       } catch (err) {
-        console.error('Export CSV failed:', err);
+        showToast('Export CSV échoué. Veuillez réessayer.', 'error');
       }
     },
     []

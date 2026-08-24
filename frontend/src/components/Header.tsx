@@ -120,7 +120,7 @@ export const Header: React.FC<HeaderProps> = ({
           {isAuthenticated ? (
             <div className="relative" ref={profileRef}>
               <button
-                onClick={() => setProfileDropdownOpen(!profileDropdownOpen)}
+                onClick={() => { setProfileDropdownOpen(!profileDropdownOpen); setMobileMenuOpen(false); }}
                 className="flex items-center gap-2 p-1 rounded-full border-2 border-white/30 hover:border-white transition-all cursor-pointer"
               >
                 <div className="w-8 h-8 rounded-full overflow-hidden bg-white/20 flex items-center justify-center">
@@ -220,7 +220,15 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
       </div>
 
-      {/* Mobile Drawer Menu - Positioned Absolute so it floats over page content */}
+      {/* Mobile Drawer Backdrop */}
+      {mobileMenuOpen && (
+        <div
+          onClick={() => setMobileMenuOpen(false)}
+          className="md:hidden fixed inset-0 top-16 bg-slate-900/50 backdrop-blur-xs z-40 animate-in fade-in duration-200"
+        />
+      )}
+
+      {/* Mobile Drawer Menu */}
       {mobileMenuOpen && (
         <div className="md:hidden absolute top-full left-0 right-0 w-full bg-gradient-to-r from-[#005596] to-[#B8167C] border-t border-white/10 px-4 py-4 space-y-2 shadow-2xl z-[100] animate-in fade-in slide-in-from-top-2 duration-150">
           {navLinks.map((link) => (
@@ -235,23 +243,6 @@ export const Header: React.FC<HeaderProps> = ({
               {link.label}
             </NavLink>
           ))}
-          <div className="pt-2 border-t border-white/10 flex flex-col gap-2">
-            {user?.role !== 'admin' && canCreate(user) && (
-              <Link
-                to="/contacts/new"
-                onClick={() => setMobileMenuOpen(false)}
-                className="w-full text-left py-2 px-3 rounded-lg text-xs bg-[#FFC20C] text-[#1C2529] font-bold flex items-center gap-2 cursor-pointer"
-              >
-                <PlusCircle className="w-4 h-4" /> Ajouter un expert
-              </Link>
-            )}
-            <button
-              onClick={() => { setMobileMenuOpen(false); onExportAll?.(); }}
-              className="w-full text-left py-2 px-3 rounded-lg text-xs border border-white/30 hover:bg-white/10 flex items-center gap-2 cursor-pointer"
-            >
-              <Download className="w-4 h-4" /> Exporter la base
-            </button>
-          </div>
         </div>
       )}
     </header>
