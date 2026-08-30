@@ -4,6 +4,7 @@ import cookieParser from 'cookie-parser';
 import apiRouter from './routes';
 import { errorHandler } from './middleware/errorHandler';
 import { authenticateJWT } from './middleware/authenticateJWT';
+import { setupSwagger } from './docs/setupSwagger';
 import {
   helmetMiddleware,
   globalApiRateLimiter,
@@ -66,6 +67,12 @@ export function createApp() {
     }
     authenticateJWT(req, res, next);
   });
+
+  // 6bis. Documentation Swagger — LOCAL UNIQUEMENT.
+  // NODE_ENV=production sur Render : la route /api-docs n'est jamais montée.
+  if (process.env.NODE_ENV !== 'production') {
+    setupSwagger(app);
+  }
 
   // 7. API Route Handlers
   app.use('/api', apiRouter);

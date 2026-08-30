@@ -15,10 +15,85 @@ const savedSearchSchema = z.object({
 });
 
 /**
- * Requêtes de recherche sauvegardées — strictement privées par utilisateur.
- * GET    /api/searches        → liste des recherches de l'utilisateur
- * POST   /api/searches        → création ({ name, filters })
- * DELETE /api/searches/:id    → suppression (propriétaire uniquement)
+ * @openapi
+ * /api/searches:
+ *   get:
+ *     tags: [Recherches]
+ *     summary: Liste les recherches sauvegardées de l'utilisateur
+ *     description: Strictement privées par utilisateur (filtre via le JWT).
+ *     responses:
+ *       '200':
+ *         description: Recherches sauvegardées.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status: { type: string, enum: [success] }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     searches:
+ *                       type: array
+ *                       items: { $ref: '#/components/schemas/SavedSearch' }
+ *   post:
+ *     tags: [Recherches]
+ *     summary: Sauvegarde une recherche
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [name, filters]
+ *             properties:
+ *               name: { type: string, maxLength: 100, example: Recherche doctorants Sénégal }
+ *               filters:
+ *                 type: object
+ *                 additionalProperties: true
+ *                 description: Critères de filtrage (mêmes que `GET /api/contacts`).
+ *     responses:
+ *       '201':
+ *         description: Recherche sauvegardée.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status: { type: string, enum: [success] }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     search: { $ref: '#/components/schemas/SavedSearch' }
+ * /api/searches/{id}:
+ *   delete:
+ *     tags: [Recherches]
+ *     summary: Supprime une recherche sauvegardée
+ *     description: Le propriétaire uniquement (404 si la recherche n'existe pas ou appartient à un autre utilisateur).
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       '200':
+ *         description: Recherche supprimée.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status: { type: string, enum: [success] }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     success: { type: boolean, example: true }
+ *       '404':
+ *         description: Recherche introuvable.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.get('/', async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {

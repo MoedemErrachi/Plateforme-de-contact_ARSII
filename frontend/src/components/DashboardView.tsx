@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { Modal } from './Modal';
 import { DistributionChart, DistributionServerData } from './DistributionChart';
+import { WorldMapWidget } from './WorldMapWidget';
 import { apiFetch, isServiceUnreachable } from '../services/api';
 import { canCreate } from '../utils/privileges';
 
@@ -29,9 +30,10 @@ interface DashboardStats {
     affiliationsCount: number;
     seniorResearchers: { count: number; percentage: number };
   };
-  distributionByCountry: { country: string; count: number; percentage: number }[];
+  distributionByCountry: { country: string; iso2: string | null; count: number; percentage: number }[];
   distributionByGender: { gender: string; count: number; percentage: number }[];
-  distributionByCountryGender: { country: string; gender: string; count: number }[];
+  distributionByCountryGender: { country: string; iso2: string | null; gender: string; count: number }[];
+  countryLabels: { iso2: string; country: string }[];
   distributionByCareerStage: { careerStage: string; count: number; percentage: number }[];
   distributionByTag: { tagId: string; name: string; color: string; count: number }[];
 }
@@ -53,10 +55,15 @@ export interface WidgetConfig {
 
 const DEFAULT_WIDGETS: WidgetConfig[] = [
   { id: 'stats', title: 'Indicateurs clés (KPIs)', visible: true, order: 0 },
-  { id: 'distributionChart', title: 'Distribution Pays & Genre', visible: true, order: 1 },
-  { id: 'careerStage', title: 'Stades de carrière de recherche', visible: true, order: 2 },
-  { id: 'topTags', title: 'Top Expertises & Tags', visible: true, order: 3 },
+  { id: 'worldMap', title: 'Carte des pays d\'origine', visible: true, order: 1 },
+  { id: 'distributionChart', title: 'Distribution Pays & Genre', visible: true, order: 2 },
+  { id: 'careerStage', title: 'Stades de carrière de recherche', visible: true, order: 3 },
+  { id: 'topTags', title: 'Top Expertises & Tags', visible: true, order: 4 },
 ];
+
+// Version de la disposition pour migrations ponctuelles des configs sauvegardées.
+const LAYOUT_VERSION = '2';
+const LAYOUT_VERSION_KEY = 'euraxess_dashboard_widgets_layout_v';
 
 const CAREER_STAGE_ORDER: ResearchCareerStage[] = [
   'R1_FIRST_STAGE',
@@ -111,7 +118,26 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           savedMap.forEach((w, id) => {
             if (!mergedIds.has(id)) merged.push(w);
           });
-          return merged.sort((a, b) => a.order - b.order);
+
+          let final = merged.sort((a, b) => a.order - b.order);
+
+          // Migration unique : la carte mondiale passe en 2e position (juste après les KPIs).
+          if (localStorage.getItem(LAYOUT_VERSION_KEY) !== LAYOUT_VERSION) {
+            const statsIdx = final.findIndex(w => w.id === 'stats');
+            const mapIdx = final.findIndex(w => w.id === 'worldMap');
+            if (statsIdx !== -1 && mapIdx !== -1 && mapIdx !== statsIdx + 1) {
+              const [mapWidget] = final.splice(mapIdx, 1);
+              final.splice(statsIdx + 1, 0, mapWidget);
+            }
+            final = final.map((w, i) => ({ ...w, order: i }));
+            try {
+              localStorage.setItem(LAYOUT_VERSION_KEY, LAYOUT_VERSION);
+            } catch {
+              // ignore
+            }
+          }
+
+          return final;
         }
       }
     } catch (e) {
@@ -160,6 +186,40 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const [draggedWidgetId, setDraggedWidgetId] = useState<string | null>(null);
   const [dragOverWidgetId, setDragOverWidgetId] = useState<string | null>(null);
 
+  // Auto-scroll global pendant le drag : le header fixe (z-50, 64 px) intercepte
+  // les `dragover` sur tous les widgets du haut de page, ce qui bloquait la
+  // remontée d'un widget. Un écouteur posé sur `document` scrolle le window
+  // même quand le pointeur est au-dessus du navbar.
+  useEffect(() => {
+    if (!draggedWidgetId) return;
+
+    const onGlobalDragOver = (e: DragEvent) => {
+      e.preventDefault();
+      const EDGE_TOP = 96; // hauteur navbar (64) + marge
+      const EDGE_BOTTOM = 80;
+      if (e.clientY < EDGE_TOP && window.scrollY > 0) {
+        window.scrollBy(0, -18);
+      } else if (
+        e.clientY > window.innerHeight - EDGE_BOTTOM &&
+        window.scrollY < document.documentElement.scrollHeight - window.innerHeight
+      ) {
+        window.scrollBy(0, 18);
+      }
+    };
+
+    const onDragEnd = () => {
+      setDraggedWidgetId(null);
+      setDragOverWidgetId(null);
+    };
+
+    document.addEventListener('dragover', onGlobalDragOver);
+    document.addEventListener('dragend', onDragEnd);
+    return () => {
+      document.removeEventListener('dragover', onGlobalDragOver);
+      document.removeEventListener('dragend', onDragEnd);
+    };
+  }, [draggedWidgetId]);
+
   // Reorder Widget Up/Down
   const moveWidget = (id: string, direction: 'up' | 'down') => {
     const sorted = [...widgets].sort((a, b) => a.order - b.order);
@@ -175,10 +235,26 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     sorted[targetIndex].order = tempOrder;
 
     setWidgets([...sorted]);
+
+    // Hors du panneau de personnalisation, on ramène le widget déplacé dans la
+    // vue pour qu'il ne « saute » pas hors de la hauteur d'écran.
+    if (!isCustomizeModalOpen) {
+      requestAnimationFrame(() => {
+        const el = document.querySelector(`[data-widget-id="${id}"]`);
+        el?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      });
+    }
   };
 
   // Drag and Drop handlers
   const handleDragStart = (e: React.DragEvent, id: string) => {
+    // Le déplacement de la vue carte est géré par ECharts (pan/zoom) :
+    // si le drag démarre sur la carte, on annule le déplacement du widget.
+    const hit = document.elementFromPoint(e.clientX, e.clientY);
+    if (hit && hit instanceof Element && hit.closest('[data-map-pan]')) {
+      e.preventDefault();
+      return;
+    }
     e.dataTransfer.setData('text/plain', id);
     e.dataTransfer.effectAllowed = 'move';
     setDraggedWidgetId(id);
@@ -415,7 +491,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
           if (widget.id === 'stats') {
             return (
-              <div key="stats" {...dragProps} className={`space-y-3 ${dragStyleClass}`}>
+              <div key="stats" data-widget-id="stats" {...dragProps} className={`space-y-3 ${dragStyleClass}`}>
                 <div className="flex justify-between items-center text-xs font-bold text-slate-500 uppercase tracking-wider px-1">
                   <div className="flex items-center gap-2 cursor-grab active:cursor-grabbing py-1 px-2 hover:bg-white/60 rounded-lg transition-colors">
                     <GripVertical className="w-4 h-4 text-slate-400" />
@@ -484,7 +560,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
           if (widget.id === 'distributionChart') {
             return (
-              <div key="distributionChart" {...dragProps} className={`relative overflow-hidden bg-white p-6 rounded-2xl shadow-[0_6px_18px_rgba(0,0,0,0.06)] border border-[#C9D4DE]/30 space-y-4 ${dragStyleClass}`}>
+              <div key="distributionChart" data-widget-id="distributionChart" {...dragProps} className={`relative overflow-hidden bg-white p-6 rounded-2xl shadow-[0_6px_18px_rgba(0,0,0,0.06)] border border-[#C9D4DE]/30 space-y-4 ${dragStyleClass}`}>
                 {isLoading && <WidgetLoadingVeil label="Rechargement de la distribution" />}
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 border-b border-slate-100 pb-3">
                   <div className="flex items-center gap-2 cursor-grab active:cursor-grabbing py-1 px-1 rounded-lg hover:bg-slate-50 transition-colors">
@@ -500,7 +576,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
           if (widget.id === 'careerStage') {
             return (
-              <div key="careerStage" {...dragProps} className={`relative overflow-hidden bg-white p-6 rounded-2xl shadow-[0_6px_18px_rgba(0,0,0,0.06)] border border-[#C9D4DE]/30 space-y-4 ${dragStyleClass}`}>
+              <div key="careerStage" data-widget-id="careerStage" {...dragProps} className={`relative overflow-hidden bg-white p-6 rounded-2xl shadow-[0_6px_18px_rgba(0,0,0,0.06)] border border-[#C9D4DE]/30 space-y-4 ${dragStyleClass}`}>
                 {isLoading && <WidgetLoadingVeil label="Rechargement des stades de carrière" />}
                 <div className="flex justify-between items-center border-b border-slate-100 pb-3">
                   <div className="flex items-center gap-2 cursor-grab active:cursor-grabbing py-1 px-1 rounded-lg hover:bg-slate-50 transition-colors">
@@ -554,7 +630,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
           if (widget.id === 'topTags') {
             return (
-              <div key="topTags" {...dragProps} className={`relative overflow-hidden bg-white p-6 rounded-2xl shadow-[0_6px_18px_rgba(0,0,0,0.06)] border border-[#C9D4DE]/30 space-y-4 ${dragStyleClass}`}>
+              <div key="topTags" data-widget-id="topTags" {...dragProps} className={`relative overflow-hidden bg-white p-6 rounded-2xl shadow-[0_6px_18px_rgba(0,0,0,0.06)] border border-[#C9D4DE]/30 space-y-4 ${dragStyleClass}`}>
                 {isLoading && <WidgetLoadingVeil label="Rechargement des expertises" />}
                 <div className="flex justify-between items-center border-b border-slate-100 pb-3">
                   <div className="flex items-center gap-2 cursor-grab active:cursor-grabbing py-1 px-1 rounded-lg hover:bg-slate-50 transition-colors">
@@ -584,6 +660,26 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     </div>
                   ))}
                 </div>
+              </div>
+            );
+          }
+
+if (widget.id === 'worldMap') {
+            return (
+              <div key="worldMap" data-widget-id="worldMap" {...dragProps} className={`relative overflow-hidden bg-white p-6 rounded-2xl shadow-[0_6px_18px_rgba(0,0,0,0.06)] border border-[#C9D4DE]/30 space-y-4 ${dragStyleClass}`}>
+                {isLoading && <WidgetLoadingVeil label="Rechargement de la carte" />}
+                <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                  <div className="flex items-center gap-2 cursor-grab active:cursor-grabbing py-1 px-1 rounded-lg hover:bg-slate-50 transition-colors">
+                    <GripVertical className="w-4 h-4 text-slate-400" />
+                    <h3 className="text-lg font-bold text-[#1C2529]">Carte des pays d'origine</h3>
+                  </div>
+                  {widgetHeaderActions('worldMap')}
+                </div>
+                <WorldMapWidget
+                  distributionByCountry={stats?.distributionByCountry ?? []}
+                  distributionByCountryGender={stats?.distributionByCountryGender ?? []}
+                  countryLabels={stats?.countryLabels ?? []}
+                />
               </div>
             );
           }

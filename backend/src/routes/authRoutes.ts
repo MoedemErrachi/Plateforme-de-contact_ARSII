@@ -6,6 +6,260 @@ import { issueCsrfToken, isValidSignedCsrfToken } from '../middleware/security';
 import { sendPasswordResetEmail } from '../services/emailService';
 import crypto from 'crypto';
 
+/**
+ * @openapi
+ * /api/auth/csrf-token:
+ *   get:
+ *     tags: [Auth]
+ *     security: []
+ *     summary: Récupère ou émet le jeton CSRF
+ *     description: Renvoie un token CSRF valide (double-submit cookie) et pose le cookie `XSRF-TOKEN` si absent.
+ *     responses:
+ *       '200':
+ *         description: Token CSRF prêt à l'emploi.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               required: [csrfToken]
+ *               properties:
+ *                 csrfToken:
+ *                   type: string
+ *                   description: Token à renvoyer dans l'en-tête X-CSRF-Token en production.
+ * /api/auth/login:
+ *   post:
+ *     tags: [Auth]
+ *     security: []
+ *     summary: Connexion
+ *     description: Vérifie les identifiants, pose le cookie HttpOnly `accessToken` et renvoie le JWT (pour Swagger/Authorize).
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/LoginRequest'
+ *     responses:
+ *       '200':
+ *         description: Connexion réussie.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/LoginResponse'
+ *       '400':
+ *         description: Email et/ou mot de passe manquants.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '401':
+ *         description: Identifiants invalides.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ * /api/auth/me:
+ *   get:
+ *     tags: [Auth]
+ *     summary: Profil de la session courante
+ *     description: Renvoie les informations de l'utilisateur authentifié (relues depuis la base).
+ *     responses:
+ *       '200':
+ *         description: Profil utilisateur.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 authenticated:
+ *                   type: boolean
+ *                 mustChangePassword:
+ *                   type: boolean
+ *                 user:
+ *                   $ref: '#/components/schemas/User'
+ *       '401':
+ *         description: Jeton manquant ou invalide.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ * /api/auth/profile:
+ *   put:
+ *     tags: [Auth]
+ *     summary: Met à jour le profil (nom / email / avatar)
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [name]
+ *             properties:
+ *               name:
+ *                 type: string
+ *                 example: Awa Diop
+ *               email:
+ *                 type: string
+ *                 format: email
+ *               avatarUrl:
+ *                 type: string
+ *                 nullable: true
+ *     responses:
+ *       '200':
+ *         description: Profil mis à jour (nouveau cookie émis).
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 user:
+ *                   $ref: '#/components/schemas/User'
+ *       '400':
+ *         description: Nom requis, email invalide ou déjà utilisé.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ * /api/auth/change-password:
+ *   put:
+ *     tags: [Auth]
+ *     summary: Change le mot de passe de l'utilisateur connecté
+ *     description: Exige le mot de passe actuel (sauf première connexion) et invalide les anciens jetons (tokenVersion++).
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               currentPassword:
+ *                 type: string
+ *                 format: password
+ *               newPassword:
+ *                 type: string
+ *                 format: password
+ *                 minLength: 8
+ *     responses:
+ *       '200':
+ *         description: Mot de passe modifié, nouveau JWT renvoyé.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 token:
+ *                   type: string
+ *       '400':
+ *         description: Mot de passe actuel incorrect ou trop court.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ * /api/auth/first-login/acknowledge:
+ *   post:
+ *     tags: [Auth]
+ *     summary: Ignore l'invite de première connexion
+ *     description: Passe l'utilisateur de l'état « premier mot de passe à changer » à connecté.
+ *     responses:
+ *       '200':
+ *         description: Invite abandonnée.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ * /api/auth/forgot-password:
+ *   post:
+ *     tags: [Auth]
+ *     security: []
+ *     summary: Demande un lien de réinitialisation par email
+ *     description: Envoie (best-effort) un email contenant le lien de réinitialisation. Renvoie toujours le même message pour ne pas divulguer l'existence du compte.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [email]
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *     responses:
+ *       '200':
+ *         description: Demande traitée.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ * /api/auth/reset-password:
+ *   post:
+ *     tags: [Auth]
+ *     security: []
+ *     summary: Réinitialise le mot de passe via le jeton reçu par email
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [token, newPassword]
+ *             properties:
+ *               token:
+ *                 type: string
+ *                 description: Jeton présent dans l'URL du lien envoyé par email.
+ *               newPassword:
+ *                 type: string
+ *                 format: password
+ *                 minLength: 8
+ *     responses:
+ *       '200':
+ *         description: Mot de passe réinitialisé avec succès.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *       '400':
+ *         description: Lien invalide, expiré ou déjà utilisé.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ * /api/auth/logout:
+ *   post:
+ *     tags: [Auth]
+ *     security: []
+ *     summary: Déconnexion
+ *     description: Efface le cookie de session HttpOnly. Le client doit aussi purger son jeton local.
+ *     responses:
+ *       '200':
+ *         description: Déconnexion réussie.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ */
+
 const router = Router();
 
 // GET /api/auth/csrf-token (Retrieve or issue CSRF Token)

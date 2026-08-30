@@ -6,6 +6,39 @@ const router = Router();
 const DB_CHECK_TIMEOUT_MS = 3000;
 
 /**
+ * @openapi
+ * /api/health:
+ *   get:
+ *     tags: [Système]
+ *     security: []
+ *     summary: Sonde de santé
+ *     description: Vérifie la joignabilité de la base de données (public, utilisé par les load balancers).
+ *     responses:
+ *       '200':
+ *         description: Service sain, base connectée.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status: { type: string, enum: [healthy] }
+ *                 database: { type: string, enum: [connected] }
+ *                 uptime: { type: number }
+ *                 timestamp: { type: string, format: date-time }
+ *       '503':
+ *         description: Base inaccessible.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status: { type: string, enum: [unhealthy] }
+ *                 database: { type: string, enum: [disconnected] }
+ *                 uptime: { type: number }
+ *                 timestamp: { type: string, format: date-time }
+ */
+
+/**
  * GET /api/health — sonde de santé publique (load balancers, monitoring).
  * Vérifie la joignabilité de la base avec un timeout court ; ne lève jamais
  * vers le errorHandler : répond toujours du JSON structuré.

@@ -11,6 +11,139 @@ const router = Router();
 // All admin routes require authentication + admin role
 router.use(authenticateJWT, authorizeRole('admin'));
 
+/**
+ * @openapi
+ * /api/admin/users:
+ *   get:
+ *     tags: [Admin]
+ *     summary: Liste tous les utilisateurs
+ *     description: Rôle admin requis.
+ *     responses:
+ *       '200':
+ *         description: Liste des utilisateurs.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 users:
+ *                   type: array
+ *                   items: { $ref: '#/components/schemas/User' }
+ *       '403':
+ *         description: Accès réservé aux administrateurs.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *   post:
+ *     tags: [Admin]
+ *     summary: Crée un utilisateur (mot de passe temporaire)
+ *     description: Rôle admin requis. Envoie un email best-effort avec les identifiants temporaires.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [name, email]
+ *             properties:
+ *               name: { type: string, example: Amina Traoré }
+ *               email: { type: string, format: email }
+ *               role: { type: string, enum: [admin, user], default: user }
+ *               privilege: { type: string, enum: [READ, READ_WRITE, FULL_ACCESS] }
+ *     responses:
+ *       '201':
+ *         description: Utilisateur créé. `temporaryPassword` n'apparaît qu'en cas d'échec d'envoi d'email de secours.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 user: { $ref: '#/components/schemas/User' }
+ *                 temporaryPassword:
+ *                   type: string
+ *                   description: Mot de passe temporaire (message de secours).
+ *                 message: { type: string }
+ *       '400':
+ *         description: Nom/email manquant, email invalide, privilège invalide ou email déjà utilisé.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ * /api/admin/users/{id}:
+ *   put:
+ *     tags: [Admin]
+ *     summary: Met à jour le rôle / privilège d'un utilisateur
+ *     description: Rôle admin requis. Il est impossible de retirer votre propre rôle admin.
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               privilege: { type: string, enum: [READ, READ_WRITE, FULL_ACCESS] }
+ *               role: { type: string, enum: [admin, user] }
+ *     responses:
+ *       '200':
+ *         description: Utilisateur mis à jour.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 user: { $ref: '#/components/schemas/User' }
+ *                 message: { type: string }
+ *       '400':
+ *         description: Aucune modification fournie, valeurs invalides, ou retrait de son propre rôle admin.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '404':
+ *         description: Utilisateur introuvable.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *   delete:
+ *     tags: [Admin]
+ *     summary: Supprime un utilisateur
+ *     description: Rôle admin requis. Impossible de supprimer son propre compte.
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       '200':
+ *         description: Utilisateur supprimé.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 deletedId: { type: string, format: uuid }
+ *       '400':
+ *         description: Tentative de suppression de son propre compte.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '404':
+ *         description: Utilisateur introuvable.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
+
 // GET /api/admin/users — List all users
 router.get('/users', async (_req: AuthenticatedRequest, res: Response) => {
   try {

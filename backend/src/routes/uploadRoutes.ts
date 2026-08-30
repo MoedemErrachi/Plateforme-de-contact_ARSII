@@ -7,6 +7,51 @@ const router = Router();
 
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5MB
 
+/**
+ * @openapi
+ * /api/uploads/avatar:
+ *   post:
+ *     tags: [Uploads]
+ *     summary: Enregistre un avatar (Supabase Storage)
+ *     description: "Accepte une image PNG/JPEG/WebP encodée en data URL (base64), vérifie la signature binaire et renvoie l'URL publique. Taille maximale : 5 Mo."
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [dataUrl]
+ *             properties:
+ *               dataUrl:
+ *                 type: string
+ *                 description: "Image au format `data:image/png;base64,…`"
+ *                 example: 'data:image/png;base64,iVBORw0KGgo='
+ *     responses:
+ *       '201':
+ *         description: Image enregistrée.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status: { type: string, enum: [success] }
+ *                 url:
+ *                   type: string
+ *                   description: URL publique de l'avatar.
+ *       '400':
+ *         description: Image manquante, invalide, non autorisée ou trop volumineuse.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '500':
+ *         description: Échec de l'upload vers Supabase.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
+
 const MIME_TO_EXT: Record<string, string> = {
   'image/png': 'png',
   'image/jpeg': 'jpg',

@@ -1,0 +1,134 @@
+% ═══════════════════════════════════════════════════════════════════
+% CHAPITRE 4 : RÉALISATION
+% ═══════════════════════════════════════════════════════════════════
+
+\chapter{Réalisation}
+
+Ce chapitre décrit la mise en œuvre concrète de la solution conçue au chapitre 3. Après la présentation de l'environnement technique, il détaille la réalisation des modules, avec une attention particulière portée au module d'administration et au module de numérisation OCR, puis expose les difficultés techniques rencontrées et les solutions apportées.
+
+\section{Environnement technique}
+
+La réalisation s'appuie sur l'architecture trois-tiers définie au chapitre précédent. Le tableau~\ref{tab:techno} synthétise les technologies retenues pour chaque couche logicielle et le rôle de chacune ; le tableau~\ref{tab:deploiement} détaille la répartition des composants sur l'infrastructure cloud.
+
+\begin{table}[H]\centering
+\small
+\begin{tabularx}{\textwidth}{|p{3cm}|l|X|}
+\hline
+\textbf{Couche} & \textbf{Technologie} & \textbf{Rôle} \\
+\hline
+Frontend & \begin{tabular}[t]{@{}l@{}} React + TypeScript \\ \raisebox{-0.5\height}{\includegraphics[height=3em]{images/logo_react}} \hspace{0.6em} \raisebox{-0.5\height}{\includegraphics[height=3em]{images/logo_typescript}} \vspace {0.4em}\end{tabular} & Interface utilisateur, composants, gestion des écrans, widget de l'assistant \\
+\hline
+Backend & \begin{tabular}[t]{@{}l@{}} Express (Node.js) \\ \raisebox{-0.5\height}{\includegraphics[height=3em]{images/logo_nodejs}} \end{tabular} & \acf{API} \ac{REST}, logique métier, authentification \\
+\hline
+Persistance & \begin{tabular}[t]{@{}l@{}} Prisma + PostgreSQL + Supabase \\ \raisebox{-0.4\height}{\includegraphics[height=3em]{images/logo_prisma}} \raisebox{-0.5\height}{\includegraphics[height=3.5em]{images/logo_postgresql}} \raisebox{-0.5\height}{\includegraphics[height=1em]{images/logo_supabase}} \end{tabular} & Accès aux données, schéma type-safe, persistance \\
+\hline
+Service assistant \& OCR & \begin{tabular}[t]{@{}l@{}} Python (FastAPI) \\ \raisebox{-0.5\height}{\includegraphics[height=3em]{images/logo_python}} \hspace{0.6em} \raisebox{-0.5\height}{\includegraphics[height=4.5em]{images/logo_fastapi}} \end{tabular} & Assistant IA en langage naturel et reconnaissance optique des cartes \\
+\hline
+\end{tabularx}
+\caption{Couches logicielles et technologies retenues}
+\label{tab:techno}
+\end{table}
+
+Le choix de \textbf{TypeScript} (frontend et backend) apporte un typage statique qui sécurise le développement. \textbf{Prisma} génère, à partir du schéma, un modèle de données type-safe garantissant la cohérence entre code et base. La base \textbf{PostgreSQL} est fournie par \textbf{Supabase}, choisi pour la simplicité d'approvisionnement d'une base cloud. Enfin, le \textbf{service Python} dédié porte d'une part le traitement OCR et d'autre part l'assistant IA en langage naturel, conformément à la justification du chapitre 3.
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabularx}{\textwidth}{|p{3cm}|>{\raggedright\arraybackslash}p{3cm}|X|}
+\hline
+\textbf{Composant déployé} & \textbf{Plateforme} & \textbf{Rôle} \\
+\hline
+Frontend (React) & \raisebox{-\height}[0pt][\height]{\includegraphics[height=3em]{images/logo_vercel}} & Hébergement et diffusion de l'interface \\
+\hline
+Backend (Express) & \raisebox{-\height}[0pt][\height]{\includegraphics[height=5.5em]{images/logo_render}} & Hébergement de l'\acf{API} et de la logique métier \\
+\hline
+Service assistant \& OCR (Python) & \raisebox{-\height}[0pt][\height]{\includegraphics[height=5.5em]{images/logo_render}} & Hébergement du service d'assistant et de numérisation \\
+\hline
+\end{tabularx}
+\caption{Déploiement des composants sur l'infrastructure cloud}
+\label{tab:deploiement}
+\end{table}
+
+\section{Réalisation du module Administrateur}
+
+Le module Administrateur met en œuvre la séparation des rôles définie lors de l'analyse. Il permet de créer, consulter, modifier et supprimer les comptes utilisateurs, une gestion réservée au rôle Administrateur. Son élément discriminant est l'\textbf{attribution du rôle} : à la création ou à la modification d'un compte, l'administrateur choisit entre les rôles Utilisateur et Administrateur, ce qui fixe les permissions accordées côté backend.
+
+L'interface d'administration et les \acf{API} associées ne sont exposées qu'aux comptes Administrateur ; les comptes Utilisateur les voient masquées. La gestion des comptes reste ainsi entre les mains de l'acteur habilité (figure~\ref{fig:capture-admin}).
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.7\textwidth]{images/capture_admin.png}
+\caption{Capture d'écran : interface d'administration des comptes utilisateurs}
+\label{fig:capture-admin}
+\end{figure}
+
+\section{Réalisation du module de numérisation OCR}
+
+Le module de numérisation OCR, le plus technique de la réalisation, met en œuvre le service Python dédié conçu au chapitre 3 et illustré par le diagramme de séquence de la figure~\ref{fig:seq-import}. Son fonctionnement suit un pipeline en plusieurs étapes.
+
+\subsection{Pipeline de numérisation}
+
+La numérisation d'une carte de visite suit un pipeline structuré :
+
+\begin{enumerate}[leftmargin=*,itemsep=4pt]
+  \item \textbf{Acquisition de l'image} : l'utilisateur importe ou capture une photographie de la carte depuis l'interface.
+  \item \textbf{Traitement de l'image} : le service OCR prépare l'image (orientation, mise à l'échelle) pour améliorer la reconnaissance.
+  \item \textbf{Extraction automatique} : le service analyse la carte et en extrait les informations structurées (nom, coordonnées, fonction, affiliation).
+  \item \textbf{Pré-remplissage de la fiche} : les données extraites sont renvoyées au backend, qui pré-remplit la fiche de contact.
+  \item \textbf{Correction et validation} : l'utilisateur vérifie et corrige les informations avant l'enregistrement définitif.
+\end{enumerate}
+
+La validation manuelle est essentielle car la reconnaissance peut être imparfaite selon la qualité de la carte, mais le pré-remplissage garantit un gain de temps important.
+
+La figure~\ref{fig:capture-ocr} illustre le résultat de la numérisation, les informations extraites pré-remplissant la fiche de contact.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.7\textwidth]{images/capture_ocr.png}
+\caption{Capture d'écran : pré-remplissage de la fiche contact après numérisation OCR}
+\label{fig:capture-ocr}
+\end{figure}
+
+\section{Réalisation de l'assistant IA}
+
+L'assistant IA permet d'interroger le réseau en langage naturel via un widget accessible en permanence. Développé dans le service Python dédié, il s'appuie sur un modèle de langage et un mécanisme d'\textbf{appels d'outils} (\textit{function calling}). À la réception d'une question, il choisit l'outil adapté parmi ceux exposés par le backend (recherche de contacts, synthèse d'un contact, statistiques, journal d'import), puis formule une réponse à partir des résultats. Il exploite l'\acf{API} \acf{REST} existante sans exposer directement la base, ce qui préserve le contrôle d'accès.
+
+\section{Autres modules réalisés}
+
+Les autres modules du chapitre 2 ont également été réalisés conformément aux spécifications, comme le résume le tableau~\ref{tab:autres-modules}.
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabularx}{\textwidth}{|l|X|}
+\hline
+\textbf{Module} & \textbf{Fonctionnalités réalisées} \\
+\hline
+Authentification et profil & Connexion sécurisée, déconnexion et gestion du profil, avec un contrôle d'accès par rôle servant de socle commun à toute l'application \\
+\hline
+Gestion des contacts & Création, consultation, modification et suppression des contacts, ainsi que l'affichage de la liste \\
+\hline
+Import & Alimentation de la base depuis des fichiers CSV ou Excel, avec contrôle de validité des données et gestion de la déduplication par adresse e-mail \\
+\hline
+Recherche et segmentation & Recherche avancée multi-critères, gestion des tags et segmentation en ensembles de filtres sauvegardés, permettant de regrouper et de catégoriser les contacts \\
+\hline
+Tableau de bord & Indicateurs de synthèse et répartition des contacts selon différents critères \\
+\hline
+Export & Export des listes de contacts, filtrées ou segmentées, au format CSV \\
+\hline
+Assistant IA & Consommation du \acf{API} REST sous forme d'outils : recherche multi-critères, synthèse d'un contact, statistiques, consultables en langage naturel via le widget \\
+\hline
+\end{tabularx}
+\caption{Modules réalisés conformément aux spécifications}
+\label{tab:autres-modules}
+\end{table}
+
+\section{Difficultés techniques rencontrées et solutions}
+
+La réalisation a été marquée par une difficulté technique majeure : le problème de \textbf{connexion Prisma/Supabase}.
+
+\subsection{Connexion Prisma/Supabase : diagnostic et résolution}
+
+Lors de la mise en place de la persistance, la création des tables aboutissait, mais les requêtes échouaient. L'analyse a montré que la configuration de connexion entre Prisma et Supabase était en cause, en particulier la distinction entre l'accès direct et le pool de connexions. La solution a consisté à séparer la connexion servant aux migrations de celle des opérations courantes. La cohérence a ainsi été rétablie : les tables restent créées et les requêtes s'exécutent correctement.
+
+Cette difficulté a souligné l'importance de comprendre comment un \acf{ORM} établit et réutilise ses connexions, et comment la configuration de l'infrastructure interagit avec le code applicatif.

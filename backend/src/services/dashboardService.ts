@@ -1,4 +1,5 @@
 import { prisma } from '../config/prisma';
+import { iso2ForCountry, COUNTRY_FRENCH } from './contactService';
 
 export class DashboardService {
   public async getDashboardStats() {
@@ -43,6 +44,7 @@ export class DashboardService {
       const count = item._count.id;
       return {
         country: item.countryOfOrigin || 'Inconnu',
+        iso2: iso2ForCountry(item.countryOfOrigin),
         count,
         percentage: totalContacts > 0 ? Math.round((count / totalContacts) * 100) : 0
       };
@@ -89,6 +91,7 @@ export class DashboardService {
 
     const distributionByCountryGender = countryGenderGroup.map(item => ({
       country: item.countryOfOrigin || 'Inconnu',
+      iso2: iso2ForCountry(item.countryOfOrigin),
       gender: item.gender,
       count: item._count.id
     }));
@@ -103,6 +106,7 @@ export class DashboardService {
           percentage: totalContacts > 0 ? Math.round((seniorResearchers / totalContacts) * 100) : 0
         }
       },
+      countryLabels: COUNTRY_FRENCH.map(([iso2, country]) => ({ iso2, country })),
       distributionByCountry,
       distributionByGender,
       distributionByCountryGender,

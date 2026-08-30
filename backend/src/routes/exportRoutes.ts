@@ -7,7 +7,76 @@ import { authenticateJWT, AuthenticatedRequest } from '../middleware/authenticat
 const router = Router();
 const logService = new LogService();
 
-// POST /api/export/log
+/**
+ * @openapi
+ * /api/export/log:
+ *   post:
+ *     tags: [Export & Logs]
+ *     summary: Journalise un export
+ *     description: Enregistre la réalisation d'un export (CSV/XLSX/JSON) dans l'historique des exports de l'utilisateur.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               format: { type: string, enum: [CSV, XLSX, JSON], default: CSV }
+ *               fileName: { type: string, example: contacts_senegal_2026-08-29.csv }
+ *               recordCount: { type: integer, example: 128 }
+ *     responses:
+ *       '200':
+ *         description: Log créé.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status: { type: string, enum: [success] }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     log:
+ *                       type: object
+ *                       properties:
+ *                         id: { type: string, format: uuid }
+ *                         type: { type: string, enum: [EXPORT] }
+ *                         format: { type: string, enum: [CSV, XLSX, JSON] }
+ *                         fileName: { type: string }
+ *                         recordCount: { type: integer }
+ *                         performedBy: { type: string, nullable: true }
+ *   get:
+ *     tags: [Export & Logs]
+ *     summary: Historique des imports (audit)
+ *     description: Liste les imports récents (utilisé par l'outil `get_import_audit` du chatbot). Filtré sur `type=IMPORT`.
+ *     parameters:
+ *       - name: period
+ *         in: query
+ *         schema: { type: string, enum: [day, week, month], default: month }
+ *         description: Période de consultation.
+ *     responses:
+ *       '200':
+ *         description: Récapitulatif des imports.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status: { type: string, enum: [success] }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     count: { type: integer }
+ *                     records:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           date: { type: string, format: date, example: '2026-08-29' }
+ *                           fileName: { type: string }
+ *                           recordCount: { type: integer }
+ *                           status: { type: string }
+ */
 router.post('/log', authenticateJWT, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const { format, fileName, recordCount } = req.body;

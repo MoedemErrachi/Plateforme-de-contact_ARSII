@@ -13,6 +13,309 @@ import {
   setTagContactsSchema
 } from '../validators/segmentValidator';
 
+/**
+ * @openapi
+ * /api/segments:
+ *   get:
+ *     tags: [Segments & Tags]
+ *     summary: Liste les segments et les étiquettes
+ *     description: Renvoie les segments (avec comptage de membres) et toutes les étiquettes (avec nombre de contacts).
+ *     responses:
+ *       '200':
+ *         description: Segments et étiquettes.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status: { type: string, enum: [success] }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     segments:
+ *                       type: array
+ *                       items:
+ *                         allOf:
+ *                           - $ref: '#/components/schemas/Segment'
+ *                           - type: object
+ *                             properties:
+ *                               memberCount: { type: integer, description: Nombre réel de contacts du segment }
+ *                     tags:
+ *                       type: array
+ *                       items:
+ *                         allOf:
+ *                           - $ref: '#/components/schemas/Tag'
+ *                           - type: object
+ *                             properties:
+ *                               _count:
+ *                                 type: object
+ *                                 properties:
+ *                                   contacts: { type: integer }
+ *   post:
+ *     tags: [Segments & Tags]
+ *     summary: Crée un segment
+ *     description: Nécessite `READ_WRITE`.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [name]
+ *             properties:
+ *               name: { type: string, example: Chercheurs UCAD }
+ *               description: { type: string }
+ *               icon: { type: string, default: Filter }
+ *               filters:
+ *                 type: object
+ *                 description: Filtres sauvegardés (search, countries, genders, careerStages, tags).
+ *                 additionalProperties: true
+ *     responses:
+ *       '201':
+ *         description: Segment créé.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status: { type: string, enum: [success] }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     segment: { $ref: '#/components/schemas/Segment' }
+ *       '400':
+ *         description: Nom requis.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ * /api/segments/{id}:
+ *   put:
+ *     tags: [Segments & Tags]
+ *     summary: Met à jour un segment
+ *     description: Nécessite `READ_WRITE`.
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               name: { type: string }
+ *               description: { type: string, nullable: true }
+ *               icon: { type: string }
+ *               filters: { type: object, additionalProperties: true }
+ *     responses:
+ *       '200':
+ *         description: Segment mis à jour.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status: { type: string, enum: [success] }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     segment: { $ref: '#/components/schemas/Segment' }
+ *       '404':
+ *         description: Segment introuvable.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *   delete:
+ *     tags: [Segments & Tags]
+ *     summary: Supprime un segment
+ *     description: Nécessite `FULL_ACCESS`.
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       '200':
+ *         description: Segment supprimé.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status: { type: string, enum: [success] }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     success: { type: boolean, example: true }
+ *       '404':
+ *         description: Segment introuvable.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ * /api/segments/tags:
+ *   get:
+ *     tags: [Segments & Tags]
+ *     summary: Liste toutes les étiquettes
+ *     responses:
+ *       '200':
+ *         description: Liste triée par nom.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status: { type: string, enum: [success] }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     tags:
+ *                       type: array
+ *                       items:
+ *                         allOf:
+ *                           - $ref: '#/components/schemas/Tag'
+ *                           - type: object
+ *                             properties:
+ *                               _count:
+ *                                 type: object
+ *                                 properties:
+ *                                   contacts: { type: integer }
+ *   post:
+ *     tags: [Segments & Tags]
+ *     summary: Crée une étiquette
+ *     description: Nécessite `READ_WRITE`. La couleur est attribuée aléatoirement si absente.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [name]
+ *             properties:
+ *               name: { type: string, example: Chercheur invité }
+ *               color: { type: string, description: Classe Tailwind de couleur du badge }
+ *               description: { type: string, nullable: true }
+ *     responses:
+ *       '201':
+ *         description: Étiquette créée.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status: { type: string, enum: [success] }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     tag: { $ref: '#/components/schemas/Tag' }
+ * /api/segments/tags/{id}:
+ *   put:
+ *     tags: [Segments & Tags]
+ *     summary: Met à jour une étiquette
+ *     description: Nécessite `READ_WRITE`.
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               name: { type: string }
+ *               color: { type: string }
+ *               description: { type: string, nullable: true }
+ *     responses:
+ *       '200':
+ *         description: Étiquette mise à jour.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status: { type: string, enum: [success] }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     tag: { $ref: '#/components/schemas/Tag' }
+ *   delete:
+ *     tags: [Segments & Tags]
+ *     summary: Supprime une étiquette
+ *     description: Nécessite `FULL_ACCESS`.
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       '200':
+ *         description: Étiquette supprimée.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status: { type: string, enum: [success] }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     success: { type: boolean, example: true }
+ * /api/segments/tags/{id}/contacts:
+ *   put:
+ *     tags: [Segments & Tags]
+ *     summary: Affecte des contacts à une étiquette (remplace l'existant)
+ *     description: Nécessite `READ_WRITE`. La liste donnée remplace intégralement les affectations actuelles.
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *         description: Identifiant de l'étiquette.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [contactIds]
+ *             properties:
+ *               contactIds:
+ *                 type: array
+ *                 items: { type: string, format: uuid }
+ *     responses:
+ *       '200':
+ *         description: Étiquette avec ses contacts affectés.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status: { type: string, enum: [success] }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     tag: { $ref: '#/components/schemas/Tag' }
+ *       '400':
+ *         description: "`contactIds` doit être un tableau."
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '404':
+ *         description: Étiquette introuvable.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
+
 const router = Router();
 
 const TAG_COLORS = [

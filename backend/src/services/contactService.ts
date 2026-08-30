@@ -115,21 +115,24 @@ function foldTerm(value: string): string {
 }
 
 // ── Normalisation des pays ──────────────────────────────────────────
-// Map canonique : nom replié (sans accents, minuscule) → nom français canonical.
-// Construite à partir de la liste ISO 3166-1 utilisée côté frontend.
+// Map canonique : nom replié (casse, accents, apostrophes) → libellé français.
+// Construite à partir du glossaire ISO 3166-1 ci-dessous, aligné sur la liste
+// du formulaire (frontend/src/constants/countries.ts) : c'est la source de
+// vérité unique des libellés stockés (les contacts créés manuellement au
+// frontend correspondent exactement aux valeurs canoniques du backend).
 const COUNTRY_CANONICAL = new Map<string, string>();
 
-const COUNTRY_FRENCH: [string, string][] = [
+export const COUNTRY_FRENCH: [string, string][] = [
   ['AF', 'Afghanistan'], ['AL', 'Albanie'], ['DZ', 'Algérie'], ['AD', 'Andorre'], ['AO', 'Angola'],
-  ['AG', 'Antigua-et-Barbude'], ['AR', 'Argentine'], ['AM', 'Arménie'], ['AU', 'Australie'], ['AT', 'Autriche'],
+  ['AG', 'Antigua-et-Barbuda'], ['AR', 'Argentine'], ['AM', 'Arménie'], ['AU', 'Australie'], ['AT', 'Autriche'],
   ['AZ', 'Azerbaïdjan'], ['BS', 'Bahamas'], ['BH', 'Bahreïn'], ['BD', 'Bangladesh'], ['BB', 'Barbade'],
   ['BY', 'Biélorussie'], ['BE', 'Belgique'], ['BZ', 'Belize'], ['BJ', 'Bénin'], ['BT', 'Bhoutan'],
   ['BO', 'Bolivie'], ['BA', 'Bosnie-Herzégovine'], ['BW', 'Botswana'], ['BR', 'Brésil'], ['BN', 'Brunei'],
   ['BG', 'Bulgarie'], ['BF', 'Burkina Faso'], ['BI', 'Burundi'], ['CV', 'Cap-Vert'], ['KH', 'Cambodge'],
   ['CM', 'Cameroun'], ['CA', 'Canada'], ['CF', 'République centrafricaine'], ['TD', 'Tchad'], ['CL', 'Chili'],
-  ['CN', 'Chine'], ['CO', 'Colombie'], ['KM', 'Comores'], ['CG', 'Congo'], ['CD', 'Rép. dém. du Congo'],
-  ['CR', 'Costa Rica'], ["CI", "Côte d'Ivoire"], ['HR', 'Croatie'], ['CU', 'Cuba'], ['CY', 'Chypre'],
-  ['CZ', 'République tchèque'], ['DK', 'Danemark'], ['DJ', 'Djibouti'], ['DM', 'Dominique'], ['DO', 'Rép. dominicaine'],
+  ['CN', 'Chine'], ['CO', 'Colombie'], ['KM', 'Comores'], ['CG', 'Congo-Brazzaville'], ['CD', 'Congo-Kinshasa (RDC)'],
+  ['CR', 'Costa Rica'], ['CI', 'Côte d’Ivoire'], ['HR', 'Croatie'], ['CU', 'Cuba'], ['CY', 'Chypre'],
+  ['CZ', 'Tchéquie'], ['DK', 'Danemark'], ['DJ', 'Djibouti'], ['DM', 'Dominique'], ['DO', 'République dominicaine'],
   ['EC', 'Équateur'], ['EG', 'Égypte'], ['SV', 'Salvador'], ['GQ', 'Guinée équatoriale'], ['ER', 'Érythrée'],
   ['EE', 'Estonie'], ['SZ', 'Eswatini'], ['ET', 'Éthiopie'], ['FJ', 'Fidji'], ['FI', 'Finlande'],
   ['FR', 'France'], ['GA', 'Gabon'], ['GM', 'Gambie'], ['GE', 'Géorgie'], ['DE', 'Allemagne'],
@@ -143,14 +146,14 @@ const COUNTRY_FRENCH: [string, string][] = [
   ['LT', 'Lituanie'], ['LU', 'Luxembourg'], ['MG', 'Madagascar'], ['MW', 'Malawi'], ['MY', 'Malaisie'],
   ['MV', 'Maldives'], ['ML', 'Mali'], ['MT', 'Malte'], ['MH', 'Îles Marshall'], ['MR', 'Mauritanie'],
   ['MU', 'Maurice'], ['MX', 'Mexique'], ['FM', 'Micronésie'], ['MD', 'Moldavie'], ['MC', 'Monaco'],
-  ['MN', 'Mongolie'], ['ME', 'Monténégro'], ['MA', 'Maroc'], ['MZ', 'Mozambique'], ['MM', 'Myanmar'],
+  ['MN', 'Mongolie'], ['ME', 'Monténégro'], ['MA', 'Maroc'], ['MZ', 'Mozambique'], ['MM', 'Birmanie (Myanmar)'],
   ['NA', 'Namibie'], ['NR', 'Nauru'], ['NP', 'Népal'], ['NL', 'Pays-Bas'], ['NZ', 'Nouvelle-Zélande'],
-  ['NI', 'Nicaragua'], ['NE', 'Niger'], ['NG', 'Nigeria'], ['MK', 'Macédoine du Nord'], ['NO', 'Norvège'],
+  ['NI', 'Nicaragua'], ['NE', 'Niger'], ['NG', 'Nigéria'], ['MK', 'Macédoine du Nord'], ['NO', 'Norvège'],
   ['OM', 'Oman'], ['PK', 'Pakistan'], ['PW', 'Palaos'], ['PS', 'Palestine'], ['PA', 'Panama'],
   ['PG', 'Papouasie-Nouvelle-Guinée'], ['PY', 'Paraguay'], ['PE', 'Pérou'], ['PH', 'Philippines'],
   ['PL', 'Pologne'], ['PT', 'Portugal'], ['QA', 'Qatar'], ['RO', 'Roumanie'], ['RU', 'Russie'],
   ['RW', 'Rwanda'], ['KN', 'Saint-Christophe-et-Niévès'], ['LC', 'Sainte-Lucie'], ['VC', 'Saint-Vincent-et-les-Grenadines'],
-  ['WS', 'Samoa'], ['SM', 'San Marin'], ['ST', 'São Tomé-et-Principe'], ['SA', 'Arabie saoudite'],
+  ['WS', 'Samoa'], ['SM', 'Saint-Marin'], ['ST', 'Sao Tomé-et-Principe'], ['SA', 'Arabie saoudite'],
   ['SN', 'Sénégal'], ['RS', 'Serbie'], ['SC', 'Seychelles'], ['SL', 'Sierra Leone'], ['SG', 'Singapour'],
   ['SK', 'Slovaquie'], ['SI', 'Slovénie'], ['SB', 'Îles Salomon'], ['SO', 'Somalie'], ['ZA', 'Afrique du Sud'],
   ['SS', 'Soudan du Sud'], ['ES', 'Espagne'], ['LK', 'Sri Lanka'], ['SD', 'Soudan'], ['SR', 'Suriname'],
@@ -158,49 +161,164 @@ const COUNTRY_FRENCH: [string, string][] = [
   ['TZ', 'Tanzanie'], ['TH', 'Thaïlande'], ['TL', 'Timor oriental'], ['TG', 'Togo'], ['TO', 'Tonga'],
   ['TT', 'Trinité-et-Tobago'], ['TN', 'Tunisie'], ['TR', 'Turquie'], ['TM', 'Turkménistan'], ['TV', 'Tuvalu'],
   ['UG', 'Ouganda'], ['UA', 'Ukraine'], ['AE', 'Émirats arabes unis'], ['GB', 'Royaume-Uni'],
-  ['US', 'États-Unis'], ['UY', 'Uruguay'], ['UZ', 'Ouzbékistan'], ['VU', 'Vanuatu'], ['VE', 'Venezuela'],
-  ['VN', 'Vietnam'], ['YE', 'Yémen'], ['ZM', 'Zambie'], ['ZW', 'Zimbabwe'],
+  ['US', 'États-Unis'], ['UY', 'Uruguay'], ['UZ', 'Ouzbékistan'], ['VU', 'Vanuatu'], ['VA', 'Vatican'], ['VE', 'Venezuela'],
+  ['VN', 'Viêt Nam'], ['YE', 'Yémen'], ['ZM', 'Zambie'], ['ZW', 'Zimbabwe'],
 ];
+
+/** Apostrophes assimilées (guillemets courbe/droit, prime) → apostrophe droite. */
+const APOSTROPHE_RE = /[\u2018\u2019\u201A\u201B\u201C\u201D\u0060\u02BC]/g;
+
+/** Replie un nom de pays (casse + accents + apostrophes) avant lookup. */
+function foldCountry(value: string): string {
+  return foldTerm(value.replace(APOSTROPHE_RE, "'")).trim();
+}
+
 for (const [, name] of COUNTRY_FRENCH) {
-  COUNTRY_CANONICAL.set(foldTerm(name), name);
+  COUNTRY_CANONICAL.set(foldCountry(name), name);
+}
+
+const COUNTRY_NAME_BY_CODE = new Map(COUNTRY_FRENCH);
+
+/** Nom français replié (casse, accents, apostrophes) → code ISO 3166-1 alpha-2. */
+const FRENCH_TO_ISO2 = new Map<string, string>(
+  COUNTRY_FRENCH.map(([iso2, name]) => [foldCountry(name), iso2])
+);
+
+/**
+ * Variantes / anciens libellés de pays → code ISO 3166-1 alpha-2.
+ * Récupère les orthographes divergentes stockées avant l'unification du
+ * glossaire (anciens libellés backend, saisies manuelles, doublons
+ * apostrophe droite/courbe de « Côte d'Ivoire », …).
+ */
+const COUNTRY_ALIASES: [string, string][] = [
+  ['Congo', 'CG'],
+  ['Congo-Brazzaville', 'CG'],
+  ['République du Congo', 'CG'],
+  ['Congo Brazzaville', 'CG'],
+  ['Rép. dém. du Congo', 'CD'],
+  ['République démocratique du Congo', 'CD'],
+  ['Congo; République démocratique du', 'CD'],
+  ['Republique Democratique du Congo', 'CD'],
+  ['Congo Kinshasa', 'CD'],
+  ['RDC', 'CD'],
+  ['R D Congo', 'CD'],
+  ["Côte d'Ivoire", 'CI'],
+  ["Cote d'Ivoire", 'CI'],
+  ['Cote dIvoire', 'CI'],
+  ["Côte dIvoire", 'CI'],
+  ['Cote d ivoire', 'CI'],
+  ['Ivory Coast', 'CI'],
+  ['République tchèque', 'CZ'],
+  ['Czech Republic', 'CZ'],
+  ['Rép. dominicaine', 'DO'],
+  ['Republica Dominicana', 'DO'],
+  ['Birmanie', 'MM'],
+  ['Myanmar', 'MM'],
+  ['Burma', 'MM'],
+  ['San Marin', 'SM'],
+  ['Saint Marin', 'SM'],
+  ['Antigua-et-Barbude', 'AG'],
+  ['España', 'ES'],
+  ['Brasil', 'BR'],
+  ['Chile', 'CL'],
+  ['Mexico', 'MX'],
+  ['Nederland', 'NL'],
+  ['Deutschland', 'DE'],
+  ['United Kingdom', 'GB'],
+  ['Great Britain', 'GB'],
+  ['United States', 'US'],
+  ['USA', 'US'],
+  ['Viet Nam', 'VN'],
+  ['Vietnam', 'VN'],
+  ['ViêtNam', 'VN'],
+  ['Viet-Nam', 'VN'],
+  ['Veit Nam', 'VN'],
+  ['Timor-Leste', 'TL'],
+  ['Cabo Verde', 'CV'],
+  ['Libya', 'LY'],
+  ['Libyan', 'LY'],
+  ['Malta', 'MT'],
+  ['Ireland', 'IE'],
+];
+
+/** Alias (plié) → code ISO 3166-1 alpha-2. */
+const ALIAS_TO_ISO2 = new Map<string, string>(
+  COUNTRY_ALIASES.map(([alias, iso2]) => [foldCountry(alias), iso2])
+);
+
+/** Libellés « non renseigné » → considérés comme vide (stockés NULL). */
+const EMPTY_COUNTRY_KEYS = new Set<string>([
+  'n/a', 'na', '-', '—', '?', '??', 'unknown', 'inconnu', 'inconnue',
+  'indetermine', 'non renseigne', 'non precise', 'nc', 'nsp', 'aucun',
+  'aucune', 'vide', 'none', 'null', 'undefined', 'sans', 'sans objet'
+]);
+
+/** Nettoyage commun d'un libellé de pays (apostrophes + caractères de contrôle). */
+function normalizeCountryInput(raw?: string | null): string {
+  const trimmed = (raw || '').trim();
+  if (!trimmed) return '';
+  return trimmed
+    .replace(APOSTROPHE_RE, "'")
+    .replace(/[\u0000-\u001F\u007F]/g, '')
+    .trim();
+}
+
+/** Retourne le code ISO alpha-2 d'un nom de pays français (ou null si inconnu). */
+export function iso2ForCountry(country?: string | null): string | null {
+  const base = normalizeCountryInput(country);
+  if (!base) return null;
+  if (/^[A-Za-z]{2}$/.test(base)) {
+    const code = base.toUpperCase();
+    if (COUNTRY_NAME_BY_CODE.has(code)) return code;
+  }
+  return FRENCH_TO_ISO2.get(foldCountry(base)) ?? ALIAS_TO_ISO2.get(foldCountry(base)) ?? null;
 }
 
 /**
- * Normalise un nom de pays :
- *  1. Supprime les caractères de contrôle.
- *  2. Pour chaque \uFFFD (caractère corrompu), essaie les 26 lettres a-z
- *     et vérifie si la combinaison resulte en un nom canonique connu.
- *  3. Si pas de \uFFFD, lookup direct (folded + case-insensitive).
- *  4. Fallback : valeur nettoyée.
+ * Normalise un nom de pays vers sa forme canonique :
+ *  1. Nettoie les apostrophes et caractères de contrôle.
+ *  2. Libellés « non renseigné » (N/A, inconnu, …) → chaîne vide (stockée NULL).
+ *  3. Code ISO 3166-1 alpha-2 saisi en dur → libellé français.
+ *  4. Lookup canonique puis aliases (repli casse + accents + apostrophes).
+ *  5. Pour chaque \uFFFD (caractère corrompu), essaie les 26 lettres a-z.
+ *  6. Fallback : valeur nettoyée.
  */
-function normalizeCountry(raw?: string | null): string {
-  const trimmed = (raw || '').trim();
-  if (!trimmed) return '';
-  const controlStripped = trimmed.replace(/[\u0000-\u001F\u007F]/g, '').trim();
-  if (!controlStripped) return '';
+export function normalizeCountry(raw?: string | null): string {
+  const base = normalizeCountryInput(raw);
+  if (!base) return '';
 
-  // Fast path: no replacement characters — direct lookup
-  if (!controlStripped.includes('\uFFFD')) {
-    const canonical = COUNTRY_CANONICAL.get(controlStripped.toLowerCase());
+  const key = foldCountry(base);
+  if (EMPTY_COUNTRY_KEYS.has(key)) return '';
+
+  if (/^[A-Za-z]{2}$/.test(base)) {
+    const canonical = COUNTRY_NAME_BY_CODE.get(base.toUpperCase());
     if (canonical) return canonical;
-    const canonicalFolded = COUNTRY_CANONICAL.get(foldTerm(controlStripped));
-    if (canonicalFolded) return canonicalFolded;
-    return controlStripped.charAt(0).toUpperCase() + controlStripped.slice(1);
+  }
+
+  // Fast path: no replacement characters — canonical ou alias
+  if (!base.includes('\uFFFD')) {
+    const canonical = COUNTRY_CANONICAL.get(key);
+    if (canonical) return canonical;
+    const iso2 = ALIAS_TO_ISO2.get(key);
+    if (iso2) return COUNTRY_NAME_BY_CODE.get(iso2)!;
+    return base.charAt(0).toUpperCase() + base.slice(1);
   }
 
   // Slow path: \uFFFD present — expand each placeholder with a-z and test
   const MAX_PLACEHOLDERS = 3;
-  const placeholderCount = (controlStripped.match(/\uFFFD/g) || []).length;
+  const placeholderCount = (base.match(/\uFFFD/g) || []).length;
   if (placeholderCount <= MAX_PLACEHOLDERS) {
-    const candidates = expandPlaceholders(controlStripped);
+    const candidates = expandPlaceholders(base);
     for (const candidate of candidates) {
-      const canonical = COUNTRY_CANONICAL.get(foldTerm(candidate));
+      const canonical = COUNTRY_CANONICAL.get(foldCountry(candidate));
       if (canonical) return canonical;
+      const iso2 = ALIAS_TO_ISO2.get(foldCountry(candidate));
+      if (iso2) return COUNTRY_NAME_BY_CODE.get(iso2)!;
     }
   }
 
   // Fallback: strip all \uFFFD and return cleaned
-  const stripped = controlStripped.replace(/\uFFFD/g, '').trim();
+  const stripped = base.replace(/\uFFFD/g, '').trim();
   return stripped.charAt(0).toUpperCase() + stripped.slice(1);
 }
 

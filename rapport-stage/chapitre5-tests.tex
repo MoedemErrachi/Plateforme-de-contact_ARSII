@@ -1,0 +1,72 @@
+% ═══════════════════════════════════════════════════════════════════
+% CHAPITRE 5 : TESTS ET DÉPLOIEMENT
+% ═══════════════════════════════════════════════════════════════════
+
+\chapter{Tests et Déploiement}
+
+Ce chapitre présente la stratégie de tests appliquée à la plateforme, son déploiement en production, puis une validation de la solution au regard des objectifs fixés au chapitre 1.
+
+\section{Stratégie de tests}
+
+La validation de la plateforme a reposé sur une stratégie de tests combinant plusieurs niveaux, adaptés à la taille du projet et à la nature du travail mené.
+
+\subsection{Tests fonctionnels}
+
+L'essentiel de la validation a consisté en des \textbf{tests fonctionnels manuels} portant sur les parcours métier de bout en bout. Chaque module a été parcouru selon des scénarios représentatifs :
+
+\begin{itemize}[leftmargin=*,itemsep=3pt]
+  \item connexion, déconnexion et gestion du profil ;
+  \item création, consultation, modification et suppression d'un contact ;
+  \item import d'un fichier CSV et d'un fichier Excel avec contrôle des données ;
+  \item numérisation d'une carte de visite et validation du pré-remplissage ;
+  \item recherche et filtrage multi-critères, et gestion des tags ;
+  \item consultation du tableau de bord ;
+  \item interrogation de la base via l'assistant IA en langage naturel ;
+  \item export d'une liste de contacts ;
+  \item côté administrateur, gestion des comptes et attribution des rôles.
+\end{itemize}
+
+Ces tests ont vérifié le comportement des fonctionnalités dans des conditions réalistes et ont conduit à des corrections, notamment sur la robustesse du traitement des fichiers importés et la validation des données extraites par l'\ac{OCR}.
+
+\subsection{Analyse statique du code}
+
+En complément, une \textbf{analyse statique} de la qualité du code a été intégrée au processus, menée avec \textbf{SonarQube}. Elle porte sur la détection de défauts potentiels (bugs, vulnérabilités, \textit{code smells}) et sur la maintenabilité du code. Servant de levier d'amélioration continue, les anomalies remontées ont été corrigées au fil du développement, fiabilisant le code avant sa mise en production.
+
+\section{Déploiement}
+
+Conformément à l'architecture trois-tiers, le déploiement répartit les composants sur une infrastructure cloud (figure~\ref{fig:deploiement}) : le \textbf{frontend} (React) est hébergé sur \textbf{Vercel}, le \textbf{backend Express} et le \textbf{service assistant \& OCR} (Python) chacun sur un \textbf{serveur Render} séparé, et la base PostgreSQL est fournie par \textbf{Supabase}.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.7\textwidth]{images/deploiement.png}
+\caption{Architecture de déploiement de la plateforme}
+\label{fig:deploiement}
+\end{figure}
+
+Déployer le backend et le service assistant \& OCR sur \textbf{deux services Render distincts} suit la même logique que la conception : leurs profils de charge et cycles de vie diffèrent, et leur séparation permet de les faire évoluer, redéployer et dimensionner indépendamment. Le service assistant \& OCR, gourmand en calcul (modèle de langage et traitement d'images), est ainsi géré de façon isolée sans impact sur les \acf{API} métier.
+
+\section{Bilan et validation par rapport aux objectifs}
+
+Ce bilan reprend les objectifs énoncés au chapitre 1 et vérifie leur atteinte, comme le détaille le tableau~\ref{tab:bilan}.
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabularx}{\textwidth}{|l|l|X|}
+\hline
+\textbf{Objectif} & \textbf{Statut} & \textbf{Vérification} \\
+\hline
+Centraliser & Atteint & La plateforme repose sur une base PostgreSQL unique, alimentée par la gestion des contacts et les imports, offrant une vision globale du réseau \\
+\hline
+Automatiser la saisie & Atteint & L'import CSV/Excel et la numérisation \ac{OCR}, validés par les tests fonctionnels, réduisent fortement la ressaisie manuelle \\
+\hline
+Organiser et exploiter & Atteint & La recherche avancée, le filtrage, la segmentation (ensembles de filtres sauvegardés), le tableau de bord et l'assistant IA permettent une exploitation fine du réseau \\
+\hline
+Sécuriser & Atteint & L'authentification sécurisée et la gestion des comptes réservée à l'administrateur sont opérationnelles et validées \\
+\hline
+\end{tabularx}
+\caption{Bilan de l'atteinte des objectifs}
+\label{tab:bilan}
+\end{table}
+
+Au terme de la réalisation, des tests et du déploiement, la plateforme répond aux objectifs initiaux et constitue une solution opérationnelle répondant à la problématique posée au chapitre 1. Les fonctionnalités livrées couvrent l'ensemble des besoins fonctionnels spécifiés au chapitre 2, et la solution est déployée et accessible sur une infrastructure en ligne.
