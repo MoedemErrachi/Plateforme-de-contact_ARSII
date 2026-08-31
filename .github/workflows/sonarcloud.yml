@@ -26,7 +26,7 @@ jobs:
             base-dir: chatbot-service
             working-directory: chatbot-service
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -70,7 +70,7 @@ jobs:
         run: npm run lint
 
       - name: SonarCloud Scan
-        uses: SonarSource/sonarcloud-github-action@v4
+        uses: SonarSource/sonarqube-scan-action@v7
         with:
           projectBaseDir: ${{ matrix.base-dir }}
         env:
