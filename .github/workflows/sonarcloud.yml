@@ -64,6 +64,11 @@ jobs:
             npm install
           fi
 
+      - name: Generate Prisma client
+        if: matrix.name == 'backend'
+        working-directory: backend
+        run: npx prisma generate
+
       - name: Typecheck
         if: matrix.name != 'chatbot-service'
         working-directory: ${{ matrix.working-directory }}
