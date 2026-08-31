@@ -59,7 +59,7 @@ jobs:
         working-directory: ${{ matrix.working-directory }}
         run: |
           if [ -f package-lock.json ]; then
-            npm ci --ignore-scripts
+            npm ci
           else
             npm install
           fi
