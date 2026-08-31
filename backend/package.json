@@ -11,7 +11,9 @@
     "seed": "tsx prisma/seed.ts",
     "fix:countries": "tsx scripts/fixCountryNames.ts",
     "fix:countries:dry": "tsx scripts/fixCountryNames.ts --dry",
-    "test:db": "node scripts/test-db.js"
+    "test:db": "node scripts/test-db.js",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.9.1",
@@ -42,6 +44,8 @@
     "esbuild": "^0.25.0",
     "prisma": "^7.9.1",
     "tsx": "^4.21.0",
-    "typescript": "~5.8.2"
+    "typescript": "~5.8.2",
+    "vitest": "^3.2.0",
+    "@vitest/coverage-v8": "^3.2.0"
   }
 }

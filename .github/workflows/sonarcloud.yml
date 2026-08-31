@@ -69,6 +69,11 @@ jobs:
         working-directory: backend
         run: npx prisma generate
 
+      - name: Run tests with coverage
+        if: matrix.name == 'backend' || matrix.name == 'frontend'
+        working-directory: ${{ matrix.working-directory }}
+        run: npm run test:coverage
+
       - name: Typecheck
         if: matrix.name != 'chatbot-service'
         working-directory: ${{ matrix.working-directory }}
