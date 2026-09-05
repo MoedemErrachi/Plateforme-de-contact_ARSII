@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import rateLimit from 'express-rate-limit';
 import helmet from 'helmet';
-import crypto from 'crypto';
+import crypto from 'node:crypto';
 
 // 1. RATE LIMITERS
 export const authRateLimiter = rateLimit({

@@ -1,9 +1,9 @@
 import { Router, Response } from 'express';
 import bcrypt from 'bcryptjs';
+import crypto from 'node:crypto';
 import { prisma } from '../config/prisma';
-import { authenticateJWT } from '../middleware/authenticateJWT';
+import { authenticateJWT, AuthenticatedRequest } from '../middleware/authenticateJWT';
 import { authorizeRole } from '../middleware/authorizeRole';
-import { AuthenticatedRequest } from '../middleware/authenticateJWT';
 import { sendUserCreatedEmail } from '../services/emailService';
 
 const router = Router();
@@ -180,10 +180,16 @@ router.get('/users', async (_req: AuthenticatedRequest, res: Response) => {
 const VALID_PRIVILEGES = ['READ', 'READ_WRITE', 'FULL_ACCESS'] as const;
 
 function normalizePrivilege(input: unknown): 'READ' | 'READ_WRITE' | 'FULL_ACCESS' | null {
-  const raw = String(input || '').trim().toUpperCase();
+  const raw = (typeof input === 'string' ? input : '').trim().toUpperCase();
   return (VALID_PRIVILEGES as readonly string[]).includes(raw)
     ? (raw as 'READ' | 'READ_WRITE' | 'FULL_ACCESS')
     : null;
+}
+
+function resolveUserPrivilege(userRole: 'ADMIN' | 'USER', privilege: unknown): 'READ' | 'READ_WRITE' | 'FULL_ACCESS' | null | undefined {
+  if (userRole === 'ADMIN') return 'FULL_ACCESS';
+  if (privilege !== undefined) return normalizePrivilege(privilege);
+  return 'FULL_ACCESS';
 }
 
 // POST /api/admin/users — Create a new user
@@ -212,16 +218,14 @@ router.post('/users', async (req: AuthenticatedRequest, res: Response) => {
   }
 
   const userRole = role === 'admin' ? 'ADMIN' : 'USER';
-  const userPrivilege = userRole === 'ADMIN'
-    ? 'FULL_ACCESS'
-    : (privilege !== undefined ? normalizePrivilege(privilege) : 'FULL_ACCESS');
+  const userPrivilege = resolveUserPrivilege(userRole, privilege);
 
   if (privilege !== undefined && userRole !== 'ADMIN' && !userPrivilege) {
     return res.status(400).json({ error: 'Privilège invalide. Valeurs acceptées : READ, READ_WRITE, FULL_ACCESS.' });
   }
 
   // Generate a temporary password
-  const tempPassword = `Temp${Math.random().toString(36).slice(2, 10)}!`;
+  const tempPassword = `Temp${crypto.randomBytes(6).toString('hex')}!`;
   const passwordHash = bcrypt.hashSync(tempPassword, 10);
 
   try {
@@ -261,34 +265,15 @@ router.put('/users/:id', async (req: AuthenticatedRequest, res: Response) => {
   const { id } = req.params;
   const { privilege, role } = req.body || {};
 
-  if (privilege === undefined && role === undefined) {
-    return res.status(400).json({ error: 'Aucune modification fournie.' });
-  }
-
-  const data: { privilege?: 'READ' | 'READ_WRITE' | 'FULL_ACCESS'; role?: 'ADMIN' | 'USER' } = {};
-
-  if (privilege !== undefined) {
-    const normalized = normalizePrivilege(privilege);
-    if (!normalized) {
-      return res.status(400).json({ error: 'Privilège invalide. Valeurs acceptées : READ, READ_WRITE, FULL_ACCESS.' });
-    }
-    data.privilege = normalized;
-  }
-
-  if (role !== undefined) {
-    if (role !== 'admin' && role !== 'user') {
-      return res.status(400).json({ error: 'Rôle invalide. Valeurs acceptées : admin, user.' });
-    }
-    if (id === req.user!.id && role !== 'admin') {
-      return res.status(400).json({ error: 'Vous ne pouvez pas retirer votre propre rôle administrateur.' });
-    }
-    data.role = role === 'admin' ? 'ADMIN' : 'USER';
+  const resolved = resolveUpdateData(privilege, role, req.user?.id, id);
+  if ('error' in resolved) {
+    return res.status(400).json({ error: resolved.error });
   }
 
   try {
     const updated = await prisma.user.update({
       where: { id },
-      data,
+      data: resolved.data,
       select: { id: true, email: true, name: true, role: true, privilege: true, mustChangePassword: true, lastLogin: true, createdAt: true, updatedAt: true }
     });
     return res.json({
@@ -303,6 +288,39 @@ router.put('/users/:id', async (req: AuthenticatedRequest, res: Response) => {
     return res.status(500).json({ error: 'Erreur lors de la mise à jour de l\'utilisateur.' });
   }
 });
+
+function resolveUpdateData(
+  privilege: unknown,
+  role: unknown,
+  currentUserId: string | undefined,
+  targetId: string
+): { ok: true; data: { privilege?: 'READ' | 'READ_WRITE' | 'FULL_ACCESS'; role?: 'ADMIN' | 'USER' } } | { ok: false; error: string } {
+  if (privilege === undefined && role === undefined) {
+    return { ok: false, error: 'Aucune modification fournie.' };
+  }
+
+  const data: { privilege?: 'READ' | 'READ_WRITE' | 'FULL_ACCESS'; role?: 'ADMIN' | 'USER' } = {};
+
+  if (privilege !== undefined) {
+    const normalized = normalizePrivilege(privilege);
+    if (!normalized) {
+      return { ok: false, error: 'Privilège invalide. Valeurs acceptées : READ, READ_WRITE, FULL_ACCESS.' };
+    }
+    data.privilege = normalized;
+  }
+
+  if (role !== undefined) {
+    if (role !== 'admin' && role !== 'user') {
+      return { ok: false, error: 'Rôle invalide. Valeurs acceptées : admin, user.' };
+    }
+    if (targetId === currentUserId && role !== 'admin') {
+      return { ok: false, error: 'Vous ne pouvez pas retirer votre propre rôle administrateur.' };
+    }
+    data.role = role === 'admin' ? 'ADMIN' : 'USER';
+  }
+
+  return { ok: true, data };
+}
 
 // DELETE /api/admin/users/:id — Delete a user (cannot delete yourself)
 router.delete('/users/:id', async (req: AuthenticatedRequest, res: Response) => {

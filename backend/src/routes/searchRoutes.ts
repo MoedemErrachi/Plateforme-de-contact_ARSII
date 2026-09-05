@@ -1,4 +1,4 @@
-import { Router, Request, Response, NextFunction } from 'express';
+import { Router, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { prisma } from '../config/prisma';
 import { AppError } from '../utils/appError';
@@ -128,7 +128,7 @@ router.delete('/:id', async (req: AuthenticatedRequest, res: Response, next: Nex
     const userId = req.user?.id;
     if (!userId) throw new AppError('Authentification requise.', 401);
     const existing = await prisma.savedSearch.findUnique({ where: { id: req.params.id } });
-    if (!existing || existing.userId !== userId) {
+    if (existing?.userId !== userId) {
       throw new AppError('Recherche introuvable.', 404);
     }
     await prisma.savedSearch.delete({ where: { id: req.params.id } });

@@ -15,7 +15,7 @@ const transporter = nodemailer.createTransport({
 
 // Vérification silencieuse du transporteur SMTP au démarrage : l'échec est
 // journalisé sans bruit, le succès n'émet rien (hygiène des logs).
-transporter.verify().catch((err) =>
+await transporter.verify().catch((err) =>
   console.error('[EmailService] Gmail SMTP transporter verification failed:', err.message)
 );
 

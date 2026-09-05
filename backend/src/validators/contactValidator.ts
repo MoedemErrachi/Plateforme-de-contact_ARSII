@@ -12,7 +12,7 @@ export const careerStageEnum = z.enum([
 const contactBodyFields = {
   firstName: z.string().optional(),
   lastName: z.string().optional(),
-  email: z.string().email('Adresse e-mail invalide'),
+  email: z.email('Adresse e-mail invalide'),
   gender: genderEnum.optional(),
   countryOfOrigin: z.string().optional(),
   city: z.string().nullable().optional(),
@@ -40,7 +40,7 @@ export const updateContactSchema = z.object({
   body: z.object({
     firstName: z.string().optional(),
     lastName: z.string().optional(),
-    email: z.string().email('Adresse e-mail invalide').optional(),
+    email: z.email('Adresse e-mail invalide').optional(),
     gender: genderEnum.optional(),
     countryOfOrigin: z.string().optional(),
     city: z.string().nullable().optional(),
@@ -193,7 +193,7 @@ export const importContactsSchema = z.object({
       z.object({
         firstName: z.preprocess(v => (v === '' || v === null ? undefined : v), z.string().optional()),
         lastName: z.preprocess(v => (v === '' || v === null ? undefined : v), z.string().optional()),
-        email: z.preprocess(v => (v === '' || v === null ? undefined : v), z.string().email('Email invalide').optional()),
+        email: z.preprocess(v => (v === '' || v === null ? undefined : v), z.email('Email invalide').optional()),
         gender: z.preprocess(v => (v === '' || v === null ? undefined : v), genderEnum.optional()),
         countryOfOrigin: z.preprocess(v => (v === '' || v === null ? undefined : v), z.string().optional()),
         city: z.preprocess(v => (v === '' || v === null ? undefined : v), z.string().nullable().optional()),

@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import crypto from 'crypto';
+import crypto from 'node:crypto';
 import { authenticateJWT } from '../middleware/authenticateJWT';
 import { supabase } from '../config/supabase';
 
@@ -83,7 +83,7 @@ router.post('/avatar', authenticateJWT, async (req, res) => {
     return res.status(400).json({ error: 'Aucune image fournie.', code: 'MISSING_IMAGE' });
   }
 
-  const match = dataUrl.match(/^data:image\/([a-zA-Z0-9.+-]+);base64,(.+)$/);
+  const match = /^data:image\/([a-zA-Z0-9.+-]+);base64,(.+)$/.exec(dataUrl);
   if (!match) {
     return res.status(400).json({ error: 'Format de données image invalide.', code: 'INVALID_IMAGE' });
   }

@@ -4,5 +4,6 @@
  */
 export function toArray(value: unknown): string[] | undefined {
   if (value == null) return undefined;
-  return Array.isArray(value) ? value : [String(value)];
+  if (Array.isArray(value)) return value;
+  return [typeof value === 'string' ? value : JSON.stringify(value)];
 }

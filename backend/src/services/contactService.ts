@@ -8,6 +8,18 @@ import { csvCell } from '../utils/csv';
 
 const NA = 'N/A';
 
+function previewRowStatus(isValid: boolean, isDuplicate: boolean): 'INVALID' | 'DUPLICATE' | 'VALID' {
+  if (!isValid) return 'INVALID';
+  if (isDuplicate) return 'DUPLICATE';
+  return 'VALID';
+}
+
+function previewRowMessage(isValid: boolean, isDuplicate: boolean): string {
+  if (!isValid) return 'Nom et email manquants';
+  if (isDuplicate) return 'Un contact avec cette adresse e-mail existe déjà en base de données';
+  return 'Prêt pour importation';
+}
+
 function friendlyRowError(err: any, context: string): string {
   const raw: string = err?.message || 'Erreur inconnue';
   if (raw.includes('Unique constraint') || raw.includes('unique constraint')) {
@@ -290,36 +302,48 @@ export function normalizeCountry(raw?: string | null): string {
   const key = foldCountry(base);
   if (EMPTY_COUNTRY_KEYS.has(key)) return '';
 
-  if (/^[A-Za-z]{2}$/.test(base)) {
-    const canonical = COUNTRY_NAME_BY_CODE.get(base.toUpperCase());
-    if (canonical) return canonical;
-  }
+  const byCode = countryByIsoCode(base);
+  if (byCode) return byCode;
 
   // Fast path: no replacement characters — canonical ou alias
   if (!base.includes('\uFFFD')) {
-    const canonical = COUNTRY_CANONICAL.get(key);
-    if (canonical) return canonical;
-    const iso2 = ALIAS_TO_ISO2.get(key);
-    if (iso2) return COUNTRY_NAME_BY_CODE.get(iso2)!;
-    return base.charAt(0).toUpperCase() + base.slice(1);
+    return lookupCountry(key) ?? capitalize(base);
   }
 
   // Slow path: \uFFFD present — expand each placeholder with a-z and test
+  return resolveCorruptedCountry(base, key);
+}
+
+function countryByIsoCode(base: string): string | null {
+  if (!/^[A-Za-z]{2}$/.test(base)) return null;
+  return COUNTRY_NAME_BY_CODE.get(base.toUpperCase()) ?? null;
+}
+
+function capitalize(value: string): string {
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+function lookupCountry(key: string): string | null {
+  const canonical = COUNTRY_CANONICAL.get(key);
+  if (canonical) return canonical;
+  const iso2 = ALIAS_TO_ISO2.get(key);
+  if (iso2) return COUNTRY_NAME_BY_CODE.get(iso2) ?? null;
+  return null;
+}
+
+function resolveCorruptedCountry(base: string, key: string): string {
   const MAX_PLACEHOLDERS = 3;
   const placeholderCount = (base.match(/\uFFFD/g) || []).length;
   if (placeholderCount <= MAX_PLACEHOLDERS) {
-    const candidates = expandPlaceholders(base);
-    for (const candidate of candidates) {
-      const canonical = COUNTRY_CANONICAL.get(foldCountry(candidate));
-      if (canonical) return canonical;
-      const iso2 = ALIAS_TO_ISO2.get(foldCountry(candidate));
-      if (iso2) return COUNTRY_NAME_BY_CODE.get(iso2)!;
+    for (const candidate of expandPlaceholders(base)) {
+      const found = lookupCountry(foldCountry(candidate));
+      if (found) return found;
     }
   }
 
   // Fallback: strip all \uFFFD and return cleaned
-  const stripped = base.replace(/\uFFFD/g, '').trim();
-  return stripped.charAt(0).toUpperCase() + stripped.slice(1);
+  const stripped = base.replaceAll('\uFFFD', '').trim();
+  return capitalize(stripped);
 }
 
 /** Replace each \uFFFD with a-z recursively (up to MAX_PLACEHOLDERS). */
@@ -330,7 +354,7 @@ function expandPlaceholders(input: string): string[] {
   const before = input.slice(0, idx);
   const after = input.slice(idx + 1);
   for (let c = 97; c <= 122; c++) {
-    results.push(...expandPlaceholders(before + String.fromCharCode(c) + after));
+    results.push(...expandPlaceholders(before + String.fromCodePoint(c) + after));
   }
   return results;
 }
@@ -422,15 +446,19 @@ function normalizeCareerStage(value?: string): ResearchCareerStage {
 // compatibilité avec le contrat du chatbot.
 
 function toArray(value?: string | string[]): string[] {
-  return Array.isArray(value) ? value.filter(Boolean) : value ? [value] : [];
+  if (Array.isArray(value)) return value.filter(Boolean);
+  if (value) return [value];
+  return [];
 }
 
 function orCountryOfOrigin(values: string[]): Prisma.Sql {
-  return Prisma.sql`(${Prisma.join(values.map(v => Prisma.sql`"countryOfOrigin" ILIKE ${v}`), ' OR ')})`;
+  const parts = values.map(v => Prisma.sql`"countryOfOrigin" ILIKE ${v}`);
+  return Prisma.sql`(${Prisma.join(parts, ' OR ')})`;
 }
 
 function orGender(values: string[]): Prisma.Sql {
-  return Prisma.sql`(${Prisma.join(values.map(v => Prisma.sql`"gender" = ${normalizeGender(v)}::"Gender"`), ' OR ')})`;
+  const parts = values.map(v => Prisma.sql`"gender" = ${normalizeGender(v)}::"Gender"`);
+  return Prisma.sql`(${Prisma.join(parts, ' OR ')})`;
 }
 
 function orCareerStage(values: string[]): Prisma.Sql {
@@ -453,6 +481,25 @@ function orTagId(values: string[]): Prisma.Sql {
 
 function orSegmentId(values: string[]): Prisma.Sql {
   return orTagId(values);
+}
+
+/** Construit l'objet `data` d'une mise à jour Prisma à partir d'un payload. */
+function buildContactUpdateData(payload: UpdateContactPayload): Record<string, unknown> {
+  const dataToUpdate: Record<string, unknown> = {};
+  if (payload.firstName !== undefined) dataToUpdate.firstName = clean(payload.firstName) || NA;
+  if (payload.lastName !== undefined) dataToUpdate.lastName = clean(payload.lastName) || NA;
+  if (payload.email !== undefined) dataToUpdate.email = payload.email.toLowerCase().trim();
+  if (payload.gender !== undefined) dataToUpdate.gender = normalizeGender(payload.gender);
+  if (payload.countryOfOrigin !== undefined) dataToUpdate.countryOfOrigin = normalizeCountry(payload.countryOfOrigin) || null;
+  if (payload.city !== undefined) dataToUpdate.city = clean(payload.city) || null;
+  if (payload.phone !== undefined) dataToUpdate.phone = clean(payload.phone) || null;
+  if (payload.affiliation !== undefined) dataToUpdate.affiliation = clean(payload.affiliation) || null;
+  if (payload.function !== undefined) dataToUpdate.function = clean(payload.function) || null;
+  if (payload.experience !== undefined) dataToUpdate.experience = clean(payload.experience) || null;
+  if (payload.facultyDepartment !== undefined) dataToUpdate.facultyDepartment = clean(payload.facultyDepartment) || null;
+  if (payload.researchCareerStage !== undefined) dataToUpdate.researchCareerStage = normalizeCareerStage(payload.researchCareerStage);
+  if (payload.avatarUrl !== undefined) dataToUpdate.avatarUrl = clean(payload.avatarUrl) || null;
+  return dataToUpdate;
 }
 
 export class ContactService {
@@ -528,7 +575,8 @@ export class ContactService {
   private exportConditions(params: ExportContactsParams): Prisma.Sql[] {
     const ids = toArray(params.ids);
     if (ids.length) {
-      return [Prisma.sql`"id" IN (${Prisma.join(ids.map(id => Prisma.sql`${id}`))})`];
+      const idParts = ids.map(id => Prisma.sql`${id}`);
+      return [Prisma.sql`"id" IN (${Prisma.join(idParts)})`];
     }
     return this.buildWhereConditions(params);
   }
@@ -623,7 +671,7 @@ export class ContactService {
       }
 
       if (idRows.length < BATCH) break;
-      lastId = idRows[idRows.length - 1].id;
+      lastId = idRows.at(-1)!.id;
     }
   }
 
@@ -860,21 +908,7 @@ export class ContactService {
       }
     }
 
-    const dataToUpdate: any = {};
-
-    if (payload.firstName !== undefined) dataToUpdate.firstName = clean(payload.firstName) || NA;
-    if (payload.lastName !== undefined) dataToUpdate.lastName = clean(payload.lastName) || NA;
-    if (payload.email !== undefined) dataToUpdate.email = payload.email.toLowerCase().trim();
-    if (payload.gender !== undefined) dataToUpdate.gender = normalizeGender(payload.gender);
-    if (payload.countryOfOrigin !== undefined) dataToUpdate.countryOfOrigin = normalizeCountry(payload.countryOfOrigin) || null;
-    if (payload.city !== undefined) dataToUpdate.city = clean(payload.city) || null;
-    if (payload.phone !== undefined) dataToUpdate.phone = clean(payload.phone) || null;
-    if (payload.affiliation !== undefined) dataToUpdate.affiliation = clean(payload.affiliation) || null;
-    if (payload.function !== undefined) dataToUpdate.function = clean(payload.function) || null;
-    if (payload.experience !== undefined) dataToUpdate.experience = clean(payload.experience) || null;
-    if (payload.facultyDepartment !== undefined) dataToUpdate.facultyDepartment = clean(payload.facultyDepartment) || null;
-    if (payload.researchCareerStage !== undefined) dataToUpdate.researchCareerStage = normalizeCareerStage(payload.researchCareerStage);
-    if (payload.avatarUrl !== undefined) dataToUpdate.avatarUrl = clean(payload.avatarUrl) || null;
+    const dataToUpdate = buildContactUpdateData(payload);
 
     const updatedContact = await prisma.contact.update({
       where: { id },
@@ -923,237 +957,287 @@ export class ContactService {
    *         missing tags are added and extra tags are removed.
    */
   public async bulkSave(newContactsPayloads: CreateContactPayload[], updatedContactsPayloads: Array<{ id: string } & UpdateContactPayload>) {
-    const result = await prisma.$transaction(async (tx) => {
-      let createdCount = 0;
-      let updatedCount = 0;
+    return await prisma.$transaction(async (tx) => {
       const errors: Array<{ row: number; message: string }> = [];
 
       // ── Step 1: Resolve emails and pre-fetch existing contacts (1 query) ──
-      const resolvedEmails = newContactsPayloads.map(p => resolveEmail(p.email));
-      const allExistingRows = await tx.contact.findMany({
-        where: { email: { in: resolvedEmails } },
-        select: { id: true, email: true }
-      });
-      const existingByEmail = new Map(allExistingRows.map(r => [r.email, r.id]));
+      const existingByEmail = await this.loadExistingByEmail(tx, newContactsPayloads);
 
       // ── Step 1b: Validate tagIds — discard any that don't exist in DB ──
-      const allTagIds = new Set<string>();
-      for (const p of newContactsPayloads) {
-        if (p.tagIds) p.tagIds.forEach(id => allTagIds.add(id));
-      }
-      for (const p of updatedContactsPayloads) {
-        if (p.tagIds) p.tagIds.forEach(id => allTagIds.add(id));
-      }
-      const validTagIds = new Set<string>();
-      if (allTagIds.size > 0) {
-        const existingTags = await tx.tag.findMany({
-          where: { id: { in: Array.from(allTagIds) } },
-          select: { id: true }
-        });
-        for (const t of existingTags) validTagIds.add(t.id);
-      }
+      const validTagIds = await this.resolveValidTagIds(tx, newContactsPayloads, updatedContactsPayloads);
 
       // ── Step 2: Partition new payloads into creates vs updates ──
-      const createPayloads: any[] = [];
-      const createEmails: string[] = [];
       const emailsToTagIds = new Map<string, string[]>();
+      const createPayloads = this.partitionCreatePayloads(newContactsPayloads, existingByEmail, validTagIds, emailsToTagIds);
 
-      for (let i = 0; i < newContactsPayloads.length; i++) {
-        const payload = newContactsPayloads[i];
-        const emailClean = resolveEmail(payload.email);
-        const names = resolveNames(payload);
+      // ── Step 3: Bulk create (1 query), fallback row-by-row ──
+      const createdCount = await this.createBulkContacts(tx, createPayloads, existingByEmail, errors);
 
-        if (payload.tagIds && payload.tagIds.length > 0) {
-          emailsToTagIds.set(emailClean, payload.tagIds.filter(id => validTagIds.has(id)));
+      // ── Step 4: Bulk update existing contacts (chunked parallel) ──
+      const ops = await this.collectUpdateOps(tx, updatedContactsPayloads, validTagIds, emailsToTagIds, errors);
+      await this.executeUpdateOps(tx, ops.updateOps, errors);
+
+      // ── Step 4b: Tags des contacts « new » déjà présents en base ──
+      this.registerExistingNewPayloadTags(newContactsPayloads, existingByEmail, validTagIds, emailsToTagIds);
+
+      // ── Step 5: Idempotent tag sync (2 queries) ──
+      await this.syncTags(tx, emailsToTagIds, existingByEmail);
+
+      return { createdCount, updatedCount: ops.updatedCount, errors };
+    }, { maxWait: 15000, timeout: 60000 });
+  }
+
+  private async loadExistingByEmail(
+    tx: Prisma.TransactionClient,
+    newContactsPayloads: CreateContactPayload[]
+  ): Promise<Map<string, string>> {
+    const resolvedEmails = newContactsPayloads.map(p => resolveEmail(p.email));
+    const allExistingRows = await tx.contact.findMany({
+      where: { email: { in: resolvedEmails } },
+      select: { id: true, email: true }
+    });
+    return new Map(allExistingRows.map(r => [r.email, r.id]));
+  }
+
+  private async resolveValidTagIds(
+    tx: Prisma.TransactionClient,
+    newContactsPayloads: CreateContactPayload[],
+    updatedContactsPayloads: Array<{ id: string } & UpdateContactPayload>
+  ): Promise<Set<string>> {
+    const allTagIds = new Set<string>();
+    for (const p of [...newContactsPayloads, ...updatedContactsPayloads]) {
+      if (p.tagIds) p.tagIds.forEach(id => allTagIds.add(id));
+    }
+    if (allTagIds.size === 0) return new Set();
+    const existingTags = await tx.tag.findMany({
+      where: { id: { in: Array.from(allTagIds) } },
+      select: { id: true }
+    });
+    return new Set(existingTags.map(t => t.id));
+  }
+
+  private keepValidTagIds(tagIds: string[], validTagIds: Set<string>): string[] {
+    return tagIds.filter(id => validTagIds.has(id));
+  }
+
+  private buildContactCreateData(payload: CreateContactPayload, emailClean: string, names: { firstName: string; lastName: string }): any {
+    return {
+      firstName: names.firstName,
+      lastName: names.lastName,
+      email: emailClean,
+      gender: normalizeGender(payload.gender),
+      countryOfOrigin: normalizeCountry(payload.countryOfOrigin) || null,
+      city: clean(payload.city) || null,
+      phone: clean(payload.phone) || null,
+      affiliation: clean(payload.affiliation) || null,
+      function: clean(payload.function) || null,
+      experience: clean(payload.experience) || null,
+      facultyDepartment: clean(payload.facultyDepartment) || null,
+      researchCareerStage: normalizeCareerStage(payload.researchCareerStage),
+      avatarUrl: clean(payload.avatarUrl) || null
+    };
+  }
+
+  private partitionCreatePayloads(
+    newContactsPayloads: CreateContactPayload[],
+    existingByEmail: Map<string, string>,
+    validTagIds: Set<string>,
+    emailsToTagIds: Map<string, string[]>
+  ): any[] {
+    const createPayloads: any[] = [];
+    for (const payload of newContactsPayloads) {
+      const emailClean = resolveEmail(payload.email);
+      const names = resolveNames(payload);
+
+      if (payload.tagIds && payload.tagIds.length > 0) {
+        emailsToTagIds.set(emailClean, this.keepValidTagIds(payload.tagIds, validTagIds));
+      }
+
+      // Already in DB → will be handled by the tag-sync step below
+      if (existingByEmail.has(emailClean)) {
+        continue;
+      }
+
+      createPayloads.push(this.buildContactCreateData(payload, emailClean, names));
+      // Register so within-batch duplicates become updates
+      existingByEmail.set(emailClean, '__pending__');
+    }
+    return createPayloads;
+  }
+
+  private async createBulkContacts(
+    tx: Prisma.TransactionClient,
+    createPayloads: any[],
+    existingByEmail: Map<string, string>,
+    errors: Array<{ row: number; message: string }>
+  ): Promise<number> {
+    if (createPayloads.length === 0) return 0;
+
+    let createdCount = 0;
+    try {
+      await tx.contact.createMany({ data: createPayloads, skipDuplicates: true });
+      createdCount = createPayloads.length;
+    } catch {
+      // If the entire batch fails, fall back to row-by-row for creates
+      for (let i = 0; i < createPayloads.length; i++) {
+        try {
+          await tx.contact.create({ data: createPayloads[i] });
+          createdCount++;
+        } catch (rowErr: any) {
+          errors.push({ row: i + 1, message: friendlyRowError(rowErr, `Ligne ${i + 1} (création ${createPayloads[i].email})`) });
         }
+      }
+    }
 
-        if (existingByEmail.has(emailClean)) {
-          // Already in DB → will be updated in the parallel update step below
+    // Fetch back to get IDs for tag assignment
+    const createdRows = await tx.contact.findMany({
+      where: { email: { in: createPayloads.map(p => p.email) } },
+      select: { id: true, email: true }
+    });
+    for (const r of createdRows) {
+      existingByEmail.set(r.email, r.id);
+    }
+    return createdCount;
+  }
+
+  private async collectUpdateOps(
+    tx: Prisma.TransactionClient,
+    updatedContactsPayloads: Array<{ id: string } & UpdateContactPayload>,
+    validTagIds: Set<string>,
+    emailsToTagIds: Map<string, string[]>,
+    errors: Array<{ row: number; message: string }>
+  ): Promise<{ updateOps: Array<{ id: string; data: any }>; updatedCount: number }> {
+    const updateOps: Array<{ id: string; data: any }> = [];
+    const updateItems = updatedContactsPayloads.filter(u => u.id);
+    let updatedCount = 0;
+
+    for (let i = 0; i < updateItems.length; i++) {
+      const item = updateItems[i];
+      try {
+        const row = await tx.contact.findUnique({ where: { id: item.id }, select: { id: true } });
+        if (!row) {
+          errors.push({ row: i + 1, message: `Contact ${item.id} non trouvé` });
           continue;
         }
 
-        createPayloads.push({
-          firstName: names.firstName,
-          lastName: names.lastName,
-          email: emailClean,
-          gender: normalizeGender(payload.gender),
-          countryOfOrigin: normalizeCountry(payload.countryOfOrigin) || null,
-          city: clean(payload.city) || null,
-          phone: clean(payload.phone) || null,
-          affiliation: clean(payload.affiliation) || null,
-          function: clean(payload.function) || null,
-          experience: clean(payload.experience) || null,
-          facultyDepartment: clean(payload.facultyDepartment) || null,
-          researchCareerStage: normalizeCareerStage(payload.researchCareerStage),
-          avatarUrl: clean(payload.avatarUrl) || null
-        });
-        createEmails.push(emailClean);
-        // Register so within-batch duplicates become updates
-        existingByEmail.set(emailClean, '__pending__');
-      }
-
-      // ── Step 3: Bulk create (1 query) ──
-      if (createPayloads.length > 0) {
-        try {
-          await tx.contact.createMany({ data: createPayloads, skipDuplicates: true });
-          createdCount = createPayloads.length;
-        } catch (err: any) {
-          // If the entire batch fails, fall back to row-by-row for creates
-          createdCount = 0;
-          for (let i = 0; i < createPayloads.length; i++) {
-            try {
-              await tx.contact.create({ data: createPayloads[i] });
-              createdCount++;
-            } catch (rowErr: any) {
-              errors.push({ row: i + 1, message: friendlyRowError(rowErr, `Ligne ${i + 1} (création ${createEmails[i]})`) });
-            }
-          }
+        const dataToUpdate = buildContactUpdateData(item);
+        if (Object.keys(dataToUpdate).length > 0) {
+          updateOps.push({ id: item.id, data: dataToUpdate });
         }
 
-        // Fetch back to get IDs for tag assignment
-        const createdRows = await tx.contact.findMany({
-          where: { email: { in: createEmails } },
-          select: { id: true, email: true }
-        });
-        for (const r of createdRows) {
-          existingByEmail.set(r.email, r.id);
+        if (item.tagIds && item.tagIds.length > 0) {
+          emailsToTagIds.set(item.email.toLowerCase().trim(), this.keepValidTagIds(item.tagIds, validTagIds));
+        }
+        updatedCount++;
+      } catch (rowErr: any) {
+        errors.push({ row: i + 1, message: friendlyRowError(rowErr, `Ligne ${i + 1} (mise à jour ${item.id})`) });
+      }
+    }
+
+    return { updateOps, updatedCount };
+  }
+
+  private async executeUpdateOps(
+    tx: Prisma.TransactionClient,
+    updateOps: Array<{ id: string; data: any }>,
+    errors: Array<{ row: number; message: string }>
+  ): Promise<void> {
+    // Execute updates in chunks of 50 for parallelism
+    const BATCH = 50;
+    for (let i = 0; i < updateOps.length; i += BATCH) {
+      const chunk = updateOps.slice(i, i + BATCH);
+      const results = await Promise.allSettled(
+        chunk.map(op => tx.contact.update({ where: { id: op.id }, data: op.data }))
+      );
+      for (let j = 0; j < results.length; j++) {
+        if (results[j].status === 'rejected') {
+          const reason = (results[j] as PromiseRejectedResult).reason;
+          errors.push({ row: i + j + 1, message: friendlyRowError(reason, `Ligne ${i + j + 1} (mise à jour)`) });
         }
       }
+    }
+  }
 
-      // ── Step 4: Bulk update existing contacts (chunked parallel) ──
-      const updateItems = updatedContactsPayloads.filter(u => u.id);
-      const updateOps: Array<{ id: string; data: any }> = [];
+  private registerExistingNewPayloadTags(
+    newContactsPayloads: CreateContactPayload[],
+    existingByEmail: Map<string, string>,
+    validTagIds: Set<string>,
+    emailsToTagIds: Map<string, string[]>
+  ): void {
+    // Tags pour les contacts « new » qui étaient déjà en base
+    for (const payload of newContactsPayloads) {
+      const emailClean = resolveEmail(payload.email);
+      const contactId = existingByEmail.get(emailClean);
+      if (contactId && contactId !== '__pending__' && payload.tagIds && payload.tagIds.length > 0) {
+        emailsToTagIds.set(emailClean, this.keepValidTagIds(payload.tagIds, validTagIds));
+      }
+    }
+  }
 
-      for (let i = 0; i < updateItems.length; i++) {
-        const item = updateItems[i];
-        try {
-          const row = await tx.contact.findUnique({ where: { id: item.id }, select: { id: true } });
-          if (!row) {
-            errors.push({ row: i + 1, message: `Contact ${item.id} non trouvé` });
-            continue;
-          }
+  private async syncTags(
+    tx: Prisma.TransactionClient,
+    emailsToTagIds: Map<string, string[]>,
+    existingByEmail: Map<string, string>
+  ): Promise<void> {
+    const allTagEmails = Array.from(emailsToTagIds.keys()).filter(e => existingByEmail.get(e) && existingByEmail.get(e) !== '__pending__');
+    const allContactIds = allTagEmails.map(e => existingByEmail.get(e)!).filter(Boolean);
+    if (allContactIds.length === 0) return;
 
-          const dataToUpdate: any = {};
-          if (item.firstName !== undefined) dataToUpdate.firstName = clean(item.firstName) || NA;
-          if (item.lastName !== undefined) dataToUpdate.lastName = clean(item.lastName) || NA;
-          if (item.email !== undefined) dataToUpdate.email = item.email.toLowerCase().trim();
-          if (item.gender !== undefined) dataToUpdate.gender = normalizeGender(item.gender);
-          if (item.countryOfOrigin !== undefined) dataToUpdate.countryOfOrigin = normalizeCountry(item.countryOfOrigin) || null;
-          if (item.city !== undefined) dataToUpdate.city = clean(item.city) || null;
-          if (item.phone !== undefined) dataToUpdate.phone = clean(item.phone) || null;
-          if (item.affiliation !== undefined) dataToUpdate.affiliation = clean(item.affiliation) || null;
-          if (item.function !== undefined) dataToUpdate.function = clean(item.function) || null;
-          if (item.experience !== undefined) dataToUpdate.experience = clean(item.experience) || null;
-          if (item.facultyDepartment !== undefined) dataToUpdate.facultyDepartment = clean(item.facultyDepartment) || null;
-          if (item.researchCareerStage !== undefined) dataToUpdate.researchCareerStage = normalizeCareerStage(item.researchCareerStage);
-          if (item.avatarUrl !== undefined) dataToUpdate.avatarUrl = clean(item.avatarUrl) || null;
+    // Fetch existing tag associations (1 query)
+    const existingTags = await tx.tagOnContact.findMany({
+      where: { contactId: { in: allContactIds } },
+      select: { contactId: true, tagId: true }
+    });
+    const existingTagSet = new Map<string, Set<string>>();
+    for (const t of existingTags) {
+      if (!existingTagSet.has(t.contactId)) existingTagSet.set(t.contactId, new Set());
+      existingTagSet.get(t.contactId)!.add(t.tagId);
+    }
 
-          if (Object.keys(dataToUpdate).length > 0) {
-            updateOps.push({ id: item.id, data: dataToUpdate });
-          }
+    const tagsToAdd: Array<{ contactId: string; tagId: string }> = [];
+    const tagsToRemove: Array<{ contactId: string; tagId: string }> = [];
 
-          if (item.tagIds && item.tagIds.length > 0) {
-            emailsToTagIds.set(item.email.toLowerCase().trim(), item.tagIds.filter(id => validTagIds.has(id)));
-          }
-          updatedCount++;
-        } catch (rowErr: any) {
-          errors.push({ row: i + 1, message: friendlyRowError(rowErr, `Ligne ${i + 1} (mise à jour ${item.id})`) });
+    for (const email of allTagEmails) {
+      const contactId = existingByEmail.get(email)!;
+      const desired = new Set(emailsToTagIds.get(email) || []);
+      const existing = existingTagSet.get(contactId) || new Set();
+
+      // Add tags that are desired but not existing
+      for (const tagId of desired) {
+        if (!existing.has(tagId)) {
+          tagsToAdd.push({ contactId, tagId });
         }
       }
+      // Remove tags that exist but are not desired
+      for (const tagId of existing) {
+        if (!desired.has(tagId)) {
+          tagsToRemove.push({ contactId, tagId });
+        }
+      }
+    }
 
-      // Execute updates in chunks of 50 for parallelism
-      const BATCH = 50;
-      for (let i = 0; i < updateOps.length; i += BATCH) {
-        const chunk = updateOps.slice(i, i + BATCH);
-        const results = await Promise.allSettled(
-          chunk.map(op => tx.contact.update({ where: { id: op.id }, data: op.data }))
+    // Batch write (≤2 queries)
+    if (tagsToAdd.length > 0) {
+      await tx.tagOnContact.createMany({ data: tagsToAdd, skipDuplicates: true });
+    }
+    if (tagsToRemove.length > 0) {
+      // Delete each stale tag pair — Prisma has no bulk delete by composite key,
+      // so we batch by contactId groups
+      const byContact = new Map<string, string[]>();
+      for (const t of tagsToRemove) {
+        if (!byContact.has(t.contactId)) byContact.set(t.contactId, []);
+        byContact.get(t.contactId)!.push(t.tagId);
+      }
+      const removeChunks: Array<Promise<any>> = [];
+      for (const [contactId, tagIds] of byContact) {
+        removeChunks.push(
+          tx.tagOnContact.deleteMany({
+            where: { contactId, tagId: { in: tagIds } }
+          })
         );
-        for (let j = 0; j < results.length; j++) {
-          if (results[j].status === 'rejected') {
-            const reason = (results[j] as PromiseRejectedResult).reason;
-            errors.push({ row: i + j + 1, message: friendlyRowError(reason, `Ligne ${i + j + 1} (mise à jour)`) });
-          }
-        }
       }
-
-      // Also handle tags for new contacts that were already in DB
-      // (emails from newContactsPayloads that matched existingByEmail above)
-      for (let i = 0; i < newContactsPayloads.length; i++) {
-        const payload = newContactsPayloads[i];
-        const emailClean = resolveEmail(payload.email);
-        const contactId = existingByEmail.get(emailClean);
-        if (contactId && contactId !== '__pending__' && payload.tagIds && payload.tagIds.length > 0) {
-          emailsToTagIds.set(emailClean, payload.tagIds.filter(id => validTagIds.has(id)));
-        }
-      }
-
-      // ── Step 5: Idempotent tag sync (2 queries) ──
-      // Collect all contact IDs that have tags to sync
-      const allTagEmails = Array.from(emailsToTagIds.keys()).filter(e => existingByEmail.get(e) && existingByEmail.get(e) !== '__pending__');
-      const allContactIds = allTagEmails.map(e => existingByEmail.get(e)!).filter(Boolean);
-
-      if (allContactIds.length > 0) {
-        // Fetch existing tag associations (1 query)
-        const existingTags = await tx.tagOnContact.findMany({
-          where: { contactId: { in: allContactIds } },
-          select: { contactId: true, tagId: true }
-        });
-        const existingTagSet = new Map<string, Set<string>>();
-        for (const t of existingTags) {
-          if (!existingTagSet.has(t.contactId)) existingTagSet.set(t.contactId, new Set());
-          existingTagSet.get(t.contactId)!.add(t.tagId);
-        }
-
-        const tagsToAdd: Array<{ contactId: string; tagId: string }> = [];
-        const tagsToRemove: Array<{ contactId: string; tagId: string }> = [];
-
-        for (const email of allTagEmails) {
-          const contactId = existingByEmail.get(email)!;
-          const desired = new Set(emailsToTagIds.get(email) || []);
-          const existing = existingTagSet.get(contactId) || new Set();
-
-          // Add tags that are desired but not existing
-          for (const tagId of desired) {
-            if (!existing.has(tagId)) {
-              tagsToAdd.push({ contactId, tagId });
-            }
-          }
-          // Remove tags that exist but are not desired
-          for (const tagId of existing) {
-            if (!desired.has(tagId)) {
-              tagsToRemove.push({ contactId, tagId });
-            }
-          }
-        }
-
-        // Batch write (≤2 queries)
-        if (tagsToAdd.length > 0) {
-          await tx.tagOnContact.createMany({ data: tagsToAdd, skipDuplicates: true });
-        }
-        if (tagsToRemove.length > 0) {
-          // Delete each stale tag pair — Prisma has no bulk delete by composite key,
-          // but we can batch by contactId groups
-          const byContact = new Map<string, string[]>();
-          for (const t of tagsToRemove) {
-            if (!byContact.has(t.contactId)) byContact.set(t.contactId, []);
-            byContact.get(t.contactId)!.push(t.tagId);
-          }
-          const removeChunks: Array<Promise<any>> = [];
-          for (const [contactId, tagIds] of byContact) {
-            removeChunks.push(
-              tx.tagOnContact.deleteMany({
-                where: { contactId, tagId: { in: tagIds } }
-              })
-            );
-          }
-          await Promise.all(removeChunks);
-        }
-      }
-
-      return { createdCount, updatedCount, errors };
-    }, { maxWait: 15000, timeout: 60000 });
-
-    return result;
+      await Promise.all(removeChunks);
+    }
   }
 
   /** Replace all TagOnContact rows for a contact within the given tx client. */
@@ -1189,13 +1273,9 @@ export class ContactService {
       return {
         rowNumber: index + 1,
         inputData: row,
-        status: !isValid ? 'INVALID' : isDuplicate ? 'DUPLICATE' : 'VALID',
+        status: previewRowStatus(isValid, isDuplicate),
         existingContactId: existingId,
-        message: !isValid
-          ? 'Nom et email manquants'
-          : isDuplicate
-          ? 'Un contact avec cette adresse e-mail existe déjà en base de données'
-          : 'Prêt pour importation'
+        message: previewRowMessage(isValid, isDuplicate)
       };
     });
 

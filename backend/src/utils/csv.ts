@@ -3,5 +3,6 @@
  * Handles null/undefined and escapes double quotes.
  */
 export function csvCell(value: unknown): string {
-  return `"${String(value ?? '').replace(/"/g, '""')}"`;
+  const text = typeof value === 'string' ? value : value == null ? '' : JSON.stringify(value);
+  return `"${text.replaceAll('"', '""')}"`;
 }

@@ -13,7 +13,7 @@ export const getContacts = async (req: Request, res: Response, next: NextFunctio
     const page = Number(req.query.page) || 1;
     const limit = Number(req.query.limit) || 20;
     // `researchCareerStage` (chatbot) est l'alias moderne de `careerStage` (legacy)
-    const stages = req.query.researchCareerStage != null ? req.query.researchCareerStage : req.query.careerStage;
+    const stages = req.query.researchCareerStage ?? req.query.careerStage;
 
     const result = await contactService.getContacts({
       page,
@@ -58,10 +58,11 @@ function buildExportFilename(params: Record<string, unknown>, format: string): s
 export const exportContacts = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const ids = toArray(req.query.ids);
-    const format = String(req.query.format || 'csv').toLowerCase();
+    const formatOrigin = req.query.format;
+    const format = (typeof formatOrigin === 'string' ? formatOrigin : 'csv').toLowerCase();
     const fields = toArray(req.query.fields);
     const includeTags = req.query.includeTags === 'true' || req.query.includeTags === '1';
-    const stages = req.query.researchCareerStage != null ? req.query.researchCareerStage : req.query.careerStage;
+    const stages = req.query.researchCareerStage ?? req.query.careerStage;
 
     const params = {
       ids,
@@ -89,7 +90,7 @@ export const exportContacts = async (req: AuthenticatedRequest, res: Response, n
 
     if (format === 'json') {
       const rows = await contactService.collectExportRows(params);
-      const contacts = fields && fields.length
+      const contacts = fields?.length
         ? rows.map(c => {
             const item: Record<string, unknown> = { id: c.id };
             keys.forEach(k => { item[k] = c[k]; });
@@ -143,7 +144,7 @@ export const getDistinctCountries = async (_req: Request, res: Response, next: N
 
 export const countContactsByEmailPattern = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const pattern = String(req.query.email_pattern || '').trim();
+    const pattern = (typeof req.query.email_pattern === 'string' ? req.query.email_pattern : '').trim();
     if (!pattern) {
       return res.status(400).json({ error: 'Paramètre email_pattern requis.' });
     }
@@ -267,7 +268,7 @@ function extractBulkErrorMessage(error: any): string {
       !line.includes('invocation in') &&
       !/\.ts:\d+/.test(line)
     );
-  const reason = meaningfulLines[meaningfulLines.length - 1] || 'Erreur inconnue lors de l\'enregistrement des contacts.';
+  const reason = meaningfulLines.at(-1) || 'Erreur inconnue lors de l\'enregistrement des contacts.';
   return reason.length > 300 ? `${reason.slice(0, 300)}…` : reason;
 }
 

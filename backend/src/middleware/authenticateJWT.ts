@@ -80,7 +80,7 @@ export function authenticateJWT(req: AuthenticatedRequest, res: Response, next: 
           code: 'SERVICE_UNAVAILABLE'
         });
       });
-  } catch (err) {
+  } catch {
     return res.status(403).json({
       error: 'Jeton invalide ou expiré.',
       code: 'INVALID_TOKEN'

@@ -1,0 +1,10 @@
+process.env.NODE_ENV = 'test';
+process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret';
+process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgresql://test:test@localhost:5432/test';
+process.env.SUPABASE_URL = process.env.SUPABASE_URL || 'http://localhost:54321';
+process.env.SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || 'test-key';
+process.env.GMAIL_USER = process.env.GMAIL_USER || 'test@example.com';
+process.env.GMAIL_PASS = process.env.GMAIL_PASS || 'test-pass';
+process.env.APP_URL = process.env.APP_URL || 'http://localhost:5173';
+process.env.RATE_LIMIT_GLOBAL = process.env.RATE_LIMIT_GLOBAL || '300';
+process.env.FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';

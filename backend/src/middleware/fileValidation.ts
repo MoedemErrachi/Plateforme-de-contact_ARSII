@@ -1,16 +1,16 @@
 import { Request, Response, NextFunction } from 'express';
-import path from 'path';
+import path from 'node:path';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB limit
 
-const ALLOWED_MIME_TYPES = [
+const ALLOWED_MIME_TYPES = new Set<string>([
   'text/csv',
   'text/plain',
   'application/csv',
   'application/vnd.ms-excel',
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   'application/json'
-];
+]);
 
 /**
  * Validates magic number signature for XLSX files
@@ -48,9 +48,9 @@ export function sanitizeFilename(filename: string): string {
   
   // Remove null bytes, parent dir references, and unsafe characters
   safeName = safeName
-    .replace(/\0/g, '')
-    .replace(/\.\./g, '')
-    .replace(/[^a-zA-Z0-9_\-\.]/g, '_');
+    .replaceAll('\0', '')
+    .replaceAll('..', '')
+    .replace(/[^a-zA-Z0-9_\-.]/g, '_');
 
   return safeName || 'import_file.csv';
 }
@@ -84,7 +84,7 @@ export const validateFileUpload = (req: Request, res: Response, next: NextFuncti
   }
 
   // 2. MIME type check
-  if (mimeType && !ALLOWED_MIME_TYPES.includes(mimeType)) {
+  if (mimeType && !ALLOWED_MIME_TYPES.has(mimeType)) {
     return res.status(400).json({
       error: 'Type de fichier non autorisé. Formats acceptés : CSV, XLSX, JSON.',
       code: 'INVALID_MIME_TYPE'
@@ -92,39 +92,42 @@ export const validateFileUpload = (req: Request, res: Response, next: NextFuncti
   }
 
   // 3. Magic number verification if file buffer is provided
-  if (fileData) {
-    try {
-      const isBase64 = typeof fileData === 'string' && fileData.includes(';base64,');
-      const base64Content = isBase64 ? fileData.split(';base64,')[1] : fileData;
-      const buffer = Buffer.from(base64Content, isBase64 ? 'base64' : 'utf8');
-
-      if (fileName?.endsWith('.xlsx')) {
-        if (!isValidXlsxSignature(buffer)) {
-          return res.status(400).json({
-            error: 'Signature binaire du fichier XLSX invalide.',
-            code: 'INVALID_FILE_SIGNATURE'
-          });
-        }
-      } else if (fileName?.endsWith('.csv')) {
-        if (!isValidCsvSignature(buffer)) {
-          return res.status(400).json({
-            error: 'Le fichier CSV contient des caractères binaire non autorisés.',
-            code: 'INVALID_FILE_SIGNATURE'
-          });
-        }
-      }
-    } catch (err) {
-      console.warn('File signature check warning:', err);
-    }
+  const signatureError = fileData ? inspectFileSignature(fileName, fileData) : null;
+  if (signatureError) {
+    return res.status(400).json({
+      error: signatureError,
+      code: 'INVALID_FILE_SIGNATURE'
+    });
   }
 
   // 4. Sanitize file name
-  if (req.body && req.body.fileName) {
+  if (req.body?.fileName) {
     req.body.fileName = sanitizeFilename(req.body.fileName);
   }
 
   next();
 };
+
+function inspectFileSignature(fileName: string | undefined, fileData: string): string | null {
+  try {
+    const isBase64 = typeof fileData === 'string' && fileData.includes(';base64,');
+    const base64Content = isBase64 ? fileData.split(';base64,')[1] : fileData;
+    const buffer = Buffer.from(base64Content, isBase64 ? 'base64' : 'utf8');
+
+    if (fileName?.endsWith('.xlsx')) {
+      if (!isValidXlsxSignature(buffer)) {
+        return 'Signature binaire du fichier XLSX invalide.';
+      }
+    } else if (fileName?.endsWith('.csv')) {
+      if (!isValidCsvSignature(buffer)) {
+        return 'Le fichier CSV contient des caractères binaire non autorisés.';
+      }
+    }
+  } catch (err) {
+    console.warn('File signature check warning:', err);
+  }
+  return null;
+}
 
 /**
  * Middleware pour l'import par lot JSON ({ newContacts, updatedContacts }).
