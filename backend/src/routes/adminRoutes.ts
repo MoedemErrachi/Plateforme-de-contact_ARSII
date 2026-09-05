@@ -178,15 +178,16 @@ router.get('/users', async (_req: AuthenticatedRequest, res: Response) => {
 });
 
 const VALID_PRIVILEGES = ['READ', 'READ_WRITE', 'FULL_ACCESS'] as const;
+type UserPrivilege = (typeof VALID_PRIVILEGES)[number];
 
-function normalizePrivilege(input: unknown): 'READ' | 'READ_WRITE' | 'FULL_ACCESS' | null {
+function normalizePrivilege(input: unknown): UserPrivilege | null {
   const raw = (typeof input === 'string' ? input : '').trim().toUpperCase();
   return (VALID_PRIVILEGES as readonly string[]).includes(raw)
-    ? (raw as 'READ' | 'READ_WRITE' | 'FULL_ACCESS')
+    ? (raw as UserPrivilege)
     : null;
 }
 
-function resolveUserPrivilege(userRole: 'ADMIN' | 'USER', privilege: unknown): 'READ' | 'READ_WRITE' | 'FULL_ACCESS' | null | undefined {
+function resolveUserPrivilege(userRole: 'ADMIN' | 'USER', privilege: unknown): UserPrivilege | null | undefined {
   if (userRole === 'ADMIN') return 'FULL_ACCESS';
   if (privilege !== undefined) return normalizePrivilege(privilege);
   return 'FULL_ACCESS';
@@ -289,17 +290,22 @@ router.put('/users/:id', async (req: AuthenticatedRequest, res: Response) => {
   }
 });
 
+type ResolvedUpdateData = Partial<{
+  privilege: UserPrivilege;
+  role: 'ADMIN' | 'USER';
+}>;
+
 function resolveUpdateData(
   privilege: unknown,
   role: unknown,
   currentUserId: string | undefined,
   targetId: string
-): { ok: true; data: { privilege?: 'READ' | 'READ_WRITE' | 'FULL_ACCESS'; role?: 'ADMIN' | 'USER' } } | { ok: false; error: string } {
+): { ok: true; data: ResolvedUpdateData } | { ok: false; error: string } {
   if (privilege === undefined && role === undefined) {
     return { ok: false, error: 'Aucune modification fournie.' };
   }
 
-  const data: { privilege?: 'READ' | 'READ_WRITE' | 'FULL_ACCESS'; role?: 'ADMIN' | 'USER' } = {};
+  const data: ResolvedUpdateData = {};
 
   if (privilege !== undefined) {
     const normalized = normalizePrivilege(privilege);

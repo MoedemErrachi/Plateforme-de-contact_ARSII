@@ -1174,26 +1174,21 @@ export class ContactService {
     }
   }
 
-  private async syncTags(
-    tx: Prisma.TransactionClient,
-    emailsToTagIds: Map<string, string[]>,
-    existingByEmail: Map<string, string>
-  ): Promise<void> {
-    const allTagEmails = Array.from(emailsToTagIds.keys()).filter(e => existingByEmail.get(e) && existingByEmail.get(e) !== '__pending__');
-    const allContactIds = allTagEmails.map(e => existingByEmail.get(e)!).filter(Boolean);
-    if (allContactIds.length === 0) return;
-
-    // Fetch existing tag associations (1 query)
-    const existingTags = await tx.tagOnContact.findMany({
-      where: { contactId: { in: allContactIds } },
-      select: { contactId: true, tagId: true }
-    });
+  private groupContactTags(existingTags: Array<{ contactId: string; tagId: string }>): Map<string, Set<string>> {
     const existingTagSet = new Map<string, Set<string>>();
     for (const t of existingTags) {
       if (!existingTagSet.has(t.contactId)) existingTagSet.set(t.contactId, new Set());
       existingTagSet.get(t.contactId)!.add(t.tagId);
     }
+    return existingTagSet;
+  }
 
+  private computeTagDiffs(
+    allTagEmails: string[],
+    emailsToTagIds: Map<string, string[]>,
+    existingByEmail: Map<string, string>,
+    existingTagSet: Map<string, Set<string>>
+  ): { tagsToAdd: Array<{ contactId: string; tagId: string }>; tagsToRemove: Array<{ contactId: string; tagId: string }> } {
     const tagsToAdd: Array<{ contactId: string; tagId: string }> = [];
     const tagsToRemove: Array<{ contactId: string; tagId: string }> = [];
 
@@ -1215,6 +1210,27 @@ export class ContactService {
         }
       }
     }
+
+    return { tagsToAdd, tagsToRemove };
+  }
+
+  private async syncTags(
+    tx: Prisma.TransactionClient,
+    emailsToTagIds: Map<string, string[]>,
+    existingByEmail: Map<string, string>
+  ): Promise<void> {
+    const allTagEmails = Array.from(emailsToTagIds.keys()).filter(e => existingByEmail.get(e) && existingByEmail.get(e) !== '__pending__');
+    const allContactIds = allTagEmails.map(e => existingByEmail.get(e)!).filter(Boolean);
+    if (allContactIds.length === 0) return;
+
+    // Fetch existing tag associations (1 query)
+    const existingTags = await tx.tagOnContact.findMany({
+      where: { contactId: { in: allContactIds } },
+      select: { contactId: true, tagId: true }
+    });
+    const existingTagSet = this.groupContactTags(existingTags);
+
+    const { tagsToAdd, tagsToRemove } = this.computeTagDiffs(allTagEmails, emailsToTagIds, existingByEmail, existingTagSet);
 
     // Batch write (≤2 queries)
     if (tagsToAdd.length > 0) {

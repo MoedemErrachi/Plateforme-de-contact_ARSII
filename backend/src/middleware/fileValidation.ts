@@ -45,7 +45,7 @@ export function sanitizeFilename(filename: string): string {
   // Dernier segment du chemin quel que soit le séparateur (\ ou /), donc
   // comportement identique sous Windows et Linux : bloque le Directory
   // Traversal de type `..\..\wp-config.php` comme `../../wp-config.php`.
-  const lastSegment = filename.replace(/\\/g, '/').split('/').pop() || '';
+  const lastSegment = filename.replaceAll('\\', '/').split('/').pop() || '';
 
   // Remove null bytes, parent dir references, and unsafe characters
   let safeName = lastSegment
