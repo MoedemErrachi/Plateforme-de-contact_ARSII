@@ -235,8 +235,9 @@ describe('ContactService — bulkSave', () => {
   });
 
   it('met à jour les contacts existants', async () => {
-    prismaMock.contact.findMany.mockResolvedValueOnce([]);
-    prismaMock.contact.findUnique.mockResolvedValueOnce({ id: 'c1' });
+    prismaMock.contact.findMany
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ id: 'c1' }]);
     const result = await service.bulkSave(
       [],
       [{ id: 'c1', email: 'awa@mail.sn', firstName: 'Awa', tagIds: ['t1'] }]
@@ -247,7 +248,6 @@ describe('ContactService — bulkSave', () => {
 
   it('collecte les erreurs de mise à jour (contact introuvable)', async () => {
     prismaMock.contact.findMany.mockResolvedValueOnce([]);
-    prismaMock.contact.findUnique.mockResolvedValueOnce(null);
 
     const result = await service.bulkSave([], [{ id: 'ghost', email: 'x@mail.sn' }]);
     expect(result.updatedCount).toBe(0);
@@ -410,15 +410,18 @@ describe('ContactService — branches de couverture', () => {
   });
 
   it('formate l’erreur lors de la collecte des mises à jour', async () => {
-    prismaMock.contact.findMany.mockResolvedValueOnce([]);
-    prismaMock.contact.findUnique.mockRejectedValueOnce(new Error('Invalid input syntax'));
-    const result = await service.bulkSave([], [{ id: 'c1', email: 'x@mail.sn', firstName: 'A' }]);
-    expect(result.errors[0].message).toContain('données invalides');
+    prismaMock.contact.findMany
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ id: 'c1' }]);
+    const result = await service.bulkSave([], [{ id: 'c1', tagIds: ['t1'] }]);
+    expect(result.updatedCount).toBe(0);
+    expect(result.errors[0].message).toContain('c1');
   });
 
   it('formate l’erreur lors de l’exécution des mises à jour par lots', async () => {
-    prismaMock.contact.findMany.mockResolvedValueOnce([]);
-    prismaMock.contact.findUnique.mockResolvedValueOnce({ id: 'c1' });
+    prismaMock.contact.findMany
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ id: 'c1' }]);
     prismaMock.contact.update.mockRejectedValueOnce(new Error('Unique constraint'));
     const result = await service.bulkSave([], [{ id: 'c1', email: 'x@mail.sn', firstName: 'A' }]);
     expect(result.errors[0].message).toContain('e-mail déjà existant');

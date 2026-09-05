@@ -1111,11 +1111,20 @@ export class ContactService {
     const updateItems = updatedContactsPayloads.filter(u => u.id);
     let updatedCount = 0;
 
+    // Vérification d'existence en lot (1 requête au lieu de N findUnique) :
+    // les erreurs « Contact non trouvé » restent rangées ligne à ligne.
+    const existingRows = updateItems.length > 0
+      ? await tx.contact.findMany({
+          where: { id: { in: updateItems.map(u => u.id) } },
+          select: { id: true }
+        })
+      : [];
+    const existingIds = new Set(existingRows.map(r => r.id));
+
     for (let i = 0; i < updateItems.length; i++) {
       const item = updateItems[i];
       try {
-        const row = await tx.contact.findUnique({ where: { id: item.id }, select: { id: true } });
-        if (!row) {
+        if (!existingIds.has(item.id)) {
           errors.push({ row: i + 1, message: `Contact ${item.id} non trouvé` });
           continue;
         }
@@ -1255,16 +1264,6 @@ export class ContactService {
       await Promise.all(removeChunks);
     }
   }
-
-  /** Replace all TagOnContact rows for a contact within the given tx client. */
-  /* v8 ignore start -- Méthode privée volontairement conservée mais jamais appelée (remplacement complet des tags d'un contact dans une transaction) ; un test l'exercerait sans valeur de comportement réel. */
-  private async syncContactTags(tx: Prisma.TransactionClient, contactId: string, tagIds: string[]) {
-    await tx.tagOnContact.deleteMany({ where: { contactId } });
-    for (const tagId of tagIds) {
-      await tx.tagOnContact.create({ data: { contactId, tagId } });
-    }
-  }
-  /* v8 ignore stop */
 
   public async importContactsPreview(rows: Array<Partial<CreateContactPayload>>) {
     const emails = rows

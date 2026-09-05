@@ -87,6 +87,20 @@ describe('authenticateJWT', () => {
       .set('Cookie', [`accessToken=${token}`]);
     expect(res.status).toBe(200);
   });
+
+  it('stoppe le démarrage si JWT_SECRET est absent', async () => {
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation((() => undefined) as any);
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.stubEnv('JWT_SECRET', '');
+    vi.resetModules();
+    await import('./authenticateJWT');
+    vi.resetModules();
+    vi.unstubAllEnvs();
+    expect(errorSpy).toHaveBeenCalledWith('[FATAL] JWT_SECRET environment variable is not set. Refusing to start with an insecure fallback.');
+    expect(exitSpy).toHaveBeenCalledWith(1);
+    exitSpy.mockRestore();
+    errorSpy.mockRestore();
+  });
 });
 
 describe('setAuthCookie / clearAuthCookie', () => {

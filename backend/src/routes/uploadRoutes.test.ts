@@ -46,29 +46,18 @@ describe('Uploads - avatar', () => {
     prismaMock.user.findUnique.mockResolvedValue({ id: 'u1', tokenVersion: 0, role: 'USER', privilege: 'READ_WRITE' });
   });
 
-  it('refuse une image manquante (400)', async () => {
-    const res = await request(appWithAuth()).post('/api/uploads/avatar').send({});
+  it.each([
+    { name: 'manquante', dataUrl: undefined, code: 'MISSING_IMAGE' },
+    { name: 'au format data URL invalide', dataUrl: 'pas-une-data-url', code: 'INVALID_IMAGE' },
+    { name: 'au type MIME non autorisé', dataUrl: 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==', code: 'INVALID_MIME_TYPE' },
+    { name: 'dont le contenu ne matche pas le type déclaré', dataUrl: `data:image/png;base64,${Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]).toString('base64')}`, code: 'INVALID_IMAGE_CONTENT' },
+    { name: 'sans signature reconnue', dataUrl: `data:image/png;base64,${Buffer.from('abc').toString('base64')}`, code: 'INVALID_IMAGE_CONTENT' },
+    { name: 'vide', dataUrl: 'data:image/png;base64, ', code: 'EMPTY_IMAGE' },
+    { name: 'trop volumineuse', dataUrl: `data:image/png;base64,${Buffer.alloc(6 * 1024 * 1024, 0x41).toString('base64')}`, code: 'IMAGE_TOO_LARGE' }
+  ])('refuse une image $name (400)', async ({ dataUrl, code }: { dataUrl?: string; code: string }) => {
+    const res = await request(appWithAuth()).post('/api/uploads/avatar').send(dataUrl ? { dataUrl } : {});
     expect(res.status).toBe(400);
-    expect(res.body.code).toBe('MISSING_IMAGE');
-  });
-
-  it('refuse un format data URL invalide (400)', async () => {
-    const res = await request(appWithAuth()).post('/api/uploads/avatar').send({ dataUrl: 'pas-une-data-url' });
-    expect(res.status).toBe(400);
-    expect(res.body.code).toBe('INVALID_IMAGE');
-  });
-
-  it('refuse un type MIME non autorisé (400)', async () => {
-    const res = await request(appWithAuth()).post('/api/uploads/avatar').send({ dataUrl: 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==' });
-    expect(res.status).toBe(400);
-    expect(res.body.code).toBe('INVALID_MIME_TYPE');
-  });
-
-  it('refuse un contenu qui ne matche pas le type déclaré (400)', async () => {
-    const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]);
-    const res = await request(appWithAuth()).post('/api/uploads/avatar').send({ dataUrl: `data:image/png;base64,${jpeg.toString('base64')}` });
-    expect(res.status).toBe(400);
-    expect(res.body.code).toBe('INVALID_IMAGE_CONTENT');
+    expect(res.body.code).toBe(code);
   });
 
   it('enregistre un avatar valide et renvoie l’URL publique (201)', async () => {
@@ -91,25 +80,6 @@ describe('Uploads - avatar', () => {
     const res = await request(appWithAuth()).post('/api/uploads/avatar').send({ dataUrl: `data:image/webp;base64,${header.toString('base64')}` });
     expect(res.status).toBe(201);
     expect(res.body.url).toBe('http://localhost/file');
-  });
-
-  it('refuse un contenu sans aucune signature reconnue (400)', async () => {
-    const res = await request(appWithAuth()).post('/api/uploads/avatar').send({ dataUrl: `data:image/png;base64,${Buffer.from('abc').toString('base64')}` });
-    expect(res.status).toBe(400);
-    expect(res.body.code).toBe('INVALID_IMAGE_CONTENT');
-  });
-
-  it('refuse une image vide (400)', async () => {
-    const res = await request(appWithAuth()).post('/api/uploads/avatar').send({ dataUrl: 'data:image/png;base64, ' });
-    expect(res.status).toBe(400);
-    expect(res.body.code).toBe('EMPTY_IMAGE');
-  });
-
-  it('refuse une image trop volumineuse (400)', async () => {
-    const big = Buffer.alloc(6 * 1024 * 1024, 0x41);
-    const res = await request(appWithAuth()).post('/api/uploads/avatar').send({ dataUrl: `data:image/png;base64,${big.toString('base64')}` });
-    expect(res.status).toBe(400);
-    expect(res.body.code).toBe('IMAGE_TOO_LARGE');
   });
 
   it('renvoie 500 si Supabase lève une exception (non rejetée)', async () => {
