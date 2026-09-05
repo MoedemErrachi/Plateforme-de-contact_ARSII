@@ -64,4 +64,10 @@ describe('Recherches sauvegardées', () => {
     const res = await request(appWithUser({ id: 'u1' })).delete('/api/searches/s1');
     expect(res.status).toBe(404);
   });
+
+  it('renvoie 500 si la sauvegarde échoue en base', async () => {
+    prismaMock.savedSearch.create.mockRejectedValueOnce(new Error('db down'));
+    const res = await request(appWithUser({ id: 'u1' })).post('/api/searches').send({ name: 'X', filters: {} });
+    expect(res.status).toBe(500);
+  });
 });

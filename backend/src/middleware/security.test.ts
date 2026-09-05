@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi, afterEach } from 'vitest';
 
 vi.mock('../config/prisma', async () => {
   const { buildPrismaMock } = await import('../test/prismaMock');
@@ -127,6 +127,34 @@ describe('sanitizeInput', () => {
     expect(res.body.n).toBe(5);
     expect(res.body.list[0]).toBe('');
     expect(res.body.deep.ok).toBe(true);
+  });
+});
+
+describe('helmet CSP (production)', () => {
+  const originalEnv = process.env.NODE_ENV;
+
+  afterEach(() => {
+    process.env.NODE_ENV = originalEnv;
+    delete process.env.SUPABASE_URL;
+    delete process.env.CORS_ORIGINS;
+  });
+
+  it('construit la CSP avec Supabase et les origines CORS', async () => {
+    process.env.NODE_ENV = 'production';
+    process.env.SUPABASE_URL = 'https://xyz.supabase.co';
+    process.env.CORS_ORIGINS = 'https://app.arsii.org, *, , nope';
+    vi.resetModules();
+    const sec: any = await import('./security');
+    expect(typeof sec.helmetMiddleware).toBe('function');
+  });
+
+  it('ignore silencieusement un SUPABASE_URL invalide', async () => {
+    process.env.NODE_ENV = 'production';
+    process.env.SUPABASE_URL = 'not a url';
+    process.env.CORS_ORIGINS = 'https://ok.arsii.org';
+    vi.resetModules();
+    const sec: any = await import('./security');
+    expect(typeof sec.helmetMiddleware).toBe('function');
   });
 });
 

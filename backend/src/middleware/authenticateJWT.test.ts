@@ -10,6 +10,7 @@ vi.mock('../config/prisma', async () => {
 
 import express from 'express';
 import cookieParser from 'cookie-parser';
+import jwt from 'jsonwebtoken';
 import { authenticateJWT, setAuthCookie, clearAuthCookie } from './authenticateJWT';
 import { signToken } from '../test/helpers';
 
@@ -62,6 +63,13 @@ describe('authenticateJWT', () => {
     expect(res.status).toBe(200);
     expect(res.body.user.role).toBe('admin');
     expect(res.body.user.privilege).toBe('FULL_ACCESS');
+  });
+
+  it('refuse un jeton sans tokenVersion', async () => {
+    const token = jwt.sign({ id: 'u1', email: 'a@b.c', name: 'A', role: 'user' }, process.env.JWT_SECRET || 'test-secret');
+    const res = await request(appWithMiddleware()).get('/protected').set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(401);
+    expect(res.body.code).toBe('TOKEN_VERSION_MISSING');
   });
 
   it('renvoie 503 si la base est indisponible', async () => {

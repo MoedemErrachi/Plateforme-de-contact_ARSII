@@ -325,3 +325,102 @@ describe('ContactService — import preview & export', () => {
     expect(buffer.length).toBeGreaterThan(100);
   });
 });
+
+describe('ContactService — branches de couverture', () => {
+  beforeEach(() => {
+    buildPrismaMock(prismaMock, true);
+  });
+
+  it('construit les conditions genre/étape/tag/segment', async () => {
+    prismaMock.$queryRaw.mockResolvedValueOnce([{ n: 0n }]).mockResolvedValueOnce([]);
+    prismaMock.contact.findMany.mockResolvedValueOnce([]);
+    const result = await service.getContacts({
+      gender: 'FEMALE',
+      researchCareerStage: 'R2_RECOGNIZED',
+      careerStage: 'R3_ESTABLISHED',
+      tagId: 't1',
+      segmentId: 's2',
+      affiliation: 'UCAD',
+      facultyDepartment: 'Informatique'
+    });
+    expect(result.contacts).toHaveLength(0);
+    expect(prismaMock.$queryRaw).toHaveBeenCalled();
+  });
+
+  it('parcourt plusieurs lots lors d’un export (cursor id)', async () => {
+    const ids = Array.from({ length: 200 }, (_, i) => ({ id: `c${i}` }));
+    prismaMock.$queryRaw
+      .mockResolvedValueOnce(ids).mockResolvedValueOnce([]);
+    prismaMock.contact.findMany.mockResolvedValueOnce(
+      ids.map((r, i) => ({ ...SAMPLE_CONTACT, id: r.id, firstName: `N${i}` }))
+    );
+    const rows: any[] = [];
+    for await (const c of service.streamExport({})) rows.push(c);
+    expect(rows).toHaveLength(200);
+  });
+
+  it('crée un contact avec un email sans @ via un placeholder import_null_', async () => {
+    prismaMock.contact.findUnique
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ ...SAMPLE_CONTACT, tags: [] });
+    prismaMock.contact.create.mockResolvedValueOnce({ id: 'c1' });
+    const created = await service.createContact({ email: 'awa', fullName: 'Awa Diop' });
+    expect(created).toBeDefined();
+    const email = prismaMock.contact.create.mock.calls[0][0].data.email;
+    expect(email).toMatch(/^import_null_[0-9a-f-]+@euraxess\.africa$/);
+  });
+
+  it('lève 404 à la mise à jour d’un contact inconnu', async () => {
+    prismaMock.contact.findUnique.mockResolvedValueOnce(null);
+    await expect(service.updateContact('zzz', { firstName: 'A' })).rejects.toMatchObject({ statusCode: 404 });
+  });
+
+  it('met à jour un contact en remplaçant ses tags', async () => {
+    prismaMock.contact.findUnique
+      .mockResolvedValueOnce({ id: 'c1', email: 'awa@mail.sn' })
+      .mockResolvedValueOnce({ ...SAMPLE_CONTACT, tags: [] });
+    prismaMock.contact.update.mockResolvedValueOnce({ ...SAMPLE_CONTACT });
+    prismaMock.tag.findMany.mockResolvedValueOnce([{ id: 't1' }]);
+    const updated = await service.updateContact('c1', { firstName: 'Awa', tagIds: ['t1'] });
+    expect(updated).toBeDefined();
+    expect(prismaMock.tagOnContact.deleteMany).toHaveBeenCalled();
+    expect(prismaMock.tagOnContact.createMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: [{ contactId: 'c1', tagId: 't1' }] })
+    );
+  });
+
+  it('formate les 4 familles d’erreurs lors du repli ligne à ligne', async () => {
+    prismaMock.contact.findMany.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+    prismaMock.contact.createMany.mockRejectedValueOnce(new Error('batch failed'));
+    prismaMock.contact.create
+      .mockRejectedValueOnce(new Error('Prisma Unique constraint failed on email'))
+      .mockRejectedValueOnce(new Error('Foreign key constraint failed'))
+      .mockRejectedValueOnce(new Error('Prisma Invalid input'))
+      .mockRejectedValueOnce(new Error('x'.repeat(200)));
+
+    const result = await service.bulkSave(
+      [{ email: 'a@mail.sn' }, { email: 'b@mail.sn' }, { email: 'c@mail.sn' }, { email: 'd@mail.sn' }],
+      []
+    );
+    expect(result.errors).toHaveLength(4);
+    expect(result.errors[0].message).toContain('e-mail déjà existant');
+    expect(result.errors[1].message).toContain('référence introuvable');
+    expect(result.errors[2].message).toContain('données invalides');
+    expect(result.errors[3].message.length).toBeLessThan(400);
+  });
+
+  it('formate l’erreur lors de la collecte des mises à jour', async () => {
+    prismaMock.contact.findMany.mockResolvedValueOnce([]);
+    prismaMock.contact.findUnique.mockRejectedValueOnce(new Error('Invalid input syntax'));
+    const result = await service.bulkSave([], [{ id: 'c1', email: 'x@mail.sn', firstName: 'A' }]);
+    expect(result.errors[0].message).toContain('données invalides');
+  });
+
+  it('formate l’erreur lors de l’exécution des mises à jour par lots', async () => {
+    prismaMock.contact.findMany.mockResolvedValueOnce([]);
+    prismaMock.contact.findUnique.mockResolvedValueOnce({ id: 'c1' });
+    prismaMock.contact.update.mockRejectedValueOnce(new Error('Unique constraint'));
+    const result = await service.bulkSave([], [{ id: 'c1', email: 'x@mail.sn', firstName: 'A' }]);
+    expect(result.errors[0].message).toContain('e-mail déjà existant');
+  });
+});

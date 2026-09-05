@@ -77,4 +77,23 @@ describe('Export & logs', () => {
     expect(res.status).toBe(200);
     expect(prismaMock.importExportLog.findMany).toHaveBeenCalled();
   });
+
+  it('filtre l’historique sur la période day (200)', async () => {
+    prismaMock.importExportLog.findMany.mockResolvedValueOnce([]);
+    const res = await request(appWithAuth()).get('/api/export/log?period=day');
+    expect(res.status).toBe(200);
+    expect(prismaMock.importExportLog.findMany).toHaveBeenCalled();
+  });
+
+  it('renvoie 500 si la création du log échoue', async () => {
+    prismaMock.importExportLog.create.mockRejectedValueOnce(new Error('db down'));
+    const res = await request(appWithAuth()).post('/api/export/log').send({ format: 'CSV', fileName: 'c.csv', recordCount: 1 });
+    expect(res.status).toBe(500);
+  });
+
+  it('renvoie 500 si la lecture des logs échoue', async () => {
+    prismaMock.importExportLog.findMany.mockRejectedValueOnce(new Error('db down'));
+    const res = await request(appWithAuth()).get('/api/export/log');
+    expect(res.status).toBe(500);
+  });
 });

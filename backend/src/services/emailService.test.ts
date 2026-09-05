@@ -52,4 +52,18 @@ describe('emailService', () => {
     const ok = await sendUserCreatedEmail('new@mail.africa', 'Awa Diop', 'Tempabc123!');
     expect(ok).toBe(false);
   });
+
+  it('journalise un échec de vérification SMTP au démarrage (non bloquant)', async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    mocks.transporter.verify.mockRejectedValueOnce(new Error('SMTP handshake failed'));
+    vi.resetModules();
+    await import('./emailService');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    vi.resetModules();
+    expect(spy).toHaveBeenCalledWith(
+      '[EmailService] Gmail SMTP transporter verification failed:',
+      'SMTP handshake failed'
+    );
+    spy.mockRestore();
+  });
 });

@@ -100,6 +100,19 @@ describe('validateFileUpload', () => {
     });
     expect([200, 400]).toContain(res.status);
   });
+
+  it('absorbe une exception interne de contrôle de signature', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const res = await request(appWith(validateFileUpload)).post('/upload').send({
+      fileName: 'x.csv',
+      fileData: 5,
+      fileSize: 100,
+      mimeType: 'text/csv'
+    });
+    expect(res.status).toBe(200);
+    expect(warnSpy).toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
 });
 
 describe('validateBulkImportPayload', () => {

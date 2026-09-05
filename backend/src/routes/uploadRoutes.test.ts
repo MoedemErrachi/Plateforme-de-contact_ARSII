@@ -85,4 +85,40 @@ describe('Uploads - avatar', () => {
     const res = await request(appWithAuth()).post('/api/uploads/avatar').send({ dataUrl: pngDataUrl() });
     expect(res.status).toBe(500);
   });
+
+  it('enregistre un avatar webp valide (201)', async () => {
+    const header = Buffer.concat([Buffer.from('RIFFxxxxWEBP', 'ascii'), Buffer.alloc(64, 0)]);
+    const res = await request(appWithAuth()).post('/api/uploads/avatar').send({ dataUrl: `data:image/webp;base64,${header.toString('base64')}` });
+    expect(res.status).toBe(201);
+    expect(res.body.url).toBe('http://localhost/file');
+  });
+
+  it('refuse un contenu sans aucune signature reconnue (400)', async () => {
+    const res = await request(appWithAuth()).post('/api/uploads/avatar').send({ dataUrl: `data:image/png;base64,${Buffer.from('abc').toString('base64')}` });
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('INVALID_IMAGE_CONTENT');
+  });
+
+  it('refuse une image vide (400)', async () => {
+    const res = await request(appWithAuth()).post('/api/uploads/avatar').send({ dataUrl: 'data:image/png;base64, ' });
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('EMPTY_IMAGE');
+  });
+
+  it('refuse une image trop volumineuse (400)', async () => {
+    const big = Buffer.alloc(6 * 1024 * 1024, 0x41);
+    const res = await request(appWithAuth()).post('/api/uploads/avatar').send({ dataUrl: `data:image/png;base64,${big.toString('base64')}` });
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('IMAGE_TOO_LARGE');
+  });
+
+  it('renvoie 500 si Supabase lève une exception (non rejetée)', async () => {
+    supabaseMock.storage.from.mockReturnValueOnce({
+      upload: vi.fn(() => {
+        throw new Error('boom');
+      })
+    });
+    const res = await request(appWithAuth()).post('/api/uploads/avatar').send({ dataUrl: pngDataUrl() });
+    expect(res.status).toBe(500);
+  });
 });

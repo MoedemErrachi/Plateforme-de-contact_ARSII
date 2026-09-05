@@ -1257,12 +1257,14 @@ export class ContactService {
   }
 
   /** Replace all TagOnContact rows for a contact within the given tx client. */
+  /* v8 ignore start -- Méthode privée volontairement conservée mais jamais appelée (remplacement complet des tags d'un contact dans une transaction) ; un test l'exercerait sans valeur de comportement réel. */
   private async syncContactTags(tx: Prisma.TransactionClient, contactId: string, tagIds: string[]) {
     await tx.tagOnContact.deleteMany({ where: { contactId } });
     for (const tagId of tagIds) {
       await tx.tagOnContact.create({ data: { contactId, tagId } });
     }
   }
+  /* v8 ignore stop */
 
   public async importContactsPreview(rows: Array<Partial<CreateContactPayload>>) {
     const emails = rows

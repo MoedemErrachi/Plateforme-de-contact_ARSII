@@ -22,4 +22,8 @@ describe('toArray', () => {
   it('converts a non-array, non-string value to a string array', () => {
     expect(toArray(42)).toEqual(['42']);
   });
+
+  it('serializes object values as JSON so the value stays readable', () => {
+    expect(toArray({ firstName: 'Alice' })).toEqual(['{"firstName":"Alice"}']);
+  });
 });

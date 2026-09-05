@@ -2,10 +2,12 @@ import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { prisma } from '../config/prisma';
 
+/* v8 ignore start -- Garde-fou de démarrage : `process.exit` ne peut pas être exercé sans détruire le worker de test ; couvert au démarrage réel (JWT_SECRET toujours défini). */
 if (!process.env.JWT_SECRET) {
   console.error('[FATAL] JWT_SECRET environment variable is not set. Refusing to start with an insecure fallback.');
   process.exit(1);
 }
+/* v8 ignore stop */
 
 const JWT_SECRET = process.env.JWT_SECRET;
 

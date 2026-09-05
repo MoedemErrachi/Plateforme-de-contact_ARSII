@@ -101,9 +101,9 @@ describe('Admin', () => {
     prismaMock.user.create.mockResolvedValueOnce({ id: 'u9', email: 'awa@arsii.org', name: 'Awa Diop', role: 'USER', privilege: null, createdAt: new Date('2026-01-01') });
     const res = await request(adminApp()).post('/api/admin/users').send({ name: 'Awa Diop', email: 'awa@arsii.org' });
     expect(res.status).toBe(201);
-    expect(res.body.temporaryPassword).toMatch(/^Temp.+!$/);
+    expect(res.body.temporaryPassword).toMatch(/^Temp[0-9a-z]{8}!$/);
     expect(res.body.user.role).toBe('USER');
-    expect(sendUserCreatedEmail).toHaveBeenCalledWith('awa@arsii.org', 'Awa Diop', expect.stringMatching(/^Temp.+!$/));
+    expect(sendUserCreatedEmail).toHaveBeenCalledWith('awa@arsii.org', 'Awa Diop', expect.stringMatching(/^Temp[0-9a-z]{8}!$/));
   });
 
   it('refuse une mise à jour sans modification (400)', async () => {
@@ -151,5 +151,61 @@ describe('Admin', () => {
     prismaMock.user.delete.mockRejectedValueOnce(Object.assign(new Error('Not found'), { code: 'P2025' }));
     const res = await request(adminApp()).delete('/api/admin/users/ghost');
     expect(res.status).toBe(404);
+  });
+
+  it('renvoie 500 si la liste échoue', async () => {
+    prismaMock.user.findMany.mockRejectedValueOnce(new Error('db down'));
+    const res = await request(adminApp()).get('/api/admin/users');
+    expect(res.status).toBe(500);
+  });
+
+  it('renvoie 500 si la vérification de doublon échoue', async () => {
+    prismaMock.user.findUnique.mockResolvedValueOnce(dbUser()).mockRejectedValueOnce(new Error('db down'));
+    const res = await request(adminApp()).post('/api/admin/users').send({ name: 'Awa', email: 'awa@arsii.org' });
+    expect(res.status).toBe(500);
+    expect(res.body.error).toContain('vérification');
+  });
+
+  it('journalise l’échec d’envoi de l’email mais crée quand même (201)', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    prismaMock.user.findUnique.mockResolvedValueOnce(dbUser()).mockResolvedValueOnce(null);
+    prismaMock.user.create.mockResolvedValueOnce({ id: 'u9', email: 'awa@arsii.org', name: 'Awa Diop', role: 'USER', privilege: null, createdAt: new Date('2026-01-01') });
+    vi.mocked(sendUserCreatedEmail).mockRejectedValueOnce(new Error('mail down'));
+    const res = await request(adminApp()).post('/api/admin/users').send({ name: 'Awa Diop', email: 'awa@arsii.org' });
+    expect(res.status).toBe(201);
+    expect(warnSpy).toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
+
+  it('renvoie 400 si la création échoue sur un doublon concurrent (P2002)', async () => {
+    prismaMock.user.findUnique.mockResolvedValueOnce(dbUser()).mockResolvedValueOnce(null);
+    prismaMock.user.create.mockRejectedValueOnce(Object.assign(new Error('dup'), { code: 'P2002' }));
+    const res = await request(adminApp()).post('/api/admin/users').send({ name: 'Awa', email: 'awa@arsii.org' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('existe déjà');
+  });
+
+  it('renvoie 500 si la création échoue en base', async () => {
+    prismaMock.user.findUnique.mockResolvedValueOnce(dbUser()).mockResolvedValueOnce(null);
+    prismaMock.user.create.mockRejectedValueOnce(new Error('db down'));
+    const res = await request(adminApp()).post('/api/admin/users').send({ name: 'Awa', email: 'awa@arsii.org' });
+    expect(res.status).toBe(500);
+  });
+
+  it('refuse un rôle invalide en mise à jour (400)', async () => {
+    const res = await request(adminApp()).put('/api/admin/users/u2').send({ role: 'boss' });
+    expect(res.status).toBe(400);
+  });
+
+  it('renvoie 500 si la mise à jour échoue en base', async () => {
+    prismaMock.user.update.mockRejectedValueOnce(new Error('db down'));
+    const res = await request(adminApp()).put('/api/admin/users/u2').send({ privilege: 'READ' });
+    expect(res.status).toBe(500);
+  });
+
+  it('renvoie 500 si la suppression échoue en base', async () => {
+    prismaMock.user.delete.mockRejectedValueOnce(new Error('db down'));
+    const res = await request(adminApp()).delete('/api/admin/users/u2');
+    expect(res.status).toBe(500);
   });
 });
