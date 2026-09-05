@@ -21,8 +21,6 @@ import {
   Trash2, 
   ChevronLeft, 
   ChevronRight, 
-  ChevronDown, 
-  ChevronUp, 
   X, 
   Download, 
   Tag as TagIcon, 
@@ -87,33 +85,38 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
   const [appliedFilters, setAppliedFilters] = useState<FilterState>(emptyFilterState);
 
   // Tri serveur par colonne : aucun tri appliqué par défaut (le backend retombe
-  // sur l'ordre stable createdAt DESC + id, pagination déterministe). 1er clic =
-  // croissant (▲), 2e = décroissant (▼), 3e = retour à aucun tri.
+  // sur l'ordre stable createdAt DESC + id, pagination déterministe).
+  // Clic sur le nom = on/off ; clic sur le triangle = direction ▼ A→Z / ▲ Z→A.
   const [sortBy, setSortBy] = useState<ContactSortBy | null>(null);
   const [sortOrder, setSortOrder] = useState<ContactSortOrder>('desc');
 
-  const handleSort = (column: ContactSortBy) => {
-    if (sortBy !== column) {
+  // Clic sur le nom de colonne : active la colonne (▼, A→Z) ou la désactive.
+  const toggleColumnSort = (column: ContactSortBy) => {
+    if (sortBy === column) {
+      setSortBy(null);
+    } else {
       setSortBy(column);
       setSortOrder('asc');
-    } else if (sortOrder === 'asc') {
-      setSortOrder('desc');
-    } else {
-      setSortBy(null);
-      setSortOrder('desc');
     }
     setCurrentPage(1);
   };
 
+  // Clic sur le triangle : bascule la direction ▼ (A→Z) / ▲ (Z→A).
+  const toggleSortDirection = (column: ContactSortBy) => {
+    if (sortBy !== column) return;
+    setSortOrder(prev => (prev === 'asc' ? 'desc' : 'asc'));
+    setCurrentPage(1);
+  };
+
   // Triangle de tri toujours visible : grisé (▼) quand la colonne est inactive,
-  // coloré (▲ croissant / ▼ décroissant) sur la colonne active.
+  // coloré sur la colonne active (▼ = croissant A→Z, ▲ = décroissant Z→A).
   const renderSortIndicator = (column: ContactSortBy) => {
     if (sortBy !== column) {
-      return <ChevronDown className="w-3 h-3 text-slate-300" />;
+      return <span className="text-[10px] leading-none text-slate-300">▼</span>;
     }
-    return sortOrder === 'asc'
-      ? <ChevronUp className="w-3 h-3 text-[#005596]" />
-      : <ChevronDown className="w-3 h-3 text-[#005596]" />;
+    return (
+      <span className={`text-[10px] leading-none text-[#005596] ${sortOrder === 'asc' ? '' : 'rotate-180 inline-block'}`}>▼</span>
+    );
   };
 
   // Server-side paginated data
@@ -905,71 +908,125 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
                 <thead className="bg-[#D9E6F2]/50 border-b border-[#C9D4DE] text-[11px] font-bold text-[#55636B] uppercase tracking-wider">
                   <tr>
                     <th className="p-3 w-10 text-center shrink-0"></th>
-                    <th className={`p-3 w-[30%] md:w-[28%] lg:w-[22%] truncate ${sortBy === 'name' ? 'text-[#005596]' : ''}`} title="Trier par nom et e-mail du contact">
-                      <button
-                        type="button"
-                        onClick={() => handleSort('name')}
-                        aria-sort={sortBy === 'name' ? (sortOrder === 'asc' ? 'ascending' : 'descending') : undefined}
-                        className="inline-flex items-center gap-1 font-bold uppercase tracking-wider transition-colors cursor-pointer hover:text-[#005596]"
-                      >
-                        CONTACT
-                        {renderSortIndicator('name')}
-                      </button>
+                    <th className={`p-3 w-[30%] md:w-[28%] lg:w-[22%] truncate ${sortBy === 'name' ? 'text-[#005596]' : ''}`} aria-sort={sortBy === 'name' ? (sortOrder === 'asc' ? 'ascending' : 'descending') : 'none'} title="Trier par nom et e-mail du contact">
+                      <div className="inline-flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => toggleColumnSort('name')}
+                          className="font-bold uppercase tracking-wider transition-colors cursor-pointer hover:text-[#005596]"
+                        >
+                          CONTACT
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => toggleSortDirection('name')}
+                          aria-label="Inverser le sens du tri"
+                          title="Changer la direction du tri (A→Z / Z→A)"
+                          className="inline-flex items-center cursor-pointer"
+                        >
+                          {renderSortIndicator('name')}
+                        </button>
+                      </div>
                     </th>
-                    <th className={`p-3 w-[20%] md:w-[18%] lg:w-[14%] truncate ${sortBy === 'countryOfOrigin' ? 'text-[#005596]' : ''}`} title="Trier par pays d'origine et ville">
-                      <button
-                        type="button"
-                        onClick={() => handleSort('countryOfOrigin')}
-                        aria-sort={sortBy === 'countryOfOrigin' ? (sortOrder === 'asc' ? 'ascending' : 'descending') : undefined}
-                        className="inline-flex items-center gap-1 font-bold uppercase tracking-wider transition-colors cursor-pointer hover:text-[#005596]"
-                      >
-                        PAYS & VILLE
-                        {renderSortIndicator('countryOfOrigin')}
-                      </button>
+                    <th className={`p-3 w-[20%] md:w-[18%] lg:w-[14%] truncate ${sortBy === 'countryOfOrigin' ? 'text-[#005596]' : ''}`} aria-sort={sortBy === 'countryOfOrigin' ? (sortOrder === 'asc' ? 'ascending' : 'descending') : 'none'} title="Trier par pays d'origine et ville">
+                      <div className="inline-flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => toggleColumnSort('countryOfOrigin')}
+                          className="font-bold uppercase tracking-wider transition-colors cursor-pointer hover:text-[#005596]"
+                        >
+                          PAYS & VILLE
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => toggleSortDirection('countryOfOrigin')}
+                          aria-label="Inverser le sens du tri"
+                          title="Changer la direction du tri (A→Z / Z→A)"
+                          className="inline-flex items-center cursor-pointer"
+                        >
+                          {renderSortIndicator('countryOfOrigin')}
+                        </button>
+                      </div>
                     </th>
-                    <th className={`p-3 w-[25%] md:w-[22%] lg:w-[18%] truncate ${sortBy === 'affiliation' ? 'text-[#005596]' : ''}`} title="Trier par affiliation et fonction">
-                      <button
-                        type="button"
-                        onClick={() => handleSort('affiliation')}
-                        aria-sort={sortBy === 'affiliation' ? (sortOrder === 'asc' ? 'ascending' : 'descending') : undefined}
-                        className="inline-flex items-center gap-1 font-bold uppercase tracking-wider transition-colors cursor-pointer hover:text-[#005596]"
-                      >
-                        AFFILIATION & FONCTION
-                        {renderSortIndicator('affiliation')}
-                      </button>
+                    <th className={`p-3 w-[25%] md:w-[22%] lg:w-[18%] truncate ${sortBy === 'affiliation' ? 'text-[#005596]' : ''}`} aria-sort={sortBy === 'affiliation' ? (sortOrder === 'asc' ? 'ascending' : 'descending') : 'none'} title="Trier par affiliation et fonction">
+                      <div className="inline-flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => toggleColumnSort('affiliation')}
+                          className="font-bold uppercase tracking-wider transition-colors cursor-pointer hover:text-[#005596]"
+                        >
+                          AFFILIATION & FONCTION
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => toggleSortDirection('affiliation')}
+                          aria-label="Inverser le sens du tri"
+                          title="Changer la direction du tri (A→Z / Z→A)"
+                          className="inline-flex items-center cursor-pointer"
+                        >
+                          {renderSortIndicator('affiliation')}
+                        </button>
+                      </div>
                     </th>
-                    <th className={`p-3 hidden lg:table-cell lg:w-[12%] truncate ${sortBy === 'researchCareerStage' ? 'text-[#005596]' : ''}`} title="Trier par stade de carrière">
-                      <button
-                        type="button"
-                        onClick={() => handleSort('researchCareerStage')}
-                        aria-sort={sortBy === 'researchCareerStage' ? (sortOrder === 'asc' ? 'ascending' : 'descending') : undefined}
-                        className="inline-flex items-center gap-1 font-bold uppercase tracking-wider transition-colors cursor-pointer hover:text-[#005596]"
-                      >
-                        STADE DE CARRIÈRE
-                        {renderSortIndicator('researchCareerStage')}
-                      </button>
+                    <th className={`p-3 hidden lg:table-cell lg:w-[12%] truncate ${sortBy === 'researchCareerStage' ? 'text-[#005596]' : ''}`} aria-sort={sortBy === 'researchCareerStage' ? (sortOrder === 'asc' ? 'ascending' : 'descending') : 'none'} title="Trier par stade de carrière">
+                      <div className="inline-flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => toggleColumnSort('researchCareerStage')}
+                          className="font-bold uppercase tracking-wider transition-colors cursor-pointer hover:text-[#005596]"
+                        >
+                          STADE DE CARRIÈRE
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => toggleSortDirection('researchCareerStage')}
+                          aria-label="Inverser le sens du tri"
+                          title="Changer la direction du tri (A→Z / Z→A)"
+                          className="inline-flex items-center cursor-pointer"
+                        >
+                          {renderSortIndicator('researchCareerStage')}
+                        </button>
+                      </div>
                     </th>
-                    <th className={`p-3 hidden lg:table-cell lg:w-[10%] truncate ${sortBy === 'gender' ? 'text-[#005596]' : ''}`} title="Trier par genre">
-                      <button
-                        type="button"
-                        onClick={() => handleSort('gender')}
-                        aria-sort={sortBy === 'gender' ? (sortOrder === 'asc' ? 'ascending' : 'descending') : undefined}
-                        className="inline-flex items-center gap-1 font-bold uppercase tracking-wider transition-colors cursor-pointer hover:text-[#005596]"
-                      >
-                        GENRE
-                        {renderSortIndicator('gender')}
-                      </button>
+                    <th className={`p-3 hidden lg:table-cell lg:w-[10%] truncate ${sortBy === 'gender' ? 'text-[#005596]' : ''}`} aria-sort={sortBy === 'gender' ? (sortOrder === 'asc' ? 'ascending' : 'descending') : 'none'} title="Trier par genre">
+                      <div className="inline-flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => toggleColumnSort('gender')}
+                          className="font-bold uppercase tracking-wider transition-colors cursor-pointer hover:text-[#005596]"
+                        >
+                          GENRE
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => toggleSortDirection('gender')}
+                          aria-label="Inverser le sens du tri"
+                          title="Changer la direction du tri (A→Z / Z→A)"
+                          className="inline-flex items-center cursor-pointer"
+                        >
+                          {renderSortIndicator('gender')}
+                        </button>
+                      </div>
                     </th>
-                    <th className={`p-3 w-[24%] md:w-[22%] lg:w-[14%] truncate ${sortBy === 'tags' ? 'text-[#005596]' : ''}`} title="Trier par nombre de tags">
-                      <button
-                        type="button"
-                        onClick={() => handleSort('tags')}
-                        aria-sort={sortBy === 'tags' ? (sortOrder === 'asc' ? 'ascending' : 'descending') : undefined}
-                        className="inline-flex items-center gap-1 font-bold uppercase tracking-wider transition-colors cursor-pointer hover:text-[#005596]"
-                      >
-                        TAGS
-                        {renderSortIndicator('tags')}
-                      </button>
+                    <th className={`p-3 w-[24%] md:w-[22%] lg:w-[14%] truncate ${sortBy === 'tags' ? 'text-[#005596]' : ''}`} aria-sort={sortBy === 'tags' ? (sortOrder === 'asc' ? 'ascending' : 'descending') : 'none'} title="Trier par nombre de tags">
+                      <div className="inline-flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => toggleColumnSort('tags')}
+                          className="font-bold uppercase tracking-wider transition-colors cursor-pointer hover:text-[#005596]"
+                        >
+                          TAGS
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => toggleSortDirection('tags')}
+                          aria-label="Inverser le sens du tri"
+                          title="Changer la direction du tri (A→Z / Z→A)"
+                          className="inline-flex items-center cursor-pointer"
+                        >
+                          {renderSortIndicator('tags')}
+                        </button>
+                      </div>
                     </th>
                     <th className="p-3 w-20 text-right shrink-0">ACTIONS</th>
                   </tr>
