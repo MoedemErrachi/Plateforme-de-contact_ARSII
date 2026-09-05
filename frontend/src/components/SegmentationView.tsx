@@ -61,6 +61,7 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
   const [isSegmentModalOpen, setIsSegmentModalOpen] = useState(false);
   const [editingSegment, setEditingSegment] = useState<Segment | null>(null);
   const [segmentSearchQuery, setSegmentSearchQuery] = useState('');
+  const [tagSearchQuery, setTagSearchQuery] = useState('');
 
   // Segment Form state
   const [segName, setSegName] = useState('');
@@ -225,6 +226,11 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
   const filteredSegments = segments.filter(s => 
     s.name.toLowerCase().includes(segmentSearchQuery.toLowerCase()) ||
     (s.description && s.description.toLowerCase().includes(segmentSearchQuery.toLowerCase()))
+  );
+
+  const filteredTags = tags.filter(t =>
+    t.name.toLowerCase().includes(tagSearchQuery.toLowerCase()) ||
+    (t.description && t.description.toLowerCase().includes(tagSearchQuery.toLowerCase()))
   );
 
   return (
@@ -436,10 +442,23 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
         <div className="space-y-8">
           
           {/* Top Bar for Tags */}
-          <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
-            <div>
-              <h2 className="text-lg font-bold text-[#1C2529]">Étiquettes & Catégories R&I</h2>
-              <p className="text-xs text-[#55636B]">Créez des badges de couleur pour qualifier rapidement vos experts.</p>
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+            <div className="space-y-3 w-full sm:w-auto">
+              <div>
+                <h2 className="text-lg font-bold text-[#1C2529]">Étiquettes & Catégories R&I</h2>
+                <p className="text-xs text-[#55636B]">Créez des badges de couleur pour qualifier rapidement vos experts.</p>
+              </div>
+
+              <div className="relative w-full sm:w-80">
+                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  value={tagSearchQuery}
+                  onChange={(e) => setTagSearchQuery(e.target.value)}
+                  placeholder="Rechercher un tag..."
+                  className="w-full pl-9 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-[#005596]"
+                />
+              </div>
             </div>
 
             {showCreate && (
@@ -455,16 +474,20 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
 
           {/* Tags Grid */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {tags.length === 0 && (
+            {filteredTags.length === 0 && (
               <div className="sm:col-span-2 lg:col-span-3 xl:col-span-4 bg-white rounded-2xl p-10 border border-dashed border-[#C9D4DE] text-center">
                 <TagIcon className="w-10 h-10 text-slate-300 mx-auto mb-3" />
-                <p className="font-bold text-sm text-slate-700">Aucun tag pour le moment</p>
+                <p className="font-bold text-sm text-slate-700">
+                  {tagSearchQuery.trim() ? 'Aucun tag ne correspond à cette recherche' : 'Aucun tag pour le moment'}
+                </p>
                 <p className="text-xs text-[#55636B] mt-1">
-                  Cliquez sur « Créer un Nouveau Tag » pour catégoriser vos contacts par expertise.
+                  {tagSearchQuery.trim()
+                    ? 'Essayez un autre mot-clé.'
+                    : 'Cliquez sur « Créer un Nouveau Tag » pour catégoriser vos contacts par expertise.'}
                 </p>
               </div>
             )}
-            {tags.map(tag => {
+            {filteredTags.map(tag => {
               // Comptage exact depuis la base (tag._count.contacts renvoyé par /api/segments)
               const count = typeof tag._count?.contacts === 'number' ? tag._count.contacts : getTagContactCount(tag.name);
 

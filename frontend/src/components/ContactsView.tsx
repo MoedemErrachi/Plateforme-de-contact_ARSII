@@ -21,8 +21,8 @@ import {
   Trash2, 
   ChevronLeft, 
   ChevronRight, 
-  ArrowUp, 
-  ArrowDown, 
+  ChevronDown, 
+  ChevronUp, 
   X, 
   Download, 
   Tag as TagIcon, 
@@ -86,18 +86,34 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
   // Applied Filters State (used to fetch the contacts table)
   const [appliedFilters, setAppliedFilters] = useState<FilterState>(emptyFilterState);
 
-  // Server-side column sorting (défaut : createdAt DESC, ordre historique)
-  const [sortBy, setSortBy] = useState<ContactSortBy>('createdAt');
+  // Tri serveur par colonne : aucun tri appliqué par défaut (le backend retombe
+  // sur l'ordre stable createdAt DESC + id, pagination déterministe). 1er clic =
+  // croissant (▲), 2e = décroissant (▼), 3e = retour à aucun tri.
+  const [sortBy, setSortBy] = useState<ContactSortBy | null>(null);
   const [sortOrder, setSortOrder] = useState<ContactSortOrder>('desc');
 
   const handleSort = (column: ContactSortBy) => {
-    if (column === sortBy) {
-      setSortOrder(prev => (prev === 'asc' ? 'desc' : 'asc'));
-    } else {
+    if (sortBy !== column) {
       setSortBy(column);
-      setSortOrder(column === 'createdAt' ? 'desc' : 'asc');
+      setSortOrder('asc');
+    } else if (sortOrder === 'asc') {
+      setSortOrder('desc');
+    } else {
+      setSortBy(null);
+      setSortOrder('desc');
     }
     setCurrentPage(1);
+  };
+
+  // Triangle de tri toujours visible : grisé (▼) quand la colonne est inactive,
+  // coloré (▲ croissant / ▼ décroissant) sur la colonne active.
+  const renderSortIndicator = (column: ContactSortBy) => {
+    if (sortBy !== column) {
+      return <ChevronDown className="w-3 h-3 text-slate-300" />;
+    }
+    return sortOrder === 'asc'
+      ? <ChevronUp className="w-3 h-3 text-[#005596]" />
+      : <ChevronDown className="w-3 h-3 text-[#005596]" />;
   };
 
   // Server-side paginated data
@@ -132,8 +148,15 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
     }
   }, [location.state]);
 
-  // Recherche texte : appliquée explicitement (touche Entrée / suggestion
-  // récente / bouton X), plus de debounce automatique à chaque frappe.
+  // Recherche texte : appliquée en direct à la frappe (debounce ~400 ms),
+  // sauvegardée dans « Recherches récentes » uniquement sur Entrée.
+  const debouncedSearch = pendingFilters.search;
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setAppliedFilters(prev => (prev.search === debouncedSearch ? prev : { ...prev, search: debouncedSearch }));
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [debouncedSearch]);
 
   // When activeSegmentId changes, update both pending and applied filters to match segment
   useEffect(() => {
@@ -163,7 +186,7 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
     setPageLoading(true);
     setServerError(null);
 
-    apiFetch(buildContactsListQuery(appliedFilters, tags, currentPage, itemsPerPage, { sortBy, sortOrder }), { signal: controller.signal })
+    apiFetch(buildContactsListQuery(appliedFilters, tags, currentPage, itemsPerPage, sortBy ? { sortBy, sortOrder } : undefined), { signal: controller.signal })
       .then((data: any) => {
         if (controller.signal.aborted) return;
         const rows = Array.isArray(data?.data?.contacts) ? data.data.contacts : [];
@@ -231,10 +254,8 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
     });
   };
 
-  // Applique la requête courante (Entrée) et l'ajoute aux recherches récentes.
-  const applySearchQuery = () => {
-    setAppliedFilters(prev => ({ ...prev, search: pendingFilters.search }));
-    setCurrentPage(1);
+  // Entrée : sauvegarde la recherche courante dans les recherches récentes.
+  const saveSearchToRecents = () => {
     persistRecentSearch(pendingFilters.search);
     setIsRecentSearchesOpen(false);
   };
@@ -702,7 +723,7 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
                     e.preventDefault();
-                    applySearchQuery();
+                    saveSearchToRecents();
                   }
                   if (e.key === 'Escape') {
                     setIsRecentSearchesOpen(false);
@@ -710,7 +731,7 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
                 }}
                 onFocus={() => { if (recentSearches.length > 0) setIsRecentSearchesOpen(true); }}
                 onBlur={() => { setTimeout(() => setIsRecentSearchesOpen(false), 150); }}
-                placeholder="Rechercher par nom, e-mail, affiliation, pays, département, tag… (Entrée pour appliquer)"
+                placeholder="Rechercher par nom, e-mail, affiliation, pays, département, tag… (Entrée pour enregistrer)"
                 className="w-full pl-10 pr-10 py-2.5 bg-[#E8F1F8] border-none rounded-xl text-xs font-semibold focus:ring-2 focus:ring-[#005596]"
               />
 
@@ -892,7 +913,7 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
                         className="inline-flex items-center gap-1 font-bold uppercase tracking-wider transition-colors cursor-pointer hover:text-[#005596]"
                       >
                         CONTACT
-                        {sortBy === 'name' && (sortOrder === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />)}
+                        {renderSortIndicator('name')}
                       </button>
                     </th>
                     <th className={`p-3 w-[20%] md:w-[18%] lg:w-[14%] truncate ${sortBy === 'countryOfOrigin' ? 'text-[#005596]' : ''}`} title="Trier par pays d'origine et ville">
@@ -903,7 +924,7 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
                         className="inline-flex items-center gap-1 font-bold uppercase tracking-wider transition-colors cursor-pointer hover:text-[#005596]"
                       >
                         PAYS & VILLE
-                        {sortBy === 'countryOfOrigin' && (sortOrder === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />)}
+                        {renderSortIndicator('countryOfOrigin')}
                       </button>
                     </th>
                     <th className={`p-3 w-[25%] md:w-[22%] lg:w-[18%] truncate ${sortBy === 'affiliation' ? 'text-[#005596]' : ''}`} title="Trier par affiliation et fonction">
@@ -914,7 +935,7 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
                         className="inline-flex items-center gap-1 font-bold uppercase tracking-wider transition-colors cursor-pointer hover:text-[#005596]"
                       >
                         AFFILIATION & FONCTION
-                        {sortBy === 'affiliation' && (sortOrder === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />)}
+                        {renderSortIndicator('affiliation')}
                       </button>
                     </th>
                     <th className={`p-3 hidden lg:table-cell lg:w-[12%] truncate ${sortBy === 'researchCareerStage' ? 'text-[#005596]' : ''}`} title="Trier par stade de carrière">
@@ -925,7 +946,7 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
                         className="inline-flex items-center gap-1 font-bold uppercase tracking-wider transition-colors cursor-pointer hover:text-[#005596]"
                       >
                         STADE DE CARRIÈRE
-                        {sortBy === 'researchCareerStage' && (sortOrder === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />)}
+                        {renderSortIndicator('researchCareerStage')}
                       </button>
                     </th>
                     <th className={`p-3 hidden lg:table-cell lg:w-[10%] truncate ${sortBy === 'gender' ? 'text-[#005596]' : ''}`} title="Trier par genre">
@@ -936,7 +957,7 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
                         className="inline-flex items-center gap-1 font-bold uppercase tracking-wider transition-colors cursor-pointer hover:text-[#005596]"
                       >
                         GENRE
-                        {sortBy === 'gender' && (sortOrder === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />)}
+                        {renderSortIndicator('gender')}
                       </button>
                     </th>
                     <th className={`p-3 w-[24%] md:w-[22%] lg:w-[14%] truncate ${sortBy === 'tags' ? 'text-[#005596]' : ''}`} title="Trier par nombre de tags">
@@ -947,7 +968,7 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
                         className="inline-flex items-center gap-1 font-bold uppercase tracking-wider transition-colors cursor-pointer hover:text-[#005596]"
                       >
                         TAGS
-                        {sortBy === 'tags' && (sortOrder === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />)}
+                        {renderSortIndicator('tags')}
                       </button>
                     </th>
                     <th className="p-3 w-20 text-right shrink-0">ACTIONS</th>
