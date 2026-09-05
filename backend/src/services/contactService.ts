@@ -491,7 +491,7 @@ function contactOrderBySql(params: QueryContactsParams): Prisma.Sql {
     return Prisma.sql`ORDER BY "createdAt" ${dir}, "id" DESC`;
   }
   if (sortBy === 'name') {
-    return Prisma.sql`ORDER BY "lastName" ${dir}, "firstName" ${dir}, "id" DESC`;
+    return Prisma.sql`ORDER BY "firstName" ${dir}, "lastName" ${dir}, "id" DESC`;
   }
   if (sortBy === 'tags') {
     return Prisma.sql`ORDER BY COALESCE("_tagCount".count, 0) ${dir}, "id" DESC`;

@@ -384,14 +384,14 @@ describe('ContactService — branches de couverture', () => {
     expect(result.contacts.map(c => c.id)).toEqual(['c2', 'c1']);
   });
 
-  it('tri par nom croissant (dernier prénom, prénom puis id)', async () => {
+  it('tri par nom croissant (prénom puis nom, id en tie-breaker)', async () => {
     prismaMock.$queryRaw.mockResolvedValueOnce([{ n: 2n }]).mockResolvedValueOnce([{ id: 'c1' }, { id: 'c2' }]);
     prismaMock.contact.findMany.mockResolvedValueOnce([
       { ...SAMPLE_CONTACT, id: 'c1' },
       { ...SAMPLE_CONTACT, id: 'c2' }
     ]);
     await service.getContacts({ sortBy: 'name', sortOrder: 'asc' });
-    expect(selectSql()).toContain('ORDER BY "lastName" ASC, "firstName" ASC, "id" DESC');
+    expect(selectSql()).toContain('ORDER BY "firstName" ASC, "lastName" ASC, "id" DESC');
   });
 
   it('tri par pays décroissant', async () => {
