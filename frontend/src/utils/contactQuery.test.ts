@@ -55,6 +55,12 @@ describe('buildContactsListQuery', () => {
   it('always includes page and limit', () => {
     expect(buildContactsListQuery(empty(), tags, 1, 20)).toBe('/api/contacts?page=1&limit=20');
   });
+
+  it('appends sortBy and sortOrder when provided', () => {
+    expect(buildContactsListQuery(empty(), tags, 1, 10, { sortBy: 'name', sortOrder: 'asc' })).toBe(
+      '/api/contacts?page=1&limit=10&sortBy=name&sortOrder=asc'
+    );
+  });
 });
 
 describe('buildContactsExportQuery', () => {

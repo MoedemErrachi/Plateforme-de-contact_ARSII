@@ -93,6 +93,22 @@ export interface FilterState {
   tags: string[];
 }
 
+export type ContactSortBy =
+  | 'name'
+  | 'countryOfOrigin'
+  | 'affiliation'
+  | 'researchCareerStage'
+  | 'gender'
+  | 'tags'
+  | 'createdAt';
+
+export type ContactSortOrder = 'asc' | 'desc';
+
+export interface ContactSortQuery {
+  sortBy?: ContactSortBy;
+  sortOrder?: ContactSortOrder;
+}
+
 export type SelectionMode = 'none' | 'page' | 'partial' | 'all-filtered';
 
 export interface ContactSelection {

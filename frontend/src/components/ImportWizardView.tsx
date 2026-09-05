@@ -68,7 +68,7 @@ export interface ParsedContactCandidate {
   status: 'valid' | 'duplicate' | 'invalid';
   errorReason?: string;
   duplicateMatch?: Contact;
-  resolutionAction: 'import' | 'overwrite' | 'skip' | 'create_new';
+  resolutionAction: 'import' | 'overwrite' | 'skip';
 }
 
 interface SystemFieldDef {
@@ -478,7 +478,7 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
   }, [rawRows, columnMapping, existingContacts]);
 
   // Resolution action change for a candidate in Step 3
-  const handleCandidateResolutionChange = (id: string, action: 'import' | 'overwrite' | 'skip' | 'create_new') => {
+  const handleCandidateResolutionChange = (id: string, action: 'import' | 'overwrite' | 'skip') => {
     setCandidates(prev => prev.map(c => c.id === id ? { ...c, resolutionAction: action } : c));
   };
 
@@ -527,7 +527,7 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
   };
 
   // Bulk duplicate resolution actions
-  const handleBulkDuplicateAction = (action: 'overwrite' | 'skip' | 'create_new') => {
+  const handleBulkDuplicateAction = (action: 'overwrite' | 'skip') => {
     setCandidates(prev => prev.map(c => c.status === 'duplicate' ? { ...c, resolutionAction: action } : c));
   };
 
@@ -1282,7 +1282,6 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
                           {cand.status === 'duplicate' ? (
                             <>
                               <option value="overwrite">Mettre à jour</option>
-                              <option value="create_new">Créer doublon</option>
                               <option value="skip">Ignorer</option>
                             </>
                           ) : cand.status === 'invalid' ? (

@@ -1,4 +1,4 @@
-import { FilterState, Tag } from '../types';
+import { FilterState, Tag, ContactSortQuery } from '../types';
 
 export type ExportFormat = 'csv' | 'xlsx' | 'json';
 
@@ -34,10 +34,18 @@ export function filterStateToSearchParams(filters: FilterState, tags: Tag[]): UR
   return params;
 }
 
-export function buildContactsListQuery(filters: FilterState, tags: Tag[], page: number, limit: number): string {
+export function buildContactsListQuery(
+  filters: FilterState,
+  tags: Tag[],
+  page: number,
+  limit: number,
+  sort?: ContactSortQuery
+): string {
   const params = filterStateToSearchParams(filters, tags);
   params.set('page', String(page));
   params.set('limit', String(limit));
+  if (sort?.sortBy) params.set('sortBy', sort.sortBy);
+  if (sort?.sortOrder) params.set('sortOrder', sort.sortOrder);
   const qs = params.toString();
   return `/api/contacts${qs ? `?${qs}` : ''}`;
 }

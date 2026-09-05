@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Contact, FilterState, Segment, Tag as TagType, User as UserType, Gender, ResearchCareerStage, ContactSelection, PaginationInfo, GENDER_LABELS, CAREER_STAGE_LABELS, CAREER_STAGE_SHORT_LABELS } from '../types';
+import { Contact, FilterState, Segment, Tag as TagType, User as UserType, Gender, ResearchCareerStage, ContactSelection, PaginationInfo, GENDER_LABELS, CAREER_STAGE_LABELS, CAREER_STAGE_SHORT_LABELS, ContactSortBy, ContactSortOrder } from '../types';
 import { apiFetch } from '../services/api';
 import { mapContactFromApi } from '../utils/mapContact';
 import { buildContactsListQuery, emptyFilterState, isEmptyFilterState } from '../utils/contactQuery';
@@ -21,6 +21,8 @@ import {
   Trash2, 
   ChevronLeft, 
   ChevronRight, 
+  ArrowUp, 
+  ArrowDown, 
   X, 
   Download, 
   Tag as TagIcon, 
@@ -83,6 +85,20 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
 
   // Applied Filters State (used to fetch the contacts table)
   const [appliedFilters, setAppliedFilters] = useState<FilterState>(emptyFilterState);
+
+  // Server-side column sorting (défaut : createdAt DESC, ordre historique)
+  const [sortBy, setSortBy] = useState<ContactSortBy>('createdAt');
+  const [sortOrder, setSortOrder] = useState<ContactSortOrder>('desc');
+
+  const handleSort = (column: ContactSortBy) => {
+    if (column === sortBy) {
+      setSortOrder(prev => (prev === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortBy(column);
+      setSortOrder(column === 'createdAt' ? 'desc' : 'asc');
+    }
+    setCurrentPage(1);
+  };
 
   // Server-side paginated data
   const [pageContacts, setPageContacts] = useState<Contact[]>([]);
@@ -147,7 +163,7 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
     setPageLoading(true);
     setServerError(null);
 
-    apiFetch(buildContactsListQuery(appliedFilters, tags, currentPage, itemsPerPage), { signal: controller.signal })
+    apiFetch(buildContactsListQuery(appliedFilters, tags, currentPage, itemsPerPage, { sortBy, sortOrder }), { signal: controller.signal })
       .then((data: any) => {
         if (controller.signal.aborted) return;
         const rows = Array.isArray(data?.data?.contacts) ? data.data.contacts : [];
@@ -169,7 +185,7 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
     return () => controller.abort();
     // refreshKey : rechargement après toute mutation effectuée ailleurs dans
     // l'application (création, import, suppression simple ou en lot).
-  }, [appliedFilters, currentPage, itemsPerPage, tags, retryTick, refreshKey]);
+  }, [appliedFilters, currentPage, itemsPerPage, tags, retryTick, refreshKey, sortBy, sortOrder]);
 
   // Drawer state
   const [quickDrawerContact, setQuickDrawerContact] = useState<Contact | null>(null);
@@ -182,7 +198,7 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
   const handleSaveSegmentSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newSegmentNameInput.trim()) return;
-    onSaveCurrentAsSegment(newSegmentNameInput.trim(), appliedFilters);
+    onSaveCurrentAsSegment(newSegmentNameInput.trim(), pendingFilters);
     setNewSegmentNameInput('');
     setIsSaveSegmentModalOpen(false);
   };
@@ -643,8 +659,13 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
                 setIsSaveSegmentModalOpen(true);
                 setIsFilterOpen(false);
               }}
-              className="w-full py-2.5 px-4 bg-[#E8F1F8] hover:bg-[#D9E6F2] text-[#004275] rounded-2xl text-xs font-extrabold flex items-center justify-start gap-3 transition-all active:scale-95 cursor-pointer"
-              title="Enregistrer les filtres appliqués comme nouveau segment"
+              disabled={isEmptyFilterState(pendingFilters)}
+              className="w-full py-2.5 px-4 bg-[#E8F1F8] hover:bg-[#D9E6F2] text-[#004275] rounded-2xl text-xs font-extrabold flex items-center justify-start gap-3 transition-all active:scale-95 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-[#E8F1F8]"
+              title={
+                isEmptyFilterState(pendingFilters)
+                  ? 'Sélectionnez d’abord des filtres pour créer un segment'
+                  : 'Enregistrer les filtres sélectionnés comme nouveau segment'
+              }
             >
               <Save className="w-4 h-4 text-[#004275] stroke-[2.5]" />
               <span>Enregistrer comme segment</span>
@@ -863,12 +884,72 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
                 <thead className="bg-[#D9E6F2]/50 border-b border-[#C9D4DE] text-[11px] font-bold text-[#55636B] uppercase tracking-wider">
                   <tr>
                     <th className="p-3 w-10 text-center shrink-0"></th>
-                    <th className="p-3 w-[30%] md:w-[28%] lg:w-[22%] truncate" title="Nom et e-mail du contact">CONTACT</th>
-                    <th className="p-3 w-[20%] md:w-[18%] lg:w-[14%] truncate" title="Pays d'origine et ville">PAYS & VILLE</th>
-                    <th className="p-3 w-[25%] md:w-[22%] lg:w-[18%] truncate" title="Affiliation et fonction">AFFILIATION & FONCTION</th>
-                    <th className="p-3 hidden lg:table-cell lg:w-[12%] truncate" title="Stade de carrière">STADE DE CARRIÈRE</th>
-                    <th className="p-3 hidden lg:table-cell lg:w-[10%] truncate" title="Genre">GENRE</th>
-                    <th className="p-3 w-[24%] md:w-[22%] lg:w-[14%] truncate" title="Tags">TAGS</th>
+                    <th className={`p-3 w-[30%] md:w-[28%] lg:w-[22%] truncate ${sortBy === 'name' ? 'text-[#005596]' : ''}`} title="Trier par nom et e-mail du contact">
+                      <button
+                        type="button"
+                        onClick={() => handleSort('name')}
+                        aria-sort={sortBy === 'name' ? (sortOrder === 'asc' ? 'ascending' : 'descending') : undefined}
+                        className="inline-flex items-center gap-1 font-bold uppercase tracking-wider transition-colors cursor-pointer hover:text-[#005596]"
+                      >
+                        CONTACT
+                        {sortBy === 'name' && (sortOrder === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />)}
+                      </button>
+                    </th>
+                    <th className={`p-3 w-[20%] md:w-[18%] lg:w-[14%] truncate ${sortBy === 'countryOfOrigin' ? 'text-[#005596]' : ''}`} title="Trier par pays d'origine et ville">
+                      <button
+                        type="button"
+                        onClick={() => handleSort('countryOfOrigin')}
+                        aria-sort={sortBy === 'countryOfOrigin' ? (sortOrder === 'asc' ? 'ascending' : 'descending') : undefined}
+                        className="inline-flex items-center gap-1 font-bold uppercase tracking-wider transition-colors cursor-pointer hover:text-[#005596]"
+                      >
+                        PAYS & VILLE
+                        {sortBy === 'countryOfOrigin' && (sortOrder === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />)}
+                      </button>
+                    </th>
+                    <th className={`p-3 w-[25%] md:w-[22%] lg:w-[18%] truncate ${sortBy === 'affiliation' ? 'text-[#005596]' : ''}`} title="Trier par affiliation et fonction">
+                      <button
+                        type="button"
+                        onClick={() => handleSort('affiliation')}
+                        aria-sort={sortBy === 'affiliation' ? (sortOrder === 'asc' ? 'ascending' : 'descending') : undefined}
+                        className="inline-flex items-center gap-1 font-bold uppercase tracking-wider transition-colors cursor-pointer hover:text-[#005596]"
+                      >
+                        AFFILIATION & FONCTION
+                        {sortBy === 'affiliation' && (sortOrder === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />)}
+                      </button>
+                    </th>
+                    <th className={`p-3 hidden lg:table-cell lg:w-[12%] truncate ${sortBy === 'researchCareerStage' ? 'text-[#005596]' : ''}`} title="Trier par stade de carrière">
+                      <button
+                        type="button"
+                        onClick={() => handleSort('researchCareerStage')}
+                        aria-sort={sortBy === 'researchCareerStage' ? (sortOrder === 'asc' ? 'ascending' : 'descending') : undefined}
+                        className="inline-flex items-center gap-1 font-bold uppercase tracking-wider transition-colors cursor-pointer hover:text-[#005596]"
+                      >
+                        STADE DE CARRIÈRE
+                        {sortBy === 'researchCareerStage' && (sortOrder === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />)}
+                      </button>
+                    </th>
+                    <th className={`p-3 hidden lg:table-cell lg:w-[10%] truncate ${sortBy === 'gender' ? 'text-[#005596]' : ''}`} title="Trier par genre">
+                      <button
+                        type="button"
+                        onClick={() => handleSort('gender')}
+                        aria-sort={sortBy === 'gender' ? (sortOrder === 'asc' ? 'ascending' : 'descending') : undefined}
+                        className="inline-flex items-center gap-1 font-bold uppercase tracking-wider transition-colors cursor-pointer hover:text-[#005596]"
+                      >
+                        GENRE
+                        {sortBy === 'gender' && (sortOrder === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />)}
+                      </button>
+                    </th>
+                    <th className={`p-3 w-[24%] md:w-[22%] lg:w-[14%] truncate ${sortBy === 'tags' ? 'text-[#005596]' : ''}`} title="Trier par nombre de tags">
+                      <button
+                        type="button"
+                        onClick={() => handleSort('tags')}
+                        aria-sort={sortBy === 'tags' ? (sortOrder === 'asc' ? 'ascending' : 'descending') : undefined}
+                        className="inline-flex items-center gap-1 font-bold uppercase tracking-wider transition-colors cursor-pointer hover:text-[#005596]"
+                      >
+                        TAGS
+                        {sortBy === 'tags' && (sortOrder === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />)}
+                      </button>
+                    </th>
                     <th className="p-3 w-20 text-right shrink-0">ACTIONS</th>
                   </tr>
                 </thead>
@@ -1464,14 +1545,14 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
               </div>
 
               <div className="bg-[#E8F1F8]/50 p-3.5 rounded-xl border border-[#C9D4DE]/30 text-slate-600">
-                <p className="font-bold text-[#005596] mb-1.5 text-xs">Filtres actuellement appliqués:</p>
+                <p className="font-bold text-[#005596] mb-1.5 text-xs">Filtres sélectionnés:</p>
                 <ul className="list-disc list-inside space-y-1 text-[11px] font-medium">
-                  {appliedFilters.search && <li>Recherche: "{appliedFilters.search}"</li>}
-                  {appliedFilters.countries.length > 0 && <li>Pays d'origine: {appliedFilters.countries.join(', ')}</li>}
-                  {appliedFilters.genders.length > 0 && <li>Genres: {appliedFilters.genders.map(g => GENDER_LABELS[g as Gender]).join(', ')}</li>}
-                  {appliedFilters.careerStages.length > 0 && <li>Stades de carrière: {appliedFilters.careerStages.map(s => CAREER_STAGE_SHORT_LABELS[s as ResearchCareerStage]).join(', ')}</li>}
-                  {appliedFilters.tags.length > 0 && <li>Tags: {appliedFilters.tags.join(', ')}</li>}
-                  {!appliedFilters.search && appliedFilters.countries.length === 0 && appliedFilters.genders.length === 0 && appliedFilters.careerStages.length === 0 && appliedFilters.tags.length === 0 && (
+                  {pendingFilters.search && <li>Recherche: "{pendingFilters.search}"</li>}
+                  {pendingFilters.countries.length > 0 && <li>Pays d'origine: {pendingFilters.countries.join(', ')}</li>}
+                  {pendingFilters.genders.length > 0 && <li>Genres: {pendingFilters.genders.map(g => GENDER_LABELS[g as Gender]).join(', ')}</li>}
+                  {pendingFilters.careerStages.length > 0 && <li>Stades de carrière: {pendingFilters.careerStages.map(s => CAREER_STAGE_SHORT_LABELS[s as ResearchCareerStage]).join(', ')}</li>}
+                  {pendingFilters.tags.length > 0 && <li>Tags: {pendingFilters.tags.join(', ')}</li>}
+                  {isEmptyFilterState(pendingFilters) && (
                     <li className="italic text-slate-500">Tous les contacts (aucun filtre restreint)</li>
                   )}
                 </ul>
