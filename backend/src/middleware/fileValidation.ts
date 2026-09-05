@@ -1,5 +1,4 @@
 import { Request, Response, NextFunction } from 'express';
-import path from 'node:path';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB limit
 
@@ -42,12 +41,14 @@ function isValidCsvSignature(buffer: Buffer): boolean {
  */
 export function sanitizeFilename(filename: string): string {
   if (!filename) return 'uploaded_file.csv';
-  
-  // Strip path segments using path.basename
-  let safeName = path.basename(filename);
-  
+
+  // Dernier segment du chemin quel que soit le séparateur (\ ou /), donc
+  // comportement identique sous Windows et Linux : bloque le Directory
+  // Traversal de type `..\..\wp-config.php` comme `../../wp-config.php`.
+  const lastSegment = filename.replace(/\\/g, '/').split('/').pop() || '';
+
   // Remove null bytes, parent dir references, and unsafe characters
-  safeName = safeName
+  let safeName = lastSegment
     .replaceAll('\0', '')
     .replaceAll('..', '')
     .replace(/[^a-zA-Z0-9_\-.]/g, '_');
