@@ -14,7 +14,7 @@ vi.mock('nodemailer', () => ({
   default: { createTransport: mocks.createTransport }
 }));
 
-import { sendPasswordResetEmail, sendUserCreatedEmail } from './emailService';
+import { sendPasswordResetEmail, sendUserCreatedEmail, verifySmtpTransport } from './emailService';
 
 describe('emailService', () => {
   beforeEach(() => {
@@ -53,17 +53,22 @@ describe('emailService', () => {
     expect(ok).toBe(false);
   });
 
-  it('journalise un échec de vérification SMTP au démarrage (non bloquant)', async () => {
+  it('journalise un échec de vérification SMTP sans propager d’erreur', async () => {
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
     mocks.transporter.verify.mockRejectedValueOnce(new Error('SMTP handshake failed'));
-    vi.resetModules();
-    await import('./emailService');
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    vi.resetModules();
+    await expect(verifySmtpTransport()).resolves.toBeUndefined();
     expect(spy).toHaveBeenCalledWith(
       '[EmailService] Gmail SMTP transporter verification failed:',
       'SMTP handshake failed'
     );
+    spy.mockRestore();
+  });
+
+  it('ne journalise rien si la vérification SMTP réussit', async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    mocks.transporter.verify.mockResolvedValue(true);
+    await expect(verifySmtpTransport()).resolves.toBeUndefined();
+    expect(spy).not.toHaveBeenCalled();
     spy.mockRestore();
   });
 });

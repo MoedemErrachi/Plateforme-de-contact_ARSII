@@ -13,18 +13,17 @@ const transporter = nodemailer.createTransport({
   socketTimeout: 15000
 });
 
-// Vérification silencieuse du transporteur SMTP au démarrage : l'échec est
-// journalisé sans bruit, le succès n'émet rien (hygiène des logs). Non-bloquant :
-// l'import du module ne doit pas attendre la poignée de main SMTP.
-async function verifySmtpTransport(): Promise<void> {
+// Vérification silencieuse du transporteur SMTP, invoquée par le bootstrap
+// (server.ts) avant d'accepter des requêtes : l'échec est journalisé sans
+// bruit, le succès n'émet rien (hygiène des logs). L'import du module reste
+// sans effet de bord (l'usage du secret ne doit pas bloquer les tests).
+export async function verifySmtpTransport(): Promise<void> {
   try {
     await transporter.verify();
   } catch (err) {
     console.error('[EmailService] Gmail SMTP transporter verification failed:', err instanceof Error ? err.message : String(err));
   }
 }
-
-void verifySmtpTransport();
 
 const FROM_ADDRESS = process.env.GMAIL_USER || 'noreply@gmail.com';
 

@@ -1,5 +1,6 @@
 import { createApp } from './src/app';
 import { prisma } from './src/config/prisma';
+import { verifySmtpTransport } from './src/services/emailService';
 
 // Arrêt propre (SIGTERM : Cloud Run / Docker ; SIGINT : Ctrl+C local) :
 // on cesse d'accepter les nouvelles connexions, on laisse les requêtes en
@@ -10,6 +11,10 @@ async function startServer() {
   const app = createApp();
   const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 5000;
   const HOST = process.env.HOST || '0.0.0.0';
+
+  // Vérifie la liaison SMTP avant d'accepter les requêtes (fail-fast) :
+  // l'échec est journalisé sans bruit et le serveur démarre quand même.
+  await verifySmtpTransport();
 
   const server = app.listen(PORT, HOST, () => {
     console.log(`Backend server running on http://${HOST}:${PORT}`);
