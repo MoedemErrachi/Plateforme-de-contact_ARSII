@@ -39,7 +39,11 @@ describe('ContactService — listing & aggregation', () => {
     prismaMock.$queryRaw
       .mockResolvedValueOnce([{ n: 3n }])
       .mockResolvedValueOnce([{ id: 'c1' }, { id: 'c2' }, { id: 'c3' }]);
-    prismaMock.contact.findMany.mockResolvedValueOnce([SAMPLE_CONTACT, SAMPLE_CONTACT, SAMPLE_CONTACT]);
+    prismaMock.contact.findMany.mockResolvedValueOnce([
+      { ...SAMPLE_CONTACT, id: 'c1' },
+      { ...SAMPLE_CONTACT, id: 'c2' },
+      { ...SAMPLE_CONTACT, id: 'c3' }
+    ]);
 
     const result = await service.getContacts({ page: 1, limit: 20, search: 'awa', countryOfOrigin: 'Sénégal' });
     expect(result.contacts).toHaveLength(3);
@@ -345,6 +349,66 @@ describe('ContactService — branches de couverture', () => {
     });
     expect(result.contacts).toHaveLength(0);
     expect(prismaMock.$queryRaw).toHaveBeenCalled();
+  });
+
+  function selectSql(): string {
+    const call = prismaMock.$queryRaw.mock.calls[1];
+    const chunks: string[] = [];
+    const walk = (arg: any) => {
+      if (Array.isArray(arg)) {
+        if (arg.length === 0) return;
+        if (typeof arg[0] === 'string') {
+          chunks.push(arg.join(''));
+          return;
+        }
+        arg.forEach(walk);
+        return;
+      }
+      if (arg && typeof arg === 'object' && Array.isArray(arg.strings) && Array.isArray(arg.values)) {
+        chunks.push(arg.strings.join(''));
+        arg.values.forEach(walk);
+      }
+    };
+    call.forEach(walk);
+    return chunks.join(' ').replace(/\s+/g, ' ').trim();
+  }
+
+  it('tri par défaut : createdAt DESC déterministe (id en tie-breaker)', async () => {
+    prismaMock.$queryRaw.mockResolvedValueOnce([{ n: 2n }]).mockResolvedValueOnce([{ id: 'c2' }, { id: 'c1' }]);
+    prismaMock.contact.findMany.mockResolvedValueOnce([
+      { ...SAMPLE_CONTACT, id: 'c1' },
+      { ...SAMPLE_CONTACT, id: 'c2' }
+    ]);
+    const result = await service.getContacts({ page: 1, limit: 20 });
+    expect(selectSql()).toContain('ORDER BY "createdAt" DESC, "id" DESC');
+    expect(result.contacts.map(c => c.id)).toEqual(['c2', 'c1']);
+  });
+
+  it('tri par nom croissant (dernier prénom, prénom puis id)', async () => {
+    prismaMock.$queryRaw.mockResolvedValueOnce([{ n: 2n }]).mockResolvedValueOnce([{ id: 'c1' }, { id: 'c2' }]);
+    prismaMock.contact.findMany.mockResolvedValueOnce([
+      { ...SAMPLE_CONTACT, id: 'c1' },
+      { ...SAMPLE_CONTACT, id: 'c2' }
+    ]);
+    await service.getContacts({ sortBy: 'name', sortOrder: 'asc' });
+    expect(selectSql()).toContain('ORDER BY "lastName" ASC, "firstName" ASC, "id" DESC');
+  });
+
+  it('tri par pays décroissant', async () => {
+    prismaMock.$queryRaw.mockResolvedValueOnce([{ n: 0n }]).mockResolvedValueOnce([]);
+    prismaMock.contact.findMany.mockResolvedValueOnce([]);
+    await service.getContacts({ sortBy: 'countryOfOrigin', sortOrder: 'desc' });
+    expect(selectSql()).toContain('ORDER BY "countryOfOrigin" DESC, "id" DESC');
+  });
+
+  it('tri par nombre de tags (LEFT JOIN + COALESCE)', async () => {
+    prismaMock.$queryRaw.mockResolvedValueOnce([{ n: 0n }]).mockResolvedValueOnce([]);
+    prismaMock.contact.findMany.mockResolvedValueOnce([]);
+    await service.getContacts({ sortBy: 'tags', sortOrder: 'desc' });
+    const sql = selectSql();
+    expect(sql).toContain('LEFT JOIN');
+    expect(sql).toContain('TagOnContact');
+    expect(sql).toContain('ORDER BY COALESCE("_tagCount".count, 0) DESC, "id" DESC');
   });
 
   it('parcourt plusieurs lots lors d’un export (cursor id)', async () => {

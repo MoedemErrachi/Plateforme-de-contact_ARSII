@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { ContactService } from '../services/contactService';
+import { ContactService, ContactSortBy, ContactSortOrder } from '../services/contactService';
 import { LogService } from '../services/logService';
 import { AuthenticatedRequest } from '../middleware/authenticateJWT';
 import { toArray } from '../utils/toArray';
@@ -25,7 +25,9 @@ export const getContacts = async (req: Request, res: Response, next: NextFunctio
       affiliation: req.query.affiliation as string,
       facultyDepartment: req.query.facultyDepartment as string,
       tagId: toArray(req.query.tagId),
-      segmentId: req.query.segmentId as string
+      segmentId: req.query.segmentId as string,
+      sortBy: req.query.sortBy as ContactSortBy,
+      sortOrder: req.query.sortOrder as ContactSortOrder
     });
 
     res.status(200).json({

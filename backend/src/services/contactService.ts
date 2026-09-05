@@ -368,6 +368,17 @@ function likePattern(value: string): string {
   return `%${escapeLike(foldTerm(value))}%`;
 }
 
+export type ContactSortBy =
+  | 'name'
+  | 'countryOfOrigin'
+  | 'affiliation'
+  | 'researchCareerStage'
+  | 'gender'
+  | 'tags'
+  | 'createdAt';
+
+export type ContactSortOrder = 'asc' | 'desc';
+
 export interface QueryContactsParams {
   page?: number;
   limit?: number;
@@ -380,6 +391,8 @@ export interface QueryContactsParams {
   facultyDepartment?: string;
   tagId?: string | string[];
   segmentId?: string;
+  sortBy?: ContactSortBy;
+  sortOrder?: ContactSortOrder;
 }
 
 export interface ExportContactsParams extends QueryContactsParams {
@@ -449,6 +462,41 @@ function toArray(value?: string | string[]): string[] {
   if (Array.isArray(value)) return value.filter(Boolean);
   if (value) return [value];
   return [];
+}
+
+// Colonnes de tri serveur autorisées (whitelist en dur, jamais d'interpolation brute).
+const SORT_COLUMN_SQL: Record<Exclude<ContactSortBy, 'createdAt' | 'name' | 'tags'>, Prisma.Sql> = {
+  countryOfOrigin: Prisma.sql`"countryOfOrigin"`,
+  affiliation: Prisma.sql`"affiliation"`,
+  researchCareerStage: Prisma.sql`"researchCareerStage"`,
+  gender: Prisma.sql`"gender"`
+};
+
+// Sous-requête de comptage des tags, utilisée par le tri `tags`.
+const TAG_COUNT_JOIN = Prisma.sql` LEFT JOIN (
+  SELECT "contactId", COUNT(*) AS count FROM "TagOnContact" GROUP BY "contactId"
+) "_tagCount" ON "_tagCount"."contactId" = "Contact"."id"`;
+
+/**
+ * Construit l'`ORDER BY` de la liste paginée.
+ * Toujours terminé par le tie-breaker `"id"` (unique) pour un ordre totalement
+ * déterministe : sans lui, des `createdAt` identiques (imports groupés) rendent
+ * les pages OFFSET non stables et font chevaucher les résultats entre pages.
+ */
+function contactOrderBySql(params: QueryContactsParams): Prisma.Sql {
+  const dir = params.sortOrder === 'asc' ? Prisma.sql`ASC` : Prisma.sql`DESC`;
+  const sortBy = params.sortBy ?? 'createdAt';
+
+  if (sortBy === 'createdAt') {
+    return Prisma.sql`ORDER BY "createdAt" ${dir}, "id" DESC`;
+  }
+  if (sortBy === 'name') {
+    return Prisma.sql`ORDER BY "lastName" ${dir}, "firstName" ${dir}, "id" DESC`;
+  }
+  if (sortBy === 'tags') {
+    return Prisma.sql`ORDER BY COALESCE("_tagCount".count, 0) ${dir}, "id" DESC`;
+  }
+  return Prisma.sql`ORDER BY ${SORT_COLUMN_SQL[sortBy]} ${dir}, "id" DESC`;
 }
 
 function orCountryOfOrigin(values: string[]): Prisma.Sql {
@@ -592,12 +640,15 @@ export class ContactService {
 
     const conditions = this.buildWhereConditions(params);
     const whereSql = this.whereSql(conditions);
+    const orderBy = contactOrderBySql(params);
+    const tagCountJoin = params.sortBy === 'tags' ? TAG_COUNT_JOIN : Prisma.empty;
 
     const [totalRecords, idsResult] = await Promise.all([
       prisma.$queryRaw<{ n: bigint }[]>`SELECT COUNT(*)::bigint AS n FROM "Contact" ${whereSql}`,
       prisma.$queryRaw<{ id: string }[]>`
-        SELECT "id" FROM "Contact" ${whereSql}
-        ORDER BY "createdAt" DESC
+        SELECT "id" FROM "Contact"${tagCountJoin}
+        ${whereSql}
+        ${orderBy}
         LIMIT ${limit} OFFSET ${skip}
       `,
     ]);
@@ -607,15 +658,22 @@ export class ContactService {
     const contacts = ids.length
       ? await prisma.contact.findMany({
           where: { id: { in: ids } },
-          orderBy: { createdAt: 'desc' },
           include: this.contactInclude(),
         })
       : [];
+    // L'ordre des ids provient du SQL (déterministe) ; on le restaure après le
+    // findMany, qui ne garantit aucun ordre et réordonnerait les ex-aequo.
+    const contactsById = new Map(contacts.map((c) => [c.id, c]));
+    const orderedContacts: typeof contacts = [];
+    for (const id of ids) {
+      const contact = contactsById.get(id);
+      if (contact) orderedContacts.push(contact);
+    }
 
     const totalPages = Math.ceil(count / limit) || 1;
 
     return {
-      contacts,
+      contacts: orderedContacts,
       pagination: {
         page,
         limit,

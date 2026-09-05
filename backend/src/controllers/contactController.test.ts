@@ -144,3 +144,16 @@ describe('contactController — bulk', () => {
     expect(res.body.errorMessage.length).toBeLessThanOrEqual(301);
   });
 });
+
+describe('contactController — tri', () => {
+  it('transmet sortBy/sortOrder au service', async () => {
+    const res = await get(
+      buildTestApp((a) => a.get('/x', getContacts)),
+      '/x?sortBy=name&sortOrder=asc'
+    );
+    expect(res.status).toBe(200);
+    expect(svc.MockContactService.last.getContacts).toHaveBeenCalledWith(
+      expect.objectContaining({ sortBy: 'name', sortOrder: 'asc' })
+    );
+  });
+});

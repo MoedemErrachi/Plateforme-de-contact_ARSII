@@ -85,7 +85,9 @@ export const queryContactSchema = z.object({
     affiliation: z.string().optional(),
     facultyDepartment: z.string().optional(),
     tagId: z.union([z.string(), z.array(z.string())]).optional(),
-    segmentId: z.string().optional()
+    segmentId: z.string().optional(),
+    sortBy: z.enum(['name', 'countryOfOrigin', 'affiliation', 'researchCareerStage', 'gender', 'tags', 'createdAt']).optional(),
+    sortOrder: z.enum(['asc', 'desc']).optional()
   })
 });
 
