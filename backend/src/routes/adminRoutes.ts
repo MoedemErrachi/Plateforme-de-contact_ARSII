@@ -180,6 +180,19 @@ router.get('/users', async (_req: AuthenticatedRequest, res: Response) => {
 const VALID_PRIVILEGES = ['READ', 'READ_WRITE', 'FULL_ACCESS'] as const;
 type UserPrivilege = (typeof VALID_PRIVILEGES)[number];
 
+// Pattern bien défini pour le mot de passe temporaire (identique au format
+// historique) : « Temp » + 8 caractères alphanumériques minuscules + « ! »,
+// généré par RNG cryptographique au lieu de Math.random.
+const TEMP_PASSWORD_CHARS = '0123456789abcdefghijklmnopqrstuvwxyz';
+
+function generateTemporaryPassword(): string {
+  let suffix = '';
+  for (let i = 0; i < 8; i++) {
+    suffix += TEMP_PASSWORD_CHARS[crypto.randomInt(TEMP_PASSWORD_CHARS.length)];
+  }
+  return `Temp${suffix}!`;
+}
+
 function normalizePrivilege(input: unknown): UserPrivilege | null {
   const raw = (typeof input === 'string' ? input : '').trim().toUpperCase();
   return (VALID_PRIVILEGES as readonly string[]).includes(raw)
@@ -226,7 +239,7 @@ router.post('/users', async (req: AuthenticatedRequest, res: Response) => {
   }
 
   // Generate a temporary password
-  const tempPassword = `Temp${crypto.randomBytes(6).toString('hex')}!`;
+  const tempPassword = generateTemporaryPassword();
   const passwordHash = bcrypt.hashSync(tempPassword, 10);
 
   try {
