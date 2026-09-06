@@ -29,7 +29,7 @@ FAILURE_FINAL_ALL_FAILED = "chat_final_all_failed"
 FAILURE_COUNTER: dict[str, int] = {}
 FAILURE_EVENTS: deque[dict] = deque(maxlen=500)
 
-_FENCE_RE = re.compile(r"```(?:json)?\s*\n?([^`]*+)\n?\s*```")
+_FENCE_RE = re.compile(r"```[ \t]*(?:json)?([^`]*+)```")
 # Accepte une valeur de "message" fermée ou tronquée (fin d'entrée sans guillemet fermant).
 _MESSAGE_FIELD_RE = re.compile(r'"message"\s*:\s*"((?:[^"\\]|\\.)*)(?:"|$)', re.DOTALL)
 

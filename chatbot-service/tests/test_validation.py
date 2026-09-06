@@ -131,6 +131,14 @@ class TestValidateFinalResponse:
         response = validate_final_response("```json\n[1, 2, 3]\n```")
         assert response.message == GENERIC_FALLBACK
 
+    def test_fence_with_space_before_json_lang(self, monkeypatch):
+        import app.services.validation as validation
+
+        monkeypatch.setattr(validation, "FAILURE_COUNTER", {})
+        response = validate_final_response('``` json\n{"message": "ok", "actions": []}\n```')
+        assert response.message == "ok"
+        assert response.actions == []
+
     def test_broken_json_with_invalid_escape(self, monkeypatch):
         import app.services.validation as validation
 

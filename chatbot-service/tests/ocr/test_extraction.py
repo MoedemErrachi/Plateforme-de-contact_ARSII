@@ -28,6 +28,12 @@ class TestParseExtractionResponse:
         assert result.lastName is not None
         assert result.lastName.value == "Dupont"
 
+    def test_json_in_fence_with_space_before_lang(self):
+        raw = '``` json\n{"lastName": {"value": "Dupont", "confidence": "medium"}}\n```'
+        result = parse_extraction_response(raw)
+        assert result.lastName is not None
+        assert result.lastName.value == "Dupont"
+
     def test_null_fields(self):
         raw = '{"firstName": {"value": null, "confidence": "low"}, "email": null}'
         result = parse_extraction_response(raw)
@@ -50,6 +56,12 @@ class TestParseExtractionResponse:
 class TestExtractEmail:
     def test_valid_email(self):
         assert extract_email_from_text("Contact: alice@test.com") == "alice@test.com"
+
+    def test_multi_label_domain(self):
+        assert (
+            extract_email_from_text("Reach: alice.martin@sub.domain.co")
+            == "alice.martin@sub.domain.co"
+        )
 
     def test_no_email(self):
         assert extract_email_from_text("No email here") is None
