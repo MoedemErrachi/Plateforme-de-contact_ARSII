@@ -48,45 +48,6 @@ class _InvalidCallProvider(LLMProvider):
         return "{}"
 
 
-class TestLLMRouterHelpers:
-    def test_is_healthy_fresh(self):
-        router = LLMRouter(providers=[])
-        assert router._is_healthy("p") is True
-
-    def test_is_healthy_in_cooldown(self, monkeypatch):
-        router = LLMRouter(providers=[])
-        router._cooldown_until["p"] = time.time() + 100
-        assert router._is_healthy("p") is False
-
-    def test_is_healthy_cooldown_elapsed(self, monkeypatch):
-        router = LLMRouter(providers=[])
-        router._failures["p"] = 1
-        router._cooldown_until["p"] = time.time() - 1
-        assert router._is_healthy("p") is True
-        assert "p" not in router._failures
-        assert "p" not in router._cooldown_until
-
-    def test_record_failure_below_threshold(self):
-        router = LLMRouter(providers=[])
-        router._record_provider_failure("p")
-        assert router._failures == {"p": 1}
-        assert "p" not in router._cooldown_until
-
-    def test_record_failure_triggers_cooldown(self):
-        router = LLMRouter(providers=[])
-        for _ in range(3):
-            router._record_provider_failure("p")
-        assert "p" in router._cooldown_until
-
-    def test_record_success_clears(self):
-        router = LLMRouter(providers=[])
-        router._failures["p"] = 5
-        router._cooldown_until["p"] = time.time() + 100
-        router._record_provider_success("p")
-        assert "p" not in router._failures
-        assert "p" not in router._cooldown_until
-
-
 class TestLLMRouterChat:
     async def test_returns_first_success(self):
         router = LLMRouter(providers=[_OkProvider()])

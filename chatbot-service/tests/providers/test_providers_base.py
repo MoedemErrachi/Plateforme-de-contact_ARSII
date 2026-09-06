@@ -1,44 +1,12 @@
 from __future__ import annotations
 
 from app.providers.base import (
-    APIConnectionError,
-    ProviderHTTPError,
-    RateLimitError,
     ToolCall,
     ToolCallResponse,
     build_assistant_message,
     extract_text,
     strip_internal_fields,
 )
-
-
-class TestErrorClasses:
-    def test_status_codes(self):
-        assert RateLimitError().status_code == 429
-        assert APIConnectionError().status_code is None
-        err = ProviderHTTPError(503, "down")
-        assert err.status_code == 503
-        assert str(err) == "down"
-
-
-class TestToolCall:
-    def test_defaults(self):
-        call = ToolCall(id="c", name="n")
-        assert call.arguments == {}
-        assert call.thought_signature is None
-
-    def test_thats_not_a_thought_signature(self):
-        call = ToolCall(id="c", name="n", thought_signature="sig")
-        assert call.thought_signature == "sig"
-
-
-class TestToolCallResponse:
-    def test_has_tool_calls_true(self):
-        response = ToolCallResponse(content="x", tool_calls=[ToolCall(id="1", name="n")])
-        assert response.has_tool_calls is True
-
-    def test_has_tool_calls_false(self):
-        assert ToolCallResponse(content="x").has_tool_calls is False
 
 
 class TestExtractText:

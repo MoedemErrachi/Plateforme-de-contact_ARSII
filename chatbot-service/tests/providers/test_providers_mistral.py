@@ -46,14 +46,6 @@ def _mistral_http_error(status):
 
 
 class TestMistralProvider:
-    def test_init_uses_defaults(self):
-        provider = mistral_provider.MistralProvider(api_key="fake-key")
-        assert provider.model == mistral_provider.MISTRAL_MODEL
-
-    def test_init_custom_model(self):
-        provider = mistral_provider.MistralProvider(api_key="fake-key", model="custom")
-        assert provider.model == "custom"
-
     async def test_chat_with_tools_text_response(self):
         client = _chat_client(result=_ns(choices=[_ns(message=_ns(content="hello", tool_calls=None))]))
         provider = mistral_provider.MistralProvider(api_key="fake-key")

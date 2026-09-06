@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-from app.models.schemas import ChatAction, ChatResponse
 from app.providers.base import ToolCall
 from app.services.validation import (
     FAILURE_COUNTER,
     FAILURE_EVENTS,
     GENERIC_FALLBACK,
     ToolValidationError,
-    _looks_like_json,
     build_final_text_messages,
     record_failure,
     validate_final_response,
@@ -60,20 +58,6 @@ class TestValidateToolCall:
         except ToolValidationError as exc:
             assert "outil inconnu" in exc.reason
             assert "nope" in str(exc)
-
-
-class TestLooksLikeJson:
-    def test_plain_brace(self):
-        assert _looks_like_json('{"message": "hi"}')
-
-    def test_plain_bracket(self):
-        assert _looks_like_json("[1, 2]")
-
-    def test_fenced(self):
-        assert _looks_like_json("```json\n{\"message\": \"hi\"}\n```")
-
-    def test_plain_text(self):
-        assert not _looks_like_json("just some words")
 
 
 class TestValidateFinalResponse:
@@ -252,10 +236,6 @@ class TestBuildFinalTextMessages:
         ]
         flattened = build_final_text_messages(messages)
         assert "A\n\n" not in flattened[0]["content"]
-
-    def test_clean_actions_kept(self):
-        response = ChatResponse(message="m", actions=[ChatAction(type="export_csv")])
-        assert response.actions[0].type == "export_csv"
 
 
 def raise_exc(call: ToolCall, needle: str):

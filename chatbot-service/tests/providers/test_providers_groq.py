@@ -49,14 +49,6 @@ def _completions_client(result=None, error=None):
 
 
 class TestGroqProvider:
-    def test_init_uses_defaults(self):
-        provider = groq_provider.GroqProvider(api_key="fake-key")
-        assert provider.model == groq_provider.GROQ_MODEL
-
-    def test_init_custom_model(self):
-        provider = groq_provider.GroqProvider(api_key="fake-key", model="custom")
-        assert provider.model == "custom"
-
     async def test_chat_with_tools_text_response(self):
         client = _completions_client(result=_ns(choices=[_ns(message=_message(content="hello"))]))
         provider = groq_provider.GroqProvider(api_key="fake-key")

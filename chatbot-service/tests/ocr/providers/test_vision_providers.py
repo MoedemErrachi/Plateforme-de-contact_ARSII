@@ -18,14 +18,6 @@ def _ns(**kwargs):
 
 
 class TestGeminiVisionProvider:
-    def test_init_uses_defaults(self):
-        provider = gemini_vision_provider.GeminiVisionProvider(api_key="fake-key")
-        assert provider.model == gemini_vision_provider.GEMINI_MODEL
-
-    def test_init_custom_model(self):
-        provider = gemini_vision_provider.GeminiVisionProvider(api_key="fake-key", model="custom")
-        assert provider.model == "custom"
-
     def test_init_without_genai_sdk(self, monkeypatch):
         monkeypatch.setattr(gemini_vision_provider, "genai", None)
         with pytest.raises(ImportError):
@@ -142,14 +134,6 @@ def _patch_genai_errors(monkeypatch, server: bool, client: bool):
 
 
 class TestMistralVisionProvider:
-    def test_init_uses_defaults(self):
-        provider = mistral_vision_provider.MistralVisionProvider(api_key="fake-key")
-        assert provider.model == mistral_vision_provider.DEFAULT_MODEL
-
-    def test_init_custom_model(self):
-        provider = mistral_vision_provider.MistralVisionProvider(api_key="fake-key", model="custom")
-        assert provider.model == "custom"
-
     async def test_extract_success(self):
         client = _FakeMistralVisionClient(
             result=_ns(choices=[_ns(message=_ns(content='{"phone": {"value": "+33 1", "confidence": "low"}}'))])

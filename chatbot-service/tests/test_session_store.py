@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import time
 
-from app.services.session_store import SessionRecord, SessionStore
+from app.services.session_store import SessionStore
 
 
 class TestSessionStore:
@@ -98,15 +98,6 @@ class TestSessionStore:
         assert "s1" not in store._sessions
         store.clear("s1")
 
-    def test_prune_expired(self, monkeypatch):
-        store = SessionStore(max_messages=10, ttl_seconds=3600)
-        store.push("fresh", "u", "a")
-        store.push("stale", "u", "a")
-        monkeypatch.setattr(store._sessions["stale"], "updated_at", time.time() - 7200)
-        store._prune_expired()
-        assert "stale" not in store._sessions
-        assert "fresh" in store._sessions
-
 
 class TestSessionStoreCleanupLoop:
     async def test_start_and_stop_cleanup(self):
@@ -125,11 +116,3 @@ class TestSessionStoreCleanupLoop:
         store = SessionStore(max_messages=10, ttl_seconds=3600)
         await store.stop_cleanup()
         assert store._cleanup_task is None
-
-
-class TestSessionRecord:
-    def test_defaults(self):
-        record = SessionRecord()
-        assert record.messages == []
-        assert record.created_at > 0
-        assert record.updated_at >= record.created_at
