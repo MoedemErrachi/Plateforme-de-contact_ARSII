@@ -33,7 +33,7 @@ from app.tools.tools import (
     _search_contacts,
     _total_count,
 )
-from app.tests._fakes import FakeAsyncClient, FakeResponse
+from _fakes import FakeAsyncClient, FakeResponse
 
 
 class TestArgsModels:

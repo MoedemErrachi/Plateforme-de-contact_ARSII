@@ -1,12 +1,12 @@
 [tool.pytest.ini_options]
-testpaths = ["app"]
+testpaths = ["tests"]
 pythonpath = ["."]
 addopts = "--cov=app --cov-report=xml:coverage.xml --cov-report=term-missing"
 asyncio_mode = "auto"
 
 [tool.coverage.run]
 branch = true
-omit = ["**/tests/*"]
+omit = ["tests/**"]
 
 [tool.coverage.report]
 exclude_lines = [
