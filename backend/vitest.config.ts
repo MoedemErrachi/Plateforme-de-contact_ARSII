@@ -2,9 +2,9 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
-    include: ['src/**/*.test.ts'],
+    include: ['tests/**/*.test.ts'],
     environment: 'node',
-    setupFiles: ['src/test/setup.ts'],
+    setupFiles: ['tests/test/setup.ts'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'lcov'],
@@ -13,8 +13,7 @@ export default defineConfig({
         'src/**',
       ],
       exclude: [
-        'src/**/*.test.ts',
-        'src/test/**',
+        'tests/**',
         'src/docs/**',
         'src/config/**',
         'src/server.ts',

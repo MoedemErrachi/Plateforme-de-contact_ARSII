@@ -15,5 +15,5 @@
     "allowJs": true,
     "noEmit": true
   },
-  "include": ["src", "server.ts", "prisma.config.ts", "prisma/seed.ts"]
+  "include": ["src", "tests", "server.ts", "prisma.config.ts", "prisma/seed.ts"]
 }
