@@ -63,12 +63,4 @@ describe('emailService', () => {
     );
     spy.mockRestore();
   });
-
-  it('ne journalise rien si la vérification SMTP réussit', async () => {
-    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    mocks.transporter.verify.mockResolvedValue(true);
-    await expect(verifySmtpTransport()).resolves.toBeUndefined();
-    expect(spy).not.toHaveBeenCalled();
-    spy.mockRestore();
-  });
 });

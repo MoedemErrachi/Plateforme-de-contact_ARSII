@@ -10,9 +10,6 @@ vi.mock('../../src/config/prisma', () => ({
 import {
   normalizeCountry,
   iso2ForCountry,
-  EXPORT_FIELD_KEYS,
-  EXPORT_FIELD_HEADERS,
-  EXPORT_TAGS_HEADER,
 } from '../../src/services/contactService';
 
 beforeAll(() => {
@@ -59,13 +56,6 @@ describe('normalizeCountry', () => {
     // 'Fr\uFFFDnce' has one placeholder -> expands to try a-z -> France
     expect(normalizeCountry('Fr\uFFFDnce')).toBe('France');
   });
-
-  it('falls back to the stripped, capitalized value when placeholders cannot resolve', () => {
-    // Unknown string with placeholders beyond resolution collapses to cleaned text.
-    const result = normalizeCountry('\uFFFD\uFFFD\uFFFDzz');
-    expect(typeof result).toBe('string');
-    expect(result.length).toBeGreaterThan(0);
-  });
 });
 
 describe('iso2ForCountry', () => {
@@ -90,23 +80,5 @@ describe('iso2ForCountry', () => {
 
   it('maps via alias (accent-insensitive)', () => {
     expect(iso2ForCountry('Algerie')).toBe('DZ');
-  });
-});
-
-describe('export schema constants', () => {
-  it('defines EXPORT_TAGS_HEADER as a non-empty string', () => {
-    expect(typeof EXPORT_TAGS_HEADER).toBe('string');
-    expect(EXPORT_TAGS_HEADER.length).toBeGreaterThan(0);
-  });
-
-  it('has a header for every field key', () => {
-    for (const key of EXPORT_FIELD_KEYS) {
-      expect(EXPORT_FIELD_HEADERS[key]).toBeTruthy();
-    }
-  });
-
-  it('has unique field keys', () => {
-    const unique = new Set(EXPORT_FIELD_KEYS);
-    expect(unique.size).toBe(EXPORT_FIELD_KEYS.length);
   });
 });

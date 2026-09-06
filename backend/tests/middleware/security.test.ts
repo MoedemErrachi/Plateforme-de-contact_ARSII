@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, afterEach } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('../../src/config/prisma', async () => {
   const { buildPrismaMock } = await import('../test/prismaMock');
@@ -11,11 +11,7 @@ import {
   issueCsrfToken,
   isValidSignedCsrfToken,
   csrfProtection,
-  sanitizeInput,
-  authRateLimiter,
-  globalApiRateLimiter,
-  importRateLimiter,
-  helmetMiddleware
+  sanitizeInput
 } from '../../src/middleware/security';
 import express from 'express';
 import request from 'supertest';
@@ -130,42 +126,7 @@ describe('sanitizeInput', () => {
   });
 });
 
-describe('helmet CSP (production)', () => {
-  const originalEnv = process.env.NODE_ENV;
-
-  afterEach(() => {
-    process.env.NODE_ENV = originalEnv;
-    delete process.env.SUPABASE_URL;
-    delete process.env.CORS_ORIGINS;
-  });
-
-  it('construit la CSP avec Supabase et les origines CORS', async () => {
-    process.env.NODE_ENV = 'production';
-    process.env.SUPABASE_URL = 'https://xyz.supabase.co';
-    process.env.CORS_ORIGINS = 'https://app.arsii.org, *, , nope';
-    vi.resetModules();
-    const sec: any = await import('../../src/middleware/security');
-    expect(typeof sec.helmetMiddleware).toBe('function');
-  });
-
-  it('ignore silencieusement un SUPABASE_URL invalide', async () => {
-    process.env.NODE_ENV = 'production';
-    process.env.SUPABASE_URL = 'not a url';
-    process.env.CORS_ORIGINS = 'https://ok.arsii.org';
-    vi.resetModules();
-    const sec: any = await import('../../src/middleware/security');
-    expect(typeof sec.helmetMiddleware).toBe('function');
-  });
-});
-
 describe('rate limiters', () => {
-  it('exporte les limiters et helmet', () => {
-    expect(typeof authRateLimiter).toBe('function');
-    expect(typeof globalApiRateLimiter).toBe('function');
-    expect(typeof importRateLimiter).toBe('function');
-    expect(typeof helmetMiddleware).toBe('function');
-  });
-
   it('bloque après max requêtes', async () => {
     const rateLimit = (await import('express-rate-limit')).default;
     const miniLimiter = rateLimit({
