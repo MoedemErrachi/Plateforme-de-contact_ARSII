@@ -55,14 +55,14 @@ class LLMRouter:
         self._failures.pop(provider_name, None)
         self._cooldown_until.pop(provider_name, None)
 
-    async def chat(self, messages: list[dict], tools: list[dict], timeout: int = 15) -> ToolCallResponse:
+    async def chat(self, messages: list[dict], tools: list[dict]) -> ToolCallResponse:
         failures: list[str] = []
         for provider in self.providers:
             if not self._is_healthy(provider.name):
                 logger.info("Skipping provider '%s' (cooldown active)", provider.name)
                 continue
             try:
-                response = await provider.chat_with_tools(messages, tools, timeout)
+                response = await provider.chat_with_tools(messages, tools)
             except PIVOT_EXCEPTIONS as exc:
                 logger.warning("LLM provider '%s' failed, pivoting to next provider: %s", provider.name, exc)
                 record_failure(provider.name, FAILURE_TRANSPORT, note=str(exc))
@@ -92,14 +92,14 @@ class LLMRouter:
         logger.error("All LLM providers failed: %s", "; ".join(failures))
         return ToolCallResponse(content=_FALLBACK_MSG, tool_calls=[])
 
-    async def chat_final(self, messages: list[dict], timeout: int = 15) -> str:
+    async def chat_final(self, messages: list[dict]) -> str:
         failures: list[str] = []
         for provider in self.providers:
             if not self._is_healthy(provider.name):
                 logger.info("Skipping provider '%s' in chat_final (cooldown active)", provider.name)
                 continue
             try:
-                result = await provider.chat_final(messages, timeout)
+                result = await provider.chat_final(messages)
                 self._record_provider_success(provider.name)
                 return result
             except PIVOT_EXCEPTIONS as exc:

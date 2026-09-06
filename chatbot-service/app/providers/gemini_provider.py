@@ -45,6 +45,7 @@ from app.models.schemas import ChatResponse
 from app.providers.base import (
     APIConnectionError,
     LLMProvider,
+    LLM_TIMEOUT_SECONDS,
     ProviderHTTPError,
     RateLimitError,
     ToolCall,
@@ -66,6 +67,103 @@ def _args_to_dict(args: object) -> dict:
         return dict(args.items())
     except Exception:
         return {"raw": str(args)}
+
+
+def _normalize_thought_signature(raw_thought: object) -> str | None:
+    if isinstance(raw_thought, bytes) and raw_thought:
+        return base64.b64encode(raw_thought).decode("ascii")
+    if isinstance(raw_thought, str) and raw_thought:
+        return raw_thought
+    return None
+
+
+def _flush_tool_parts(contents: list, pending: list) -> None:
+    if pending:
+        contents.append(types.Content(role="user", parts=list(pending)))
+        pending.clear()
+
+
+def _assistant_parts(message: dict) -> list:
+    parts = []
+    if message.get("content"):
+        parts.append(types.Part(text=str(message["content"])))
+    for tool_call in message.get("tool_calls") or []:
+        function = tool_call.get("function", {})
+        arguments = function.get("arguments", "{}")
+        thought_signature = function.get("thought_signature")
+
+        # GEMINI-SPECIFIC — les appels d'outils provenant d'autres providers
+        # (Mistral, Groq) n'ont pas de thought_signature. Gemini 3.x exige
+        # cette signature pour chaque functionCall dans l'historique, sinon
+        # 400 INVALID_ARGUMENT. On convertit ces appels étrangers en texte
+        # brut pour éviter le crash.
+        if not thought_signature:
+            name = function.get("name", "unknown")
+            try:
+                args_str = json.dumps(arguments, ensure_ascii=False) if isinstance(arguments, dict) else str(arguments)
+            except (ValueError, TypeError):
+                args_str = str(arguments)
+            parts.append(types.Part(text=f"[Outil: {name}({args_str})]"))
+            continue
+
+        try:
+            arguments_dict = json.loads(arguments) if isinstance(arguments, str) else (arguments or {})
+        except (ValueError, TypeError):
+            arguments_dict = {"raw": arguments}
+
+        # Réinjection du functionCall (name/args/id) avec sa thought_signature
+        # au niveau PART — jamais dans FunctionCall(). La valeur du dict est du
+        # base64 (ASCII) que pydantic base64-décode (val_json_bytes) à l'identique.
+        fc_kwargs = {"name": function.get("name", ""), "args": arguments_dict}
+        if tool_call.get("id"):
+            fc_kwargs["id"] = tool_call.get("id")
+        part_kwargs = {"function_call": types.FunctionCall(**fc_kwargs)}
+        if thought_signature:  # pragma: no cover
+            part_kwargs["thought_signature"] = thought_signature
+        parts.append(types.Part(**part_kwargs))
+    return parts
+
+
+def _tool_response_content(message: dict) -> dict:
+    if not message.get("content"):
+        return {"output": str(message.get("content", ""))}
+    try:
+        parsed = json.loads(message.get("content", ""))
+    except (ValueError, TypeError):
+        return {"output": message.get("content", "")}
+    return parsed if isinstance(parsed, dict) else {"output": parsed}
+
+
+def _extract_response(response: object) -> tuple[list[str], list[ToolCall]]:
+    text_parts: list[str] = []
+    tool_calls: list[ToolCall] = []
+    if not response.candidates:
+        return text_parts, tool_calls
+    candidate = response.candidates[0]
+    if not candidate.content:
+        return text_parts, tool_calls
+    for part in candidate.content.parts:
+        function_call = getattr(part, "function_call", None)
+        if function_call is not None:
+            # GEMINI-SPECIFIC — la thought_signature est portée par le PART
+            # (champ bytes), pas par l'objet FunctionCall : le SDK google-genai
+            # la perd à la désérialisation (python-genai#2406), donc on la
+            # capture ici. Le SDK l'a déjà base64-décodée (val_json_bytes),
+            # on la ré-encode donc en base64 (texte) pour la transporter via
+            # ToolCall -> dict `tool_calls[].function.thought_signature`, puis
+            # _to_gemini_contents la repassera à Part(thought_signature=...) où
+            # pydantic la base64-décodera à l'identique (round-trip sans perte).
+            tool_calls.append(
+                ToolCall(
+                    id=function_call.id or f"gemini-{len(tool_calls)}",
+                    name=function_call.name,
+                    arguments=_args_to_dict(function_call.args),
+                    thought_signature=_normalize_thought_signature(getattr(part, "thought_signature", None)),
+                )
+            )
+        elif part.text:
+            text_parts.append(part.text)
+    return text_parts, tool_calls
 
 
 # GEMINI-SPECIFIC — renforce l'exactitude de l'extraction et le format des liens.
@@ -119,11 +217,6 @@ class GeminiProvider(LLMProvider):
         contents: list[types.Content] = []
         pending_tool_parts: list[types.Part] = []
 
-        def flush_tool_parts() -> None:
-            if pending_tool_parts:
-                contents.append(types.Content(role="user", parts=list(pending_tool_parts)))
-                pending_tool_parts.clear()
-
         for message in messages:
             role = message.get("role")
             if role == "system":
@@ -131,71 +224,85 @@ class GeminiProvider(LLMProvider):
             if role == "assistant":
                 # L'API Gemini impose un unique message user contenant TOUTES les
                 # functionResponse du tour, placé APRÈS le message model des functionCall.
-                flush_tool_parts()
-                parts: list[types.Part] = []
-                if message.get("content"):
-                    parts.append(types.Part(text=str(message["content"])))
-                for tool_call in message.get("tool_calls") or []:
-                    function = tool_call.get("function", {})
-                    arguments = function.get("arguments", "{}")
-                    thought_signature = function.get("thought_signature")
-
-                    # GEMINI-SPECIFIC — les appels d'outils provenant d'autres providers
-                    # (Mistral, Groq) n'ont pas de thought_signature. Gemini 3.x exige
-                    # cette signature pour chaque functionCall dans l'historique, sinon
-                    # 400 INVALID_ARGUMENT. On convertit ces appels étrangers en texte
-                    # brut pour éviter le crash.
-                    if not thought_signature:
-                        name = function.get("name", "unknown")
-                        try:
-                            args_str = json.dumps(arguments, ensure_ascii=False) if isinstance(arguments, dict) else str(arguments)
-                        except (ValueError, TypeError):
-                            args_str = str(arguments)
-                        parts.append(types.Part(text=f"[Outil: {name}({args_str})]"))
-                        continue
-
-                    try:
-                        arguments_dict = json.loads(arguments) if isinstance(arguments, str) else (arguments or {})
-                    except (ValueError, TypeError):
-                        arguments_dict = {"raw": arguments}
-
-                    # Réinjection du functionCall (name/args/id) avec sa thought_signature
-                    # au niveau PART — jamais dans FunctionCall(). La valeur du dict est du
-                    # base64 (ASCII) que pydantic base64-décode (val_json_bytes) à l'identique.
-                    fc_kwargs: dict = {
-                        "name": function.get("name", ""),
-                        "args": arguments_dict,
-                    }
-                    if tool_call.get("id"):
-                        fc_kwargs["id"] = tool_call.get("id")
-                    part_kwargs: dict = {"function_call": types.FunctionCall(**fc_kwargs)}
-                    if thought_signature:
-                        part_kwargs["thought_signature"] = thought_signature
-                    parts.append(types.Part(**part_kwargs))
+                _flush_tool_parts(contents, pending_tool_parts)
+                parts = _assistant_parts(message)
                 if parts:
                     contents.append(types.Content(role="model", parts=parts))
             elif role == "tool":
                 # Toutes les functionResponse d'un même tour sont groupées dans le même
                 # message user (format imposé par l'API Gemini).
-                response: dict = {"output": str(message.get("content", ""))}
-                try:
-                    response = json.loads(message.get("content", "")) if message.get("content") else response
-                except (ValueError, TypeError):
-                    response = {"output": message.get("content", "")}
                 pending_tool_parts.append(
                     types.Part(
                         function_response=types.FunctionResponse(
                             name=str(message.get("name", "")),
-                            response=response if isinstance(response, dict) else {"output": response},
+                            response=_tool_response_content(message),
                         )
                     )
                 )
             else:
-                flush_tool_parts()
+                _flush_tool_parts(contents, pending_tool_parts)
                 contents.append(types.Content(role="user", parts=[types.Part(text=str(message.get("content", "")))]))
 
-        flush_tool_parts()
+        _flush_tool_parts(contents, pending_tool_parts)
         return system_instruction, contents
+
+    @staticmethod
+    def _build_full_system_instruction(system_instruction: str) -> str:
+        return "\n".join(
+            part for part in (system_instruction, GEMINI_STRICT_OUTPUT_INSTRUCTIONS) if part and part.strip()
+        ).strip()
+
+    async def chat_with_tools(self, messages: list[dict], tools: list[dict]) -> ToolCallResponse:
+        system_instruction, contents = self._to_gemini_contents(messages)
+        try:
+            async with asyncio.timeout(LLM_TIMEOUT_SECONDS):
+                response = await self._client.aio.models.generate_content(
+                    model=self.model,
+                    contents=contents,
+                    config=types.GenerateContentConfig(
+                        system_instruction=self._build_full_system_instruction(system_instruction) or None,
+                        tools=self._to_gemini_tools(tools),
+                        temperature=0,
+                    ),
+                )
+        except Exception as exc:
+            self._map_exception(exc)
+
+        text_parts, tool_calls = _extract_response(response)
+        content = " ".join(text_parts).strip() or None
+        return ToolCallResponse(content=content, tool_calls=tool_calls)
+
+    async def chat_final(self, messages: list[dict]) -> str:
+        """Phase finale: sortie structurée native via response_schema, sans tools.
+
+        Gemini rejette response_mime_type="application/json" EN PRÉSENCE de tools
+        (incompatibilité API, issue python-genai #867) : cette phase est donc
+        toujours appelée SANS tools, après la boucle d'outils.
+        """
+        system_instruction, contents = self._to_gemini_contents(messages)
+        try:
+            async with asyncio.timeout(LLM_TIMEOUT_SECONDS):
+                response = await self._client.aio.models.generate_content(
+                    model=self.model,
+                    contents=contents,
+                    config=types.GenerateContentConfig(
+                        system_instruction=self._build_full_system_instruction(system_instruction) or None,
+                        response_mime_type="application/json",
+                        response_schema=ChatResponse,
+                        temperature=0,
+                    ),
+                )
+        except Exception as exc:
+            self._map_exception(exc)
+
+        text_parts: list[str] = []
+        if response.candidates:
+            candidate = response.candidates[0]
+            if candidate.content:
+                for part in candidate.content.parts:
+                    if part.text:
+                        text_parts.append(part.text)
+        return " ".join(text_parts).strip()
 
     @staticmethod
     def _map_exception(exc: Exception) -> None:
@@ -215,99 +322,3 @@ class GeminiProvider(LLMProvider):
         if "connection" in name or "timeout" in name:
             raise APIConnectionError(str(exc)) from exc
         raise
-
-    async def chat_with_tools(self, messages: list[dict], tools: list[dict], timeout: int = 15) -> ToolCallResponse:
-        system_instruction, contents = self._to_gemini_contents(messages)
-        full_system_instruction = "\n".join(
-            part for part in (system_instruction, GEMINI_STRICT_OUTPUT_INSTRUCTIONS) if part and part.strip()
-        ).strip()
-        try:
-            response = await asyncio.wait_for(
-                self._client.aio.models.generate_content(
-                    model=self.model,
-                    contents=contents,
-                    config=types.GenerateContentConfig(
-                        system_instruction=full_system_instruction or None,
-                        tools=self._to_gemini_tools(tools),
-                        temperature=0,
-                    ),
-                ),
-                timeout=timeout,
-            )
-        except Exception as exc:
-            self._map_exception(exc)
-
-        text_parts: list[str] = []
-        tool_calls: list[ToolCall] = []
-        if response.candidates:
-            candidate = response.candidates[0]
-            if candidate.content:
-                for part in candidate.content.parts:
-                    if getattr(part, "function_call", None) is not None:
-                        function_call = part.function_call
-                        # GEMINI-SPECIFIC — la thought_signature est portée par le PART
-                        # (champ bytes), pas par l'objet FunctionCall : le SDK google-genai
-                        # la perd à la désérialisation (python-genai#2406), donc on la
-                        # capture ici. Le SDK l'a déjà base64-décodée (val_json_bytes),
-                        # on la ré-encode donc en base64 (texte) pour la transporter via
-                        # ToolCall -> dict `tool_calls[].function.thought_signature`, puis
-                        # _to_gemini_contents la repassera à Part(thought_signature=...) où
-                        # pydantic la base64-décodera à l'identique (round-trip sans perte).
-                        # Voir le docstring de module et https://ai.google.dev/gemini-api/docs/thought-signatures
-                        raw_thought = getattr(part, "thought_signature", None)
-                        if isinstance(raw_thought, bytes) and raw_thought:
-                            thought_signature = base64.b64encode(raw_thought).decode("ascii")
-                        elif isinstance(raw_thought, str) and raw_thought:
-                            thought_signature = raw_thought
-                        else:
-                            thought_signature = None
-                        tool_calls.append(
-                            ToolCall(
-                                id=function_call.id or f"gemini-{len(tool_calls)}",
-                                name=function_call.name,
-                                arguments=_args_to_dict(function_call.args),
-                                thought_signature=thought_signature,
-                            )
-                        )
-                    elif part.text:
-                        text_parts.append(part.text)
-
-        content = " ".join(text_parts).strip() or None
-        return ToolCallResponse(content=content, tool_calls=tool_calls)
-
-    async def chat_final(self, messages: list[dict], timeout: int = 15) -> str:
-        """Phase finale: sortie structurée native via response_schema, sans tools.
-
-        Gemini rejette response_mime_type="application/json" EN PRÉSENCE de tools
-        (incompatibilité API, issue python-genai #867) : cette phase est donc
-        toujours appelée SANS tools, après la boucle d'outils.
-        """
-        system_instruction, contents = self._to_gemini_contents(messages)
-        full_system_instruction = "\n".join(
-            part for part in (system_instruction, GEMINI_STRICT_OUTPUT_INSTRUCTIONS) if part and part.strip()
-        ).strip()
-        try:
-            response = await asyncio.wait_for(
-                self._client.aio.models.generate_content(
-                    model=self.model,
-                    contents=contents,
-                    config=types.GenerateContentConfig(
-                        system_instruction=full_system_instruction or None,
-                        response_mime_type="application/json",
-                        response_schema=ChatResponse,
-                        temperature=0,
-                    ),
-                ),
-                timeout=timeout,
-            )
-        except Exception as exc:
-            self._map_exception(exc)
-
-        text_parts: list[str] = []
-        if response.candidates:
-            candidate = response.candidates[0]
-            if candidate.content:
-                for part in candidate.content.parts:
-                    if part.text:
-                        text_parts.append(part.text)
-        return " ".join(text_parts).strip()

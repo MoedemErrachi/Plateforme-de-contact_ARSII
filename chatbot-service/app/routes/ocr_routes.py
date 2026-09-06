@@ -2,20 +2,18 @@ from __future__ import annotations
 
 import logging
 import os
-import traceback
+from typing import Annotated
 
-import jwt as pyjwt
 from fastapi import APIRouter, File, Header, HTTPException, Request, UploadFile, status
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
-from app.dependencies import limiter
-from app.exceptions import ServiceUnavailableError
 from app.ocr.face_detection import detect_and_crop_face
 from app.ocr.models import OcrExtractionResponse
 from app.ocr.preprocessing import preprocess_image
 from app.ocr.providers.base import VisionServiceUnavailableError
 from app.ocr.vision_router import VisionRouter
+from app.routes.chatbot_routes import _require_bearer_token
 
 logger = logging.getLogger(__name__)
 
@@ -62,49 +60,15 @@ def get_vision_router() -> VisionRouter:
     return _vision_router
 
 
-@router.post("/extract", response_model=OcrExtractionResponse, response_model_exclude_none=True)
+@router.post("/extract", response_model_exclude_none=True)
 @ocr_limiter.limit(OCR_RATE_LIMIT)
 async def extract_from_image(
     request: Request,
-    image: UploadFile = File(...),
-    authorization: str = Header(None),
+    image: Annotated[UploadFile, File()],
+    authorization: Annotated[str | None, Header()] = None,
 ) -> OcrExtractionResponse:
     try:
-        if not authorization:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Missing Authorization header",
-            )
-        if not authorization.lower().startswith("bearer "):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid Authorization header. Expected 'Bearer <token>'",
-            )
-        token = authorization[7:].strip()
-        if not token:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Empty Bearer token",
-            )
-
-        _jwt_secret = os.getenv("JWT_SECRET")
-        if not _jwt_secret:
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Service temporairement indisponible.",
-            )
-        try:
-            pyjwt.decode(token, _jwt_secret, algorithms=["HS256"])
-        except pyjwt.ExpiredSignatureError:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Token expired",
-            )
-        except pyjwt.InvalidTokenError:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid token",
-            )
+        _require_bearer_token(authorization)
 
         if image.content_type and image.content_type not in ALLOWED_MIME:
             raise HTTPException(
@@ -138,9 +102,9 @@ async def extract_from_image(
     except HTTPException:
         raise
     except VisionServiceUnavailableError as exc:
-        raise HTTPException(status_code=503, detail=exc.detail)
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=exc.detail)
     except Exception as exc:
-        logger.error("OCR extraction error: %s\n%s", exc, traceback.format_exc())
+        logger.exception("OCR extraction error: %s", exc)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Une erreur interne est survenue lors de l'extraction OCR.",

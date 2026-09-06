@@ -29,12 +29,13 @@ class VisionServiceUnavailableError(Exception):
         super().__init__(detail)
 
 
+VISION_TIMEOUT_SECONDS = 20
+
+
 class VisionProvider(ABC):
     name: str = "base"
     model: str = ""
 
     @abstractmethod
-    async def extract_contact_info(
-        self, image_bytes: bytes, timeout: int = 20
-    ) -> ExtractedContactInfo:
+    async def extract_contact_info(self, image_bytes: bytes) -> ExtractedContactInfo:  # pragma: no cover
         ...

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import time
 from dataclasses import dataclass, field
 
@@ -57,17 +58,15 @@ class SessionStore:
         for sid in expired:
             del self._sessions[sid]
 
-    async def start_cleanup(self, interval_seconds: int = 300) -> None:
+    def start_cleanup(self, interval_seconds: int = 300) -> None:
         if self._cleanup_task is None:
-            self._cleanup_task = asyncio.create_task(self._cleanup_loop(interval_seconds))
+            self._cleanup_task = asyncio.get_event_loop().create_task(self._cleanup_loop(interval_seconds))
 
     async def stop_cleanup(self) -> None:
         if self._cleanup_task is not None:
             self._cleanup_task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._cleanup_task
-            except asyncio.CancelledError:
-                pass
             self._cleanup_task = None
 
     async def _cleanup_loop(self, interval_seconds: int) -> None:

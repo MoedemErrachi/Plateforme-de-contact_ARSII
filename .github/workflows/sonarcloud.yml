@@ -46,7 +46,7 @@ jobs:
       - name: Run chatbot tests with coverage
         if: matrix.name == 'chatbot-service'
         working-directory: chatbot-service
-        run: python -m pytest --cov=app --cov-report=xml:coverage.xml --cov-report=term
+        run: python -m pytest
 
       - name: Set up Node.js
         if: matrix.name != 'chatbot-service'

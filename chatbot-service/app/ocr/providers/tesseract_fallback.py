@@ -8,7 +8,7 @@ from app.ocr.extraction import (
     extract_phone_from_text,
 )
 from app.ocr.models import ExtractedContactInfo, ExtractedField, FieldConfidence
-from app.ocr.providers.base import VisionProvider
+from app.ocr.providers.base import VISION_TIMEOUT_SECONDS, VisionProvider
 
 logger = logging.getLogger(__name__)
 
@@ -26,12 +26,10 @@ class TesseractFallbackProvider(VisionProvider):
                 "Install with: pip install pytesseract"
             )
 
-    async def extract_contact_info(self, image_bytes: bytes, timeout: int = 20) -> ExtractedContactInfo:
+    async def extract_contact_info(self, image_bytes: bytes) -> ExtractedContactInfo:
         loop = asyncio.get_event_loop()
-        raw_text = await asyncio.wait_for(
-            loop.run_in_executor(None, self._extract_text, image_bytes),
-            timeout=timeout,
-        )
+        async with asyncio.timeout(VISION_TIMEOUT_SECONDS):
+            raw_text = await loop.run_in_executor(None, self._extract_text, image_bytes)
         email = extract_email_from_text(raw_text)
         phone = extract_phone_from_text(raw_text)
         return ExtractedContactInfo(

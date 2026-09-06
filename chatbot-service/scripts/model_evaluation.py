@@ -45,7 +45,6 @@ from app.tools.tools import TOOL_DEFINITIONS, ToolRunner
 
 logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(name)s: %(message)s")
 
-TIMEOUT = 20
 MAX_ROUNDS = 4
 MAX_RETRIES = 5
 RETRY_BACKOFF = [2.0, 4.0, 8.0, 15.0, 25.0]
@@ -158,7 +157,7 @@ async def run_conversation(runner: ToolRunner, router: LLMRouter, turns: list[st
             "struct_ok": False,
         }
         for _ in range(MAX_ROUNDS):
-            result = await _call_router(router, "chat", messages, TOOL_DEFINITIONS, TIMEOUT)
+            result = await _call_router(router, "chat", messages, TOOL_DEFINITIONS)
             if not result.has_tool_calls:
                 record["final_content"] = result.content
                 break
@@ -187,7 +186,7 @@ async def run_conversation(runner: ToolRunner, router: LLMRouter, turns: list[st
         else:
             record["final_content"] = record["final_content"] or "(limite de tours atteinte)"
 
-        final_text = await _call_router(router, "chat_final", build_final_text_messages(messages), TIMEOUT)
+        final_text = await _call_router(router, "chat_final", build_final_text_messages(messages))
         response = validate_final_response(final_text)
         record["response"] = response
         record["struct_ok"] = (
@@ -413,7 +412,7 @@ async def main() -> None:
     selected_providers = parse_providers(args.providers)
 
     runner = ToolRunner()
-    await runner.start()
+    runner.start()
 
     token = _fetch_api_token()
 

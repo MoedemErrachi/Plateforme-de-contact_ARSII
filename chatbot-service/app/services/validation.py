@@ -29,7 +29,7 @@ FAILURE_FINAL_ALL_FAILED = "chat_final_all_failed"
 FAILURE_COUNTER: dict[str, int] = {}
 FAILURE_EVENTS: deque[dict] = deque(maxlen=500)
 
-_FENCE_RE = re.compile(r"```(?:json)?\s*(.*?)```", re.DOTALL)
+_FENCE_RE = re.compile(r"```(?:json)?\s*\n?([^`]*?)\n?\s*```")
 # Accepte une valeur de "message" fermée ou tronquée (fin d'entrée sans guillemet fermant).
 _MESSAGE_FIELD_RE = re.compile(r'"message"\s*:\s*"((?:[^"\\]|\\.)*)(?:"|$)', re.DOTALL)
 
@@ -76,7 +76,7 @@ def _looks_like_json(text: str) -> bool:
     fence = _FENCE_RE.search(candidate)
     if fence:
         candidate = fence.group(1).strip()
-    return candidate.startswith("{") or candidate.startswith("[")
+    return candidate.startswith(("{", "["))
 
 
 def _extract_json_payload(text: str) -> dict | None:
@@ -153,6 +153,57 @@ def validate_final_response(content: str | None) -> ChatResponse:
     return ChatResponse(message=text, actions=[])
 
 
+def _append(flattened: list[dict], role: str, content: str) -> None:
+    content = content.strip()
+    if not content:
+        return
+    if flattened and flattened[-1]["role"] == role:
+        flattened[-1]["content"] = f"{flattened[-1]['content']}\n\n{content}"
+    else:
+        flattened.append({"role": role, "content": content})
+
+
+def _collect_tool_results(messages: list[dict]) -> dict[str, str]:
+    tool_results: dict[str, str] = {}
+    for message in messages:
+        if message.get("role") != "tool":
+            continue
+        tool_call_id = str(message.get("tool_call_id", ""))
+        content = str(message.get("content", ""))
+        if tool_call_id:
+            tool_results[tool_call_id] = content
+        else:
+            tool_results.setdefault(str(message.get("name", "")), content)
+    return tool_results
+
+
+def _flatten_tool_round(flattened: list[dict], message: dict, tool_results: dict[str, str]) -> None:
+    blocks: list[str] = []
+    for call in message.get("tool_calls") or []:
+        function = call.get("function", {})
+        name = str(function.get("name", ""))
+        arguments = function.get("arguments", "{}")
+        call_id = str(call.get("id", ""))
+        result = tool_results.get(call_id) or tool_results.get(name) or ""
+        blocks.append(f"[Outil: {name}({arguments})]\nRésultat: {result}")
+    if blocks:  # pragma: no cover
+        _append(flattened, "user", "\n".join(blocks))
+
+
+def _flatten_message(flattened: list[dict], message: dict, tool_results: dict[str, str]) -> None:
+    role = message.get("role")
+    if role == "system":
+        _append(flattened, "system", str(message.get("content", "")))
+    elif role == "user":
+        _append(flattened, "user", str(message.get("content", "")))
+    elif role == "assistant":
+        tool_calls = message.get("tool_calls") or []
+        if tool_calls:
+            _flatten_tool_round(flattened, message, tool_results)
+        elif message.get("content"):
+            _append(flattened, "assistant", str(message["content"]))
+
+
 def build_final_text_messages(messages: list[dict]) -> list[dict]:
     """Aplatie la conversation (résultats d'outils inclus) en messages texte pour
     l'appel final sans tools (phase 2).
@@ -161,46 +212,8 @@ def build_final_text_messages(messages: list[dict]) -> list[dict]:
     user (l'appel d'outil + ses résultats sont embarqués) : l'API Gemini interdit
     les requêtes se terminant par un tour model, et l'appel final est sans tools.
     """
-
-    def _append(flattened: list[dict], role: str, content: str) -> None:
-        content = content.strip()
-        if not content:
-            return
-        if flattened and flattened[-1]["role"] == role:
-            flattened[-1]["content"] = f"{flattened[-1]['content']}\n\n{content}"
-        else:
-            flattened.append({"role": role, "content": content})
-
-    tool_results: dict[str, str] = {}
-    for message in messages:
-        if message.get("role") == "tool":
-            tool_call_id = str(message.get("tool_call_id", ""))
-            content = str(message.get("content", ""))
-            if tool_call_id:
-                tool_results[tool_call_id] = content
-            else:
-                tool_results.setdefault(str(message.get("name", "")), content)
-
+    tool_results = _collect_tool_results(messages)
     flattened: list[dict] = []
     for message in messages:
-        role = message.get("role")
-        if role == "system":
-            _append(flattened, "system", str(message.get("content", "")))
-        elif role == "user":
-            _append(flattened, "user", str(message.get("content", "")))
-        elif role == "assistant":
-            tool_calls = message.get("tool_calls") or []
-            if not tool_calls:
-                if message.get("content"):
-                    _append(flattened, "assistant", str(message["content"]))
-                continue
-            blocks: list[str] = []
-            for call in tool_calls:
-                function = call.get("function", {})
-                name = str(function.get("name", ""))
-                arguments = function.get("arguments", "{}")
-                call_id = str(call.get("id", ""))
-                result = tool_results.get(call_id) or tool_results.get(name) or ""
-                blocks.append(f"[Outil: {name}({arguments})]\nRésultat: {result}")
-            _append(flattened, "user", "\n".join(blocks))
+        _flatten_message(flattened, message, tool_results)
     return flattened
