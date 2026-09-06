@@ -224,7 +224,8 @@ class TestEndpoints:
         response = _post_message("Bonjour")
         assert response.status_code == 401
 
-    def test_invalid_authorization(self):
+    def test_invalid_authorization(self, monkeypatch):
+        monkeypatch.setenv("JWT_SECRET", SECRET)
         response = _post_message("Bonjour", headers={"Authorization": "Bearer garbage"})
         assert response.status_code == 401
 

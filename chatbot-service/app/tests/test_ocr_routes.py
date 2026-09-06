@@ -8,6 +8,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.ocr.models import ExtractedContactInfo, ExtractedField
+from app.ocr.providers import gemini_vision_provider, mistral_vision_provider
 from app.ocr.providers.base import VisionServiceUnavailableError
 from app.routes import ocr_routes
 from app.routes.ocr_routes import get_vision_router, router as ocr_router
@@ -68,6 +69,8 @@ class TestGetVisionRouter:
         monkeypatch.setattr(ocr_routes, "_vision_router", None)
         monkeypatch.setattr("app.config.MISTRAL_API_KEY", "k")
         monkeypatch.setattr("app.config.GEMINI_API_KEY", "k2")
+        monkeypatch.setattr(mistral_vision_provider, "MISTRAL_API_KEY", "k")
+        monkeypatch.setattr(gemini_vision_provider, "GEMINI_API_KEY", "k2")
         router = get_vision_router()
         assert [p.name for p in router.providers] == ["mistral_vision", "gemini_vision", "tesseract"]
 
