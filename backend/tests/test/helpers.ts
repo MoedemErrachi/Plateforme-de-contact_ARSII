@@ -26,24 +26,6 @@ export function signToken(user: TestUserPayload): string {
   );
 }
 
-export const ADMIN_TOKEN = signToken({
-  id: 'admin-1',
-  email: 'admin@arsii.org',
-  name: 'Admin',
-  role: 'admin',
-  privilege: 'FULL_ACCESS',
-  tokenVersion: 0
-});
-
-export const USER_TOKEN = signToken({
-  id: 'user-1',
-  email: 'user@arsii.org',
-  name: 'User',
-  role: 'user',
-  privilege: 'READ_WRITE',
-  tokenVersion: 0
-});
-
 export function buildTestApp(register: (app: express.Express) => void = () => {}) {
   const app = express();
   app.use(express.json({ limit: '10mb' }));

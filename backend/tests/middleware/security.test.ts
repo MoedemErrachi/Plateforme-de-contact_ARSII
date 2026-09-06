@@ -11,7 +11,8 @@ import {
   issueCsrfToken,
   isValidSignedCsrfToken,
   csrfProtection,
-  sanitizeInput
+  sanitizeInput,
+  authRateLimiter
 } from '../../src/middleware/security';
 import express from 'express';
 import request from 'supertest';
@@ -127,23 +128,16 @@ describe('sanitizeInput', () => {
 });
 
 describe('rate limiters', () => {
-  it('bloque après max requêtes', async () => {
-    const rateLimit = (await import('express-rate-limit')).default;
-    const miniLimiter = rateLimit({
-      windowMs: 60 * 1000,
-      max: 3,
-      standardHeaders: true,
-      legacyHeaders: false,
-      validate: { trustProxy: false }
-    });
+  it('authRateLimiter (SUT) bloque après 20 requêtes sur la même IP', async () => {
     const app = express();
-    app.use(miniLimiter);
+    app.use(authRateLimiter);
     app.get('/', (_req: any, res: any) => res.json({ ok: true }));
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < 20; i++) {
       const ok = await request(app).get('/');
       expect(ok.status).toBe(200);
     }
     const blocked = await request(app).get('/');
     expect(blocked.status).toBe(429);
+    expect(blocked.body.code).toBe('TOO_MANY_REQUESTS');
   });
 });
