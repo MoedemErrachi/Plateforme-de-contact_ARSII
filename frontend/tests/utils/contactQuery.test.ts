@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import type { FilterState, Tag } from '../types';
+import type { FilterState, Tag } from '../../src/types';
 import {
   filterStateToSearchParams,
   buildContactsListQuery,
   buildContactsExportQuery,
   isEmptyFilterState,
   emptyFilterState,
-} from './contactQuery';
+} from '../../src/utils/contactQuery';
 
 function empty(): FilterState {
   return { search: '', countries: [], genders: [], careerStages: [], tags: [] };

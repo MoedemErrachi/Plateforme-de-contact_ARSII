@@ -9,14 +9,14 @@ export default defineConfig(() => {
     test: {
       environment: 'jsdom',
       globals: true,
-      setupFiles: './src/test/setup.ts',
-      include: ['src/**/*.test.{ts,tsx}'],
+      setupFiles: './tests/setup.ts',
+      include: ['tests/**/*.test.{ts,tsx}'],
       coverage: {
         provider: 'v8',
         reporter: ['text', 'lcov'],
         reportsDirectory: 'coverage',
         include: ['src/utils/format.ts', 'src/utils/formatFieldValue.ts', 'src/utils/privileges.ts', 'src/utils/jwt.ts', 'src/utils/contactQuery.ts', 'src/utils/mapContact.ts'],
-        exclude: ['src/**/*.test.{ts,tsx}', 'node_modules/**'],
+        exclude: ['tests/**', 'node_modules/**'],
       },
     },
     build: {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatFieldValue } from './formatFieldValue';
+import { formatFieldValue } from '../../src/utils/formatFieldValue';
 
 describe('formatFieldValue', () => {
   it('returns the trimmed value when present', () => {

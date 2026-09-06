@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { decodeJwt, isTokenExpired, secondsUntilExpiry } from './jwt';
+import { decodeJwt, isTokenExpired, secondsUntilExpiry } from '../../src/utils/jwt';
 
 function b64url(input: string): string {
   const b64 = btoa(unescape(encodeURIComponent(input)));

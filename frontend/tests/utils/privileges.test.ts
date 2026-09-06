@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import type { User } from '../types';
+import type { User } from '../../src/types';
 import {
   effectivePrivilege,
   canCreate,
   canEdit,
   canDelete,
-} from './privileges';
+} from '../../src/utils/privileges';
 
 function makeUser(partial: Partial<User>): User {
   return { id: '1', name: 'X', email: 'x@y.com', role: 'user', ...partial } as User;

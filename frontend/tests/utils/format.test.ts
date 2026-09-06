@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatFullName, splitFullName } from './format';
+import { formatFullName, splitFullName } from '../../src/utils/format';
 
 describe('formatFullName', () => {
   it('combines first and last name', () => {

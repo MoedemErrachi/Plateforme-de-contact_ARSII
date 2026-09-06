@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { mapContactFromApi } from './mapContact';
+import { mapContactFromApi } from '../../src/utils/mapContact';
 
 describe('mapContactFromApi', () => {
   it('builds name and initials from first/last name', () => {
