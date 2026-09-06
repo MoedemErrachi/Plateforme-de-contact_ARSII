@@ -50,7 +50,7 @@ def parse_extraction_response(raw_text: str) -> ExtractedContactInfo:
     if not raw_text:
         raise ValueError("Empty extraction response")
     text = raw_text.strip()
-    fence_match = re.search(r"```(?:json)?\s*\n?([^`]*?)\n?\s*```", text)
+    fence_match = re.search(r"```(?:json)?\s*\n?([^`]*+)\n?\s*```", text)
     if fence_match:
         text = fence_match.group(1).strip()
     try:
@@ -66,7 +66,7 @@ def parse_extraction_response(raw_text: str) -> ExtractedContactInfo:
 
 
 def extract_email_from_text(text: str) -> str | None:
-    match = re.search(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)*\.[a-zA-Z]{2,}", text)
+    match = re.search(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9-]++(?:\.[a-zA-Z0-9-]++)*\.[a-zA-Z]{2,}", text)
     return match.group(0) if match else None
 
 

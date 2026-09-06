@@ -83,13 +83,37 @@ def _flush_tool_parts(contents: list, pending: list) -> None:
         pending.clear()
 
 
+def _foreign_tool_text(function: dict, arguments: object) -> str:
+    name = function.get("name", "unknown")
+    try:
+        args_str = json.dumps(arguments, ensure_ascii=False) if isinstance(arguments, dict) else str(arguments)
+    except (ValueError, TypeError):
+        args_str = str(arguments)
+    return f"[Outil: {name}({args_str})]"
+
+
+def _native_function_call_part(tool_call: dict, function: dict) -> object:
+    arguments = function.get("arguments", "{}")
+    try:
+        arguments_dict = json.loads(arguments) if isinstance(arguments, str) else (arguments or {})
+    except (ValueError, TypeError):
+        arguments_dict = {"raw": arguments}
+
+    # Réinjection du functionCall (name/args/id) avec sa thought_signature
+    # au niveau PART — jamais dans FunctionCall(). La valeur du dict est du
+    # base64 (ASCII) que pydantic base64-décode (val_json_bytes) à l'identique.
+    fc_kwargs = {"name": function.get("name", ""), "args": arguments_dict}
+    if tool_call.get("id"):
+        fc_kwargs["id"] = tool_call.get("id")
+    return types.Part(function_call=types.FunctionCall(**fc_kwargs), thought_signature=function["thought_signature"])
+
+
 def _assistant_parts(message: dict) -> list:
     parts = []
     if message.get("content"):
         parts.append(types.Part(text=str(message["content"])))
     for tool_call in message.get("tool_calls") or []:
         function = tool_call.get("function", {})
-        arguments = function.get("arguments", "{}")
         thought_signature = function.get("thought_signature")
 
         # GEMINI-SPECIFIC — les appels d'outils provenant d'autres providers
@@ -98,29 +122,9 @@ def _assistant_parts(message: dict) -> list:
         # 400 INVALID_ARGUMENT. On convertit ces appels étrangers en texte
         # brut pour éviter le crash.
         if not thought_signature:
-            name = function.get("name", "unknown")
-            try:
-                args_str = json.dumps(arguments, ensure_ascii=False) if isinstance(arguments, dict) else str(arguments)
-            except (ValueError, TypeError):
-                args_str = str(arguments)
-            parts.append(types.Part(text=f"[Outil: {name}({args_str})]"))
+            parts.append(types.Part(text=_foreign_tool_text(function, function.get("arguments", "{}"))))
             continue
-
-        try:
-            arguments_dict = json.loads(arguments) if isinstance(arguments, str) else (arguments or {})
-        except (ValueError, TypeError):
-            arguments_dict = {"raw": arguments}
-
-        # Réinjection du functionCall (name/args/id) avec sa thought_signature
-        # au niveau PART — jamais dans FunctionCall(). La valeur du dict est du
-        # base64 (ASCII) que pydantic base64-décode (val_json_bytes) à l'identique.
-        fc_kwargs = {"name": function.get("name", ""), "args": arguments_dict}
-        if tool_call.get("id"):
-            fc_kwargs["id"] = tool_call.get("id")
-        part_kwargs = {"function_call": types.FunctionCall(**fc_kwargs)}
-        if thought_signature:  # pragma: no cover
-            part_kwargs["thought_signature"] = thought_signature
-        parts.append(types.Part(**part_kwargs))
+        parts.append(_native_function_call_part(tool_call, function))
     return parts
 
 
