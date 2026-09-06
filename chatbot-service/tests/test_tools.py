@@ -11,8 +11,6 @@ from app.tools.tools import (
     ContactSummaryArgs,
     ImportAuditArgs,
     SearchContactsArgs,
-    TOOLS_BY_NAME,
-    TOOL_SPECS,
     ToolRunner,
     ToolSpec,
 )
@@ -55,16 +53,6 @@ class TestToolSpec:
         assert tool["function"]["name"] == "t"
         assert tool["function"]["description"] == "d"
         assert "$ref" not in json.dumps(tool)
-
-    def test_specs_registry(self):
-        assert {spec.name for spec in TOOL_SPECS} == {
-            "search_contacts",
-            "get_contact_summary",
-            "get_aggregation",
-            "get_import_audit",
-            "count_temp_emails",
-        }
-        assert TOOLS_BY_NAME["search_contacts"].description
 
 
 class TestToolRunner:

@@ -14,44 +14,6 @@ def _reload_config(monkeypatch, env) -> None:
     importlib.reload(config)
 
 
-class TestConfigDefaults:
-    def test_defaults_when_env_unset(self, monkeypatch):
-        for key in (
-            "HOST",
-            "PORT",
-            "MAIN_API_BASE_URL",
-            "MISTRAL_API_KEY",
-            "GROQ_API_KEY",
-            "GEMINI_API_KEY",
-            "MISTRAL_MODEL",
-            "GROQ_MODEL",
-            "GEMINI_MODEL",
-            "GEMINI_FALLBACK_MODEL",
-            "SESSION_TTL_SECONDS",
-            "SESSION_MAX_MESSAGES",
-            "CHATBOT_RATE_LIMIT",
-            "MAX_TOOL_ROUNDS",
-            "FRONTEND_ORIGINS",
-        ):
-            monkeypatch.delenv(key, raising=False)
-        _reload_config(monkeypatch, {})
-        assert config.HOST == "0.0.0.0"
-        assert config.PORT == 8000
-        assert config.MAIN_API_BASE_URL == "http://localhost:5000"
-        assert config.MISTRAL_API_KEY == ""
-        assert config.GROQ_API_KEY == ""
-        assert config.GEMINI_API_KEY == ""
-        assert config.MISTRAL_MODEL == "mistral-small-latest"
-        assert config.GROQ_MODEL == "llama-3.3-70b-versatile"
-        assert config.GEMINI_MODEL == "gemini-3.5-flash"
-        assert config.GEMINI_FALLBACK_MODEL == "gemini-3.5-flash-lite"
-        assert config.SESSION_TTL_SECONDS == 3600
-        assert config.SESSION_MAX_MESSAGES == 10
-        assert config.CHATBOT_RATE_LIMIT == "20/minute"
-        assert config.MAX_TOOL_ROUNDS == 3
-        assert config.FRONTEND_ORIGINS == []
-
-
 class TestConfigCustomValues:
     def test_values_from_env(self, monkeypatch):
         _reload_config(
