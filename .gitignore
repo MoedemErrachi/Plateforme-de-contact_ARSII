@@ -14,3 +14,8 @@ __pycache__/
 .vite/
 .opencode/
 rapport-stage/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+*.egg-info/
