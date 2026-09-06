@@ -7,6 +7,7 @@ from PIL import Image
 
 from app.ocr.extraction import (
     extract_email_from_text,
+    extract_fence_content,
     extract_phone_from_text,
     parse_extraction_response,
 )
@@ -66,6 +67,30 @@ class TestExtractEmail:
     def test_no_email(self):
         assert extract_email_from_text("No email here") is None
 
+    @pytest.mark.parametrize(
+        ("text", "expected"),
+        [
+            ("Contact: alice@test.com", "alice@test.com"),
+            ("mailto:alice@test.com", "alice@test.com"),
+            ("a@b.com", "a@b.com"),
+            ("alice.martin@sub.domain.co", "alice.martin@sub.domain.co"),
+            ("first_last@x.co.uk", "first_last@x.co.uk"),
+            ("user@example.com.br", "user@example.com.br"),
+            ("a@b.io", "a@b.io"),
+            ("x@alice@test.com", "alice@test.com"),
+            ("a@b.cd (tail)", "a@b.cd"),
+            ("No email here", None),
+            ("name@localhost", None),
+            ("a@b.c", None),
+            ("a@b.i", None),
+            ("x@y.xx1", None),
+            ("a@b.c.d.e", None),
+            ("a..b@c.com", "a..b@c.com"),
+        ],
+    )
+    def test_variants(self, text, expected):
+        assert extract_email_from_text(text) == expected
+
 
 class TestExtractPhone:
     def test_valid_phone(self):
@@ -79,6 +104,26 @@ class TestExtractPhone:
 
     def test_no_phone(self):
         assert extract_phone_from_text("No phone") is None
+
+
+class TestExtractFenceContent:
+    @pytest.mark.parametrize(
+        ("text", "expected"),
+        [
+            ("plain text", None),
+            ("no closing ```", None),
+            ("```json\n{...}\n```", "{...}"),
+            ("```\n{...}\n```", "{...}"),
+            ("``` {ok}\n```", "{ok}"),
+            ("``` json\n{...}\n```", "{...}"),
+            ("text ```json\n{a}\n``` tail", "{a}"),
+            ("```json```", ""),
+            ("```json\na\nb\n```", "a\nb"),
+            ("``` json\n{message}\n```", "{message}"),
+        ],
+    )
+    def test_variants(self, text, expected):
+        assert extract_fence_content(text) == expected
 
 
 class TestPreprocessImage:

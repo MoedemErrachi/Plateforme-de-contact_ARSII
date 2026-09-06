@@ -9,6 +9,7 @@ from typing import Any, Match
 
 from app.models.filters import ContactFilters
 from app.models.schemas import ChatAction, ChatResponse
+from app.ocr.extraction import extract_fence_content
 from app.providers.base import ToolCall
 from app.tools.tools import TOOLS_BY_NAME
 
@@ -29,7 +30,6 @@ FAILURE_FINAL_ALL_FAILED = "chat_final_all_failed"
 FAILURE_COUNTER: dict[str, int] = {}
 FAILURE_EVENTS: deque[dict] = deque(maxlen=500)
 
-_FENCE_RE = re.compile(r"```[ \t]*(?:json)?([^`]*+)```")
 # Accepte une valeur de "message" fermée ou tronquée (fin d'entrée sans guillemet fermant).
 _MESSAGE_FIELD_RE = re.compile(r'"message"\s*:\s*"((?:[^"\\]|\\.)*)(?:"|$)', re.DOTALL)
 
@@ -72,18 +72,15 @@ def validate_tool_call(tool_call: ToolCall) -> ToolCall:
 
 
 def _looks_like_json(text: str) -> bool:
-    candidate = text.strip()
-    fence = _FENCE_RE.search(candidate)
-    if fence:
-        candidate = fence.group(1).strip()
+    candidate = extract_fence_content(text) or text.strip()
     return candidate.startswith(("{", "["))
 
 
 def _extract_json_payload(text: str) -> dict | None:
     candidates: list[str] = [text.strip()]
-    fence = _FENCE_RE.search(text)
-    if fence:
-        candidates.insert(0, fence.group(1).strip())
+    content = extract_fence_content(text)
+    if content is not None:
+        candidates.insert(0, content)
     for candidate in candidates:
         try:
             parsed = json.loads(candidate)

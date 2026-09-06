@@ -34,6 +34,20 @@ CONFIDENCE_MAP = {
 }
 
 
+def extract_fence_content(text: str) -> str | None:
+    """Renvoie le contenu du premier bloc ```...``` (éventuellement taggé `json`), dépouillé."""
+    start = text.find("```")
+    if start == -1:
+        return None
+    inner = text[start + 3 :].lstrip()
+    if inner.startswith("json"):
+        inner = inner[4:].lstrip()
+    end = inner.find("```")
+    if end == -1:
+        return None
+    return inner[:end].strip()
+
+
 def _make_field(raw: dict | None) -> ExtractedField | None:
     if not raw or not isinstance(raw, dict):
         return None
@@ -50,9 +64,9 @@ def parse_extraction_response(raw_text: str) -> ExtractedContactInfo:
     if not raw_text:
         raise ValueError("Empty extraction response")
     text = raw_text.strip()
-    fence_match = re.search(r"```[ \t]*(?:json)?([^`]*+)```", text)
-    if fence_match:
-        text = fence_match.group(1).strip()
+    fence_text = extract_fence_content(text)
+    if fence_text is not None:
+        text = fence_text
     try:
         data = json.loads(text)
     except json.JSONDecodeError as exc:
@@ -65,9 +79,57 @@ def parse_extraction_response(raw_text: str) -> ExtractedContactInfo:
     return ExtractedContactInfo(**fields)
 
 
+_EMAIL_LOCAL_CHARS = frozenset(
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._%+-"
+)
+_EMAIL_DOMAIN_CHARS = frozenset(
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-"
+)
+_EMAIL_TLD_CHARS = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
+
+
+def _scan_domain(text: str, start: int) -> tuple[list[str], int] | None:
+    """Scanne les labels séparés par des points depuis `start`; returns (labels, end)."""
+    pos = start
+    labels: list[str] = []
+    while pos < len(text):
+        if text[pos] not in _EMAIL_DOMAIN_CHARS:
+            break
+        label_start = pos
+        while pos < len(text) and text[pos] in _EMAIL_DOMAIN_CHARS:
+            pos += 1
+        labels.append(text[label_start:pos])
+        if (
+            pos < len(text)
+            and text[pos] == "."
+            and pos + 1 < len(text)
+            and text[pos + 1] in _EMAIL_DOMAIN_CHARS
+        ):
+            pos += 1
+            continue
+        break
+    return (labels, pos) if labels else None
+
+
 def extract_email_from_text(text: str) -> str | None:
-    match = re.search(r"[a-zA-Z0-9._%+-]++@(?:[a-zA-Z0-9-]++\.)++[a-zA-Z]{2,}", text)
-    return match.group(0) if match else None
+    """Renvoie la première adresse `local@domaine.tld` (TLD >= 2 lettres) trouvée."""
+    for at in (i for i, ch in enumerate(text) if ch == "@"):
+        local_end = at
+        while local_end > 0 and text[local_end - 1] in _EMAIL_LOCAL_CHARS:
+            local_end -= 1
+        if local_end == at:
+            continue
+        scanned = _scan_domain(text, at + 1)
+        if scanned is None:
+            continue
+        labels, domain_end = scanned
+        if len(labels) < 2:
+            continue
+        tld = labels[-1]
+        if len(tld) < 2 or not all(ch in _EMAIL_TLD_CHARS for ch in tld):
+            continue
+        return text[local_end:domain_end]
+    return None
 
 
 def extract_phone_from_text(text: str) -> str | None:
