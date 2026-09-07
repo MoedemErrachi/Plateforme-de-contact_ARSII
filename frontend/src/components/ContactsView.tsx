@@ -6,8 +6,9 @@ import { mapContactFromApi } from '../utils/mapContact';
 import { buildContactsListQuery, emptyFilterState, isEmptyFilterState } from '../utils/contactQuery';
 import { formatFieldValue } from '../utils/formatFieldValue';
 import { canCreate, canEdit, canDelete } from '../utils/privileges';
-import { Modal } from './Modal';
 import { Pagination } from './Pagination';
+import { ContactsProfileDrawer } from './ContactsProfileDrawer';
+import { SaveSegmentModal } from './SaveSegmentModal';
 import { 
   Search, 
   SlidersHorizontal, 
@@ -24,14 +25,24 @@ import {
   X, 
   Download, 
   Tag as TagIcon, 
-  Mail, 
-  Phone, 
   ExternalLink,
   RotateCcw,
   RotateCw,
   Check
 } from 'lucide-react';
 import { ContactsTableSkeleton } from './Skeletons';
+
+const GENDERS: Gender[] = ['FEMALE', 'MALE', 'NOT_SPECIFIED'];
+const ALL_CAREER_STAGES: ResearchCareerStage[] = ['R1_FIRST_STAGE', 'R2_RECOGNIZED', 'R3_ESTABLISHED', 'R4_LEADING'];
+
+const getCareerStageClass = (stage: string): string => {
+  switch (stage) {
+    case 'R1_FIRST_STAGE': return 'bg-slate-100 text-[#55636B]';
+    case 'R2_RECOGNIZED': return 'bg-[#005596]/10 text-[#005596]';
+    case 'R3_ESTABLISHED': return 'bg-[#B8167C]/10 text-[#B8167C]';
+    default: return 'bg-[#FFC20C]/20 text-[#8a6d00]';
+  }
+};
 
 interface ContactsViewProps {
   segments: Segment[];
@@ -104,7 +115,11 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
   // Clic sur le triangle : bascule la direction ▼ (A→Z) / ▲ (Z→A).
   const toggleSortDirection = (column: ContactSortBy) => {
     if (sortBy !== column) return;
-    setSortOrder(prev => (prev === 'asc' ? 'desc' : 'asc'));
+    if (sortOrder === 'asc') {
+      setSortOrder('desc');
+    } else {
+      setSortOrder('asc');
+    }
     setCurrentPage(1);
   };
 
@@ -350,9 +365,6 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
   // Expanded tags popover ID
   const [popoverContactId, setPopoverContactId] = useState<string | null>(null);
 
-  const genders = ['FEMALE', 'MALE', 'NOT_SPECIFIED'] as Gender[];
-  const allCareerStages = ['R1_FIRST_STAGE', 'R2_RECOGNIZED', 'R3_ESTABLISHED', 'R4_LEADING'] as ResearchCareerStage[];
-
   // Helper to handle pending filter updates and deselect active segment
   const updatePendingFilters = (updater: (prev: FilterState) => FilterState) => {
     setPendingFilters(prev => updater(prev));
@@ -488,9 +500,11 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
   // Helper to resolve tag color badge class
   const getTagBadgeStyle = (tagName: string) => {
     const found = tags.find(t => t.name.toLowerCase() === tagName.toLowerCase());
-    if (found && found.color) return found.color;
+    if (found?.color) return found.color;
     return 'bg-slate-100 text-slate-700 border-slate-200';
   };
+
+  const ariaSortDirection = sortOrder === 'asc' ? 'ascending' : 'descending';
 
   return (
     <div className="flex-1 flex flex-col lg:flex-row lg:items-start min-h-[calc(100vh-64px)] w-full max-w-full bg-[#E8F1F8] relative">
@@ -499,6 +513,10 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
       {isFilterOpen && (
         <div 
           onClick={() => setIsFilterOpen(false)}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setIsFilterOpen(false); }}
+          role="button"
+          aria-label="Fermer les filtres"
+          tabIndex={-1}
           className="lg:hidden fixed inset-0 bg-slate-900/50 backdrop-blur-xs z-40 animate-in fade-in duration-200"
         />
       )}
@@ -585,7 +603,7 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
                 <Users className="w-4 h-4 text-[#005596]" /> Genre
               </label>
               <div className="space-y-2 bg-white/60 p-3 rounded-xl border border-[#C9D4DE]/40">
-                {genders.map(gender => {
+                {GENDERS.map(gender => {
                   const checked = pendingFilters.genders.includes(gender);
                   return (
                     <label key={gender} className="flex items-center gap-2 cursor-pointer text-xs text-[#1C2529] hover:text-[#005596]">
@@ -608,7 +626,7 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
                 <Bookmark className="w-4 h-4 text-[#005596]" /> Stade de carrière
               </label>
               <div className="space-y-2 bg-white/60 p-3 rounded-xl border border-[#C9D4DE]/40">
-                {allCareerStages.map(stage => {
+                {ALL_CAREER_STAGES.map(stage => {
                   const checked = pendingFilters.careerStages.includes(stage);
                   return (
                     <label key={stage} className="flex items-center gap-2 cursor-pointer text-xs text-[#1C2529] hover:text-[#005596]">
@@ -867,9 +885,8 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
         <div className={`relative bg-white rounded-2xl shadow-sm overflow-hidden border border-slate-200 transition-opacity duration-200 ${pageLoading ? 'opacity-90' : ''}`}>
           {/* Voile de rechargement : la table reste visible mais est estompée */}
           {pageLoading && hasLoadedOnceRef.current && (
-            <div
+            <output
               className="absolute inset-0 z-20 bg-white/50 backdrop-blur-sm animate-pulse"
-              role="status"
               aria-label="Rechargement des contacts"
             />
           )}
@@ -908,7 +925,7 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
                 <thead className="bg-[#D9E6F2]/50 border-b border-[#C9D4DE] text-[11px] font-bold text-[#55636B] uppercase tracking-wider">
                   <tr>
                     <th className="p-3 w-10 text-center shrink-0"></th>
-                    <th className={`p-3 w-[30%] md:w-[28%] lg:w-[22%] truncate ${sortBy === 'name' ? 'text-[#005596]' : ''}`} aria-sort={sortBy === 'name' ? (sortOrder === 'asc' ? 'ascending' : 'descending') : 'none'} title="Trier par nom et e-mail du contact">
+                    <th className={`p-3 w-[30%] md:w-[28%] lg:w-[22%] truncate ${sortBy === 'name' ? 'text-[#005596]' : ''}`} aria-sort={sortBy === 'name' ? ariaSortDirection : 'none'} title="Trier par nom et e-mail du contact">
                       <div className="inline-flex items-center gap-1">
                         <button
                           type="button"
@@ -928,7 +945,7 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
                         </button>
                       </div>
                     </th>
-                    <th className={`p-3 w-[20%] md:w-[18%] lg:w-[14%] truncate ${sortBy === 'countryOfOrigin' ? 'text-[#005596]' : ''}`} aria-sort={sortBy === 'countryOfOrigin' ? (sortOrder === 'asc' ? 'ascending' : 'descending') : 'none'} title="Trier par pays d'origine et ville">
+                    <th className={`p-3 w-[20%] md:w-[18%] lg:w-[14%] truncate ${sortBy === 'countryOfOrigin' ? 'text-[#005596]' : ''}`} aria-sort={sortBy === 'countryOfOrigin' ? ariaSortDirection : 'none'} title="Trier par pays d'origine et ville">
                       <div className="inline-flex items-center gap-1">
                         <button
                           type="button"
@@ -948,7 +965,7 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
                         </button>
                       </div>
                     </th>
-                    <th className={`p-3 w-[25%] md:w-[22%] lg:w-[18%] truncate ${sortBy === 'affiliation' ? 'text-[#005596]' : ''}`} aria-sort={sortBy === 'affiliation' ? (sortOrder === 'asc' ? 'ascending' : 'descending') : 'none'} title="Trier par affiliation et fonction">
+                    <th className={`p-3 w-[25%] md:w-[22%] lg:w-[18%] truncate ${sortBy === 'affiliation' ? 'text-[#005596]' : ''}`} aria-sort={sortBy === 'affiliation' ? ariaSortDirection : 'none'} title="Trier par affiliation et fonction">
                       <div className="inline-flex items-center gap-1">
                         <button
                           type="button"
@@ -968,7 +985,7 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
                         </button>
                       </div>
                     </th>
-                    <th className={`p-3 hidden lg:table-cell lg:w-[12%] truncate ${sortBy === 'researchCareerStage' ? 'text-[#005596]' : ''}`} aria-sort={sortBy === 'researchCareerStage' ? (sortOrder === 'asc' ? 'ascending' : 'descending') : 'none'} title="Trier par stade de carrière">
+                    <th className={`p-3 hidden lg:table-cell lg:w-[12%] truncate ${sortBy === 'researchCareerStage' ? 'text-[#005596]' : ''}`} aria-sort={sortBy === 'researchCareerStage' ? ariaSortDirection : 'none'} title="Trier par stade de carrière">
                       <div className="inline-flex items-center gap-1">
                         <button
                           type="button"
@@ -988,7 +1005,7 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
                         </button>
                       </div>
                     </th>
-                    <th className={`p-3 hidden lg:table-cell lg:w-[10%] truncate ${sortBy === 'gender' ? 'text-[#005596]' : ''}`} aria-sort={sortBy === 'gender' ? (sortOrder === 'asc' ? 'ascending' : 'descending') : 'none'} title="Trier par genre">
+                    <th className={`p-3 hidden lg:table-cell lg:w-[10%] truncate ${sortBy === 'gender' ? 'text-[#005596]' : ''}`} aria-sort={sortBy === 'gender' ? ariaSortDirection : 'none'} title="Trier par genre">
                       <div className="inline-flex items-center gap-1">
                         <button
                           type="button"
@@ -1008,7 +1025,7 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
                         </button>
                       </div>
                     </th>
-                    <th className={`p-3 w-[24%] md:w-[22%] lg:w-[14%] truncate ${sortBy === 'tags' ? 'text-[#005596]' : ''}`} aria-sort={sortBy === 'tags' ? (sortOrder === 'asc' ? 'ascending' : 'descending') : 'none'} title="Trier par nombre de tags">
+                    <th className={`p-3 w-[24%] md:w-[22%] lg:w-[14%] truncate ${sortBy === 'tags' ? 'text-[#005596]' : ''}`} aria-sort={sortBy === 'tags' ? ariaSortDirection : 'none'} title="Trier par nombre de tags">
                       <div className="inline-flex items-center gap-1">
                         <button
                           type="button"
@@ -1064,8 +1081,10 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
                       const visibleTags = contactTags.slice(0, 2);
                       const hiddenCount = contactTags.length - 2;
 
+                      const careerStageClass = getCareerStageClass(contact.researchCareerStage);
+
                       return (
-                        <tr 
+                        <tr
                           key={contact.id}
                           onClick={() => setQuickDrawerContact(contact)}
                           className={`hover:bg-[#E8F1F8]/60 transition-colors cursor-pointer group ${
@@ -1120,15 +1139,7 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
                           {/* Stade de carrière (Hidden on tablet, shown on lg) */}
                           <td className="p-3 sm:p-4 hidden lg:table-cell">
                             <span
-                              className={`px-2.5 py-1 rounded-full text-[11px] font-bold whitespace-nowrap ${
-                                contact.researchCareerStage === 'R1_FIRST_STAGE'
-                                  ? 'bg-slate-100 text-[#55636B]'
-                                  : contact.researchCareerStage === 'R2_RECOGNIZED'
-                                    ? 'bg-[#005596]/10 text-[#005596]'
-                                    : contact.researchCareerStage === 'R3_ESTABLISHED'
-                                      ? 'bg-[#B8167C]/10 text-[#B8167C]'
-                                      : 'bg-[#FFC20C]/20 text-[#8a6d00]'
-                              }`}
+                              className={`px-2.5 py-1 rounded-full text-[11px] font-bold whitespace-nowrap ${careerStageClass}`}
                               title={CAREER_STAGE_LABELS[contact.researchCareerStage]}
                             >
                               {CAREER_STAGE_SHORT_LABELS[contact.researchCareerStage]}
@@ -1253,7 +1264,18 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
                   return (
                     <div 
                       key={contact.id}
-                      onClick={() => setQuickDrawerContact(contact)}
+                      role="button"
+                      tabIndex={0}
+                      onClick={(e) => {
+                        if ((e.target as HTMLElement).closest('[data-row-actions]')) return;
+                        setQuickDrawerContact(contact);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          setQuickDrawerContact(contact);
+                        }
+                      }}
                       className={`p-4 space-y-3 cursor-pointer hover:bg-slate-50 transition-colors ${
                         isSelected ? 'bg-[#E8F1F8]/60' : ''
                       }`}
@@ -1315,7 +1337,7 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
                       </div>
 
                       {/* Mobile Card Action Footer */}
-                      <div className="pt-2 flex items-center justify-between border-t border-slate-100" onClick={(e) => e.stopPropagation()}>
+                      <div data-row-actions className="pt-2 flex items-center justify-between border-t border-slate-100">
                         <span className="text-[11px] text-slate-500 font-medium truncate">{contact.function?.trim() || contact.affiliation?.trim() || '\u2014'}</span>
                         
                         <div className="flex items-center gap-2">
@@ -1466,194 +1488,26 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
 
       {/* Slide-over Profile Quick Drawer */}
       {quickDrawerContact && (
-        <Modal open={quickDrawerContact !== null} onClose={() => setQuickDrawerContact(null)} variant="drawer" noPadding>
-          <div className="p-6 flex flex-col justify-between min-h-full cursor-default">
-            
-            <div>
-              <div className="flex justify-between items-start mb-6">
-                <div className="flex flex-col items-center text-center w-full">
-                  <div className="w-24 h-24 rounded-full bg-[#005596]/20 p-1 mb-3 relative">
-                    {quickDrawerContact.avatarUrl ? (
-                      <img src={quickDrawerContact.avatarUrl} alt={quickDrawerContact.name} className="w-full h-full object-cover rounded-full" />
-                    ) : (
-                      <div className="w-full h-full rounded-full bg-[#005596] text-white flex items-center justify-center font-bold text-xl">
-                        {quickDrawerContact.initials}
-                      </div>
-                    )}
-                  </div>
-                  <h2 className="text-xl font-bold text-[#1C2529]">{quickDrawerContact.name}</h2>
-                  <p className="text-xs text-[#005596] font-bold mt-0.5">{formatFieldValue(quickDrawerContact.function)}</p>
-                  <p className="text-xs text-[#55636B]">{formatFieldValue(quickDrawerContact.affiliation)}</p>
-                  <span className="inline-block mt-2 px-2.5 py-1 bg-[#D9E6F2] text-[#005596] rounded-full text-[11px] font-bold">
-                    {CAREER_STAGE_LABELS[quickDrawerContact.researchCareerStage]}
-                  </span>
-                </div>
-
-                <button 
-                  onClick={() => setQuickDrawerContact(null)}
-                  className="p-1.5 hover:bg-[#E8F1F8] rounded-full text-slate-500 transition-colors absolute right-4 top-4"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              <div className="space-y-6">
-                {/* Contact Details */}
-                <section className="bg-[#E8F1F8]/50 p-4 rounded-xl">
-                  <h3 className="text-xs font-bold text-[#005596] uppercase tracking-wider mb-3">Coordonnées</h3>
-                  <div className="space-y-2 text-xs">
-                    <div className="flex items-center gap-3 text-[#55636B]">
-                      <Mail className="w-4 h-4 text-[#005596]" />
-                      <span>{quickDrawerContact.email}</span>
-                    </div>
-                    <div className="flex items-center gap-3 text-[#55636B]">
-                      <Phone className="w-4 h-4 text-[#005596]" />
-                      <span>{formatFieldValue(quickDrawerContact.phone)}</span>
-                    </div>
-                    <div className="flex items-center gap-3 text-[#55636B]">
-                      <Globe className="w-4 h-4 text-[#005596]" />
-                      <span>Pays: {formatFieldValue(quickDrawerContact.countryOfOrigin)}{quickDrawerContact.city?.trim() ? ` · ${quickDrawerContact.city}` : ''}</span>
-                    </div>
-                    <div className="flex items-center gap-3 text-[#55636B]">
-                      <Users className="w-4 h-4 text-[#005596]" />
-                      <span>Genre: {GENDER_LABELS[quickDrawerContact.gender]}</span>
-                    </div>
-                  </div>
-                </section>
-
-                {/* Tags Section */}
-                <section>
-                  <h3 className="text-xs font-bold text-[#1C2529] mb-2 flex items-center justify-between">
-                    <span>Étiquettes / Tags</span>
-                    <Link 
-                      to="/segments"
-                      onClick={() => setQuickDrawerContact(null)}
-                      className="text-[11px] text-[#005596] hover:underline font-bold"
-                    >
-                      Gérer
-                    </Link>
-                  </h3>
-                  <div className="flex flex-wrap gap-1.5">
-                    {quickDrawerContact.tags && quickDrawerContact.tags.length > 0 ? (
-                      quickDrawerContact.tags.map((tName, idx) => (
-                        <span key={idx} className={`px-2.5 py-1 rounded-full text-xs font-extrabold border ${getTagBadgeStyle(tName)}`}>
-                          {tName}
-                        </span>
-                      ))
-                    ) : (
-                      <span className="text-xs text-slate-400 italic">Aucun tag attribué</span>
-                    )}
-                  </div>
-                </section>
-
-                {/* R&I Profile Details */}
-                <section>
-                  <h3 className="text-xs font-bold text-[#1C2529] mb-3">Profil R&I</h3>
-                  <div className="space-y-2 text-xs text-[#55636B] bg-[#F4F6F8] p-4 rounded-xl border border-[#C9D4DE]/40">
-                    <div className="flex justify-between gap-2">
-                      <span className="font-bold text-[#1C2529]">Stade de carrière:</span>
-                      <span className="text-right">{CAREER_STAGE_LABELS[quickDrawerContact.researchCareerStage]}</span>
-                    </div>
-                    <div className="flex justify-between gap-2">
-                      <span className="font-bold text-[#1C2529]">Expérience:</span>
-                      <span className="text-right">{formatFieldValue(quickDrawerContact.experience)}</span>
-                    </div>
-                    <div className="flex justify-between gap-2">
-                      <span className="font-bold text-[#1C2529]">Faculté / Dépt:</span>
-                      <span className="text-right">{formatFieldValue(quickDrawerContact.facultyDepartment)}</span>
-                    </div>
-                  </div>
-                </section>
-              </div>
-            </div>
-
-            <div className="pt-6 border-t border-[#C9D4DE] mt-6 flex gap-2">
-              <Link 
-                to={`/contacts/${quickDrawerContact.id}/edit`}
-                onClick={() => setQuickDrawerContact(null)}
-                className="px-4 py-3 bg-[#BCD7EE] text-[#005596] hover:bg-[#3F88C4] font-bold text-xs rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer shrink-0"
-              >
-                <Edit className="w-4 h-4" />
-                Modifier
-              </Link>
-              <button 
-                onClick={() => {
-                  const id = quickDrawerContact.id;
-                  setQuickDrawerContact(null);
-                  onSelectContact(id);
-                }}
-                className="flex-1 py-3 bg-[#005596] hover:bg-[#004275] text-white font-bold text-xs rounded-xl shadow transition-all active:scale-95 cursor-pointer"
-              >
-                Voir la fiche complète
-              </button>
-            </div>
-
-          </div>
-        </Modal>
+        <ContactsProfileDrawer
+          contact={quickDrawerContact}
+          getTagBadgeStyle={getTagBadgeStyle}
+          onClose={() => setQuickDrawerContact(null)}
+          onNavigateToDetail={(id) => {
+            setQuickDrawerContact(null);
+            onSelectContact(id);
+          }}
+        />
       )}
 
       {/* SAVE SEGMENT MODAL */}
-      {isSaveSegmentModalOpen && (
-        <Modal
-          open={isSaveSegmentModalOpen}
-          onClose={() => setIsSaveSegmentModalOpen(false)}
-          maxWidth="max-w-md"
-          title={
-            <div className="flex items-center gap-2">
-              <Bookmark className="w-5 h-5 text-[#005596]" />
-              <h3 className="font-extrabold text-base text-[#1C2529]">
-                Enregistrer les filtres comme segment
-              </h3>
-            </div>
-          }
-        >
-
-            <form onSubmit={handleSaveSegmentSubmit} className="space-y-4 text-xs">
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">Nom du Segment *</label>
-                <input
-                  type="text"
-                  required
-                  value={newSegmentNameInput}
-                  onChange={(e) => setNewSegmentNameInput(e.target.value)}
-                  placeholder="ex: Experts Santé Afrique 2024"
-                  className="w-full p-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#005596] font-semibold text-[#1C2529]"
-                  autoFocus
-                />
-              </div>
-
-              <div className="bg-[#E8F1F8]/50 p-3.5 rounded-xl border border-[#C9D4DE]/30 text-slate-600">
-                <p className="font-bold text-[#005596] mb-1.5 text-xs">Filtres sélectionnés:</p>
-                <ul className="list-disc list-inside space-y-1 text-[11px] font-medium">
-                  {pendingFilters.search && <li>Recherche: "{pendingFilters.search}"</li>}
-                  {pendingFilters.countries.length > 0 && <li>Pays d'origine: {pendingFilters.countries.join(', ')}</li>}
-                  {pendingFilters.genders.length > 0 && <li>Genres: {pendingFilters.genders.map(g => GENDER_LABELS[g as Gender]).join(', ')}</li>}
-                  {pendingFilters.careerStages.length > 0 && <li>Stades de carrière: {pendingFilters.careerStages.map(s => CAREER_STAGE_SHORT_LABELS[s as ResearchCareerStage]).join(', ')}</li>}
-                  {pendingFilters.tags.length > 0 && <li>Tags: {pendingFilters.tags.join(', ')}</li>}
-                  {isEmptyFilterState(pendingFilters) && (
-                    <li className="italic text-slate-500">Tous les contacts (aucun filtre restreint)</li>
-                  )}
-                </ul>
-              </div>
-
-              <div className="flex justify-end gap-3 pt-3 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={() => setIsSaveSegmentModalOpen(false)}
-                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition-colors cursor-pointer"
-                >
-                  Annuler
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 bg-[#005596] hover:bg-[#004275] text-white font-bold rounded-xl shadow transition-all active:scale-95 cursor-pointer"
-                >
-                  Enregistrer
-                </button>
-              </div>
-            </form>
-        </Modal>
-      )}
+      <SaveSegmentModal
+        isOpen={isSaveSegmentModalOpen}
+        onClose={() => setIsSaveSegmentModalOpen(false)}
+        pendingFilters={pendingFilters}
+        segmentNameInput={newSegmentNameInput}
+        onSegmentNameInputChange={setNewSegmentNameInput}
+        onSubmit={handleSaveSegmentSubmit}
+      />
     </div>
   );
 };

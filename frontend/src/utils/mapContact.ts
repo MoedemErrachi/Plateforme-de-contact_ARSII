@@ -7,13 +7,17 @@ export function mapContactFromApi(c: any): Contact {
   const name = formatFullName(firstName, lastName);
   const firstInit = firstName && firstName !== 'N/A' ? firstName[0] : '';
   const lastInit = lastName && lastName !== 'N/A' ? lastName[0] : '';
+  const rawGender = c.gender;
+  let gender: 'MALE' | 'FEMALE' | 'NOT_SPECIFIED' = 'NOT_SPECIFIED';
+  if (rawGender === 'MALE') gender = 'MALE';
+  else if (rawGender === 'FEMALE') gender = 'FEMALE';
   return {
     ...c,
     firstName,
     lastName,
     name,
     initials: `${firstInit}${lastInit}`.toUpperCase() || c.initials || 'NC',
-    gender: c.gender === 'MALE' ? 'MALE' : c.gender === 'FEMALE' ? 'FEMALE' : 'NOT_SPECIFIED',
+    gender,
     researchCareerStage: c.researchCareerStage || 'R1_FIRST_STAGE',
     countryOfOrigin: c.countryOfOrigin || '',
     city: c.city ?? null,

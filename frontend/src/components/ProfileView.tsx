@@ -93,7 +93,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ user, onUserUpdate, on
     }
   };
 
-  const handleSave = async (e: React.FormEvent) => {
+  const handleSave = async (e) => {
     e.preventDefault();
     if (!name.trim()) {
       showToast('Le nom complet est requis.', 'error');
@@ -143,7 +143,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ user, onUserUpdate, on
   };
 
   // Étape 1 : validations locales puis ouverture de la confirmation.
-  const handleChangePassword = (e: React.FormEvent) => {
+  const handleChangePassword = (e) => {
     e.preventDefault();
     if (!currentPassword || !newPassword || !confirmNewPassword) {
       showToast('Tous les champs sont requis.', 'error');
@@ -301,12 +301,13 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ user, onUserUpdate, on
             </div>
 
             <div className="flex flex-col gap-1.5">
-              <label className="text-[11px] font-extrabold text-[#55636B] uppercase tracking-wider">
+              <label htmlFor="profile-role" className="text-[11px] font-extrabold text-[#55636B] uppercase tracking-wider">
                 Rôle
               </label>
               <div className="relative">
                 <BadgeCheck className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-[#8A98A1]" />
                 <input
+                  id="profile-role"
                   type="text"
                   readOnly
                   value={roleLabel}

@@ -96,6 +96,181 @@ const SYSTEM_FIELDS: SystemFieldDef[] = [
   { key: 'tags', label: '🏷️ Tags / Mots-clés', description: 'Mots-clés de classification' }
 ];
 
+const buildServerPreviewRows = (rawRows: RawRowData[], columnMapping: Record<string, string>) =>
+  rawRows.map(row => {
+    const getVal = (sysKey: string): string => {
+      const headerMatch = Object.keys(columnMapping).find(h => columnMapping[h] === sysKey);
+      return headerMatch ? row.originalData[headerMatch] || '' : '';
+    };
+    return {
+      email: getVal('email').trim(),
+      firstName: getVal('firstName').trim(),
+      lastName: getVal('lastName').trim(),
+      fullName: getVal('fullName').trim()
+    };
+  }).filter(r => r.email || r.firstName || r.lastName || r.fullName);
+
+const fetchDuplicateEmails = async (serverRows: ReturnType<typeof buildServerPreviewRows>, existingContacts: Contact[]): Promise<Set<string>> => {
+  let duplicateEmails = new Set<string>();
+  try {
+    const preview = await apiFetch('/api/contacts/bulk/preview', {
+      method: 'POST',
+      suppressGlobalError: true,
+      body: JSON.stringify({ rows: serverRows })
+    });
+    if (preview?.data?.preview) {
+      for (const p of preview.data.preview) {
+        if (p.status === 'DUPLICATE' && p.existingContactId) {
+          const email = p.inputData?.email;
+          if (email) duplicateEmails.add(email.toLowerCase());
+        }
+      }
+    }
+  } catch {
+    for (const c of existingContacts) {
+      if (c.email) duplicateEmails.add(c.email.toLowerCase());
+    }
+  }
+  return duplicateEmails;
+};
+
+const analyzeSingleRow = (
+  row: RawRowData,
+  columnMapping: Record<string, string>,
+  autoGenerateEmails: boolean,
+  duplicateEmails: Set<string>,
+  existingContacts: Contact[],
+  normalizeGenderInput: (raw: string) => Gender,
+  normalizeCountry: (raw: string) => string,
+  parseCareerStage: (raw: string) => ResearchCareerStage
+): ParsedContactCandidate => {
+  const getVal = (sysKey: string): string => {
+    const headerMatch = Object.keys(columnMapping).find(h => columnMapping[h] === sysKey);
+    return headerMatch ? row.originalData[headerMatch] || '' : '';
+  };
+
+  const rawEmail = getVal('email').trim();
+  const generatedEmail = autoGenerateEmails
+    ? `import_${row.rowIndex}_${crypto.randomUUID().replaceAll('-', '').slice(0, 8)}@euraxess.africa`
+    : rawEmail;
+  const email = rawEmail.includes('@') ? rawEmail : generatedEmail;
+  let firstName = getVal('firstName').trim();
+  let lastName = getVal('lastName').trim();
+  const fullNameVal = getVal('fullName').trim();
+
+  if (!firstName && !lastName && fullNameVal) {
+    const split = splitFullName(fullNameVal);
+    firstName = split.firstName;
+    lastName = split.lastName;
+  }
+
+  const genderRaw = getVal('gender').trim();
+  const gender: Gender = genderRaw ? normalizeGenderInput(genderRaw) : 'NOT_SPECIFIED';
+  const countryOfOrigin = normalizeCountry(getVal('countryOfOrigin').trim());
+  const city = getVal('city').trim();
+  const phone = getVal('phone').trim() || '';
+  const affiliation = getVal('affiliation').trim() || '';
+  const fonction = getVal('function').trim() || '';
+  const experience = getVal('experience').trim() || '';
+  const facultyDepartment = getVal('facultyDepartment').trim() || '';
+  const researchCareerStage = parseCareerStage(getVal('researchCareerStage'));
+
+  const rawTags = getVal('tags');
+  const tags = rawTags ? rawTags.split(/[,;|/]/).map(s => s.trim()).filter(Boolean) : ['Importation'];
+
+  let finalFullName = fullNameVal;
+  if (!finalFullName) {
+    finalFullName = [firstName, lastName].filter(Boolean).join(' ');
+  }
+  if (!finalFullName) {
+    finalFullName = email.split('@')[0] || `Contact #${row.rowIndex}`;
+  }
+  finalFullName = finalFullName.trim();
+
+  const isValidEmailFormat = !email || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  const cleanEmail = email.toLowerCase();
+  const isDuplicate = Boolean(cleanEmail && duplicateEmails.has(cleanEmail));
+  const duplicateMatch = isDuplicate ? (existingContacts.find(c => c.email.toLowerCase() === cleanEmail) || { id: 'server-match', email: cleanEmail } as Contact) : undefined;
+
+  let status: 'valid' | 'duplicate' | 'invalid' = 'valid';
+  let errorReason: string | undefined = undefined;
+
+  if (!isValidEmailFormat && email.length > 0) {
+    status = 'invalid';
+    errorReason = 'Format e-mail invalide';
+  } else if (!email && !firstName && !lastName && !fullNameVal) {
+    status = 'invalid';
+    errorReason = 'Identifiant manquant (E-mail ou Nom absent)';
+  } else if (isDuplicate) {
+    status = 'duplicate';
+  }
+
+  const defaultAction = status === 'duplicate' ? 'overwrite' : status === 'invalid' ? 'skip' : 'import';
+
+  return {
+    id: `candidate-${row.rowIndex}-${Date.now()}`,
+    rowIndex: row.rowIndex,
+    firstName, lastName, fullName: finalFullName, email, gender,
+    countryOfOrigin, city, phone, affiliation,
+    function: fonction, experience, facultyDepartment,
+    researchCareerStage, tags, status, errorReason,
+    duplicateMatch, resolutionAction: defaultAction
+  };
+};
+
+const buildCandidatePayload = (cand: ParsedContactCandidate, mode: 'new' | 'merged') => {
+  if (mode === 'merged') {
+    return {
+      name: cand.fullName || cand.duplicateMatch!.name,
+      firstName: cand.firstName || cand.duplicateMatch!.firstName,
+      lastName: cand.lastName || cand.duplicateMatch!.lastName,
+      email: cand.email || cand.duplicateMatch!.email,
+      phone: cand.phone || cand.duplicateMatch!.phone,
+      gender: cand.gender,
+      countryOfOrigin: cand.countryOfOrigin || cand.duplicateMatch!.countryOfOrigin,
+      city: cand.city || cand.duplicateMatch!.city,
+      affiliation: cand.affiliation || cand.duplicateMatch!.affiliation,
+      function: cand.function || cand.duplicateMatch!.function,
+      experience: cand.experience || cand.duplicateMatch!.experience,
+      facultyDepartment: cand.facultyDepartment || cand.duplicateMatch!.facultyDepartment,
+      researchCareerStage: cand.researchCareerStage,
+      tags: Array.from(new Set([...(cand.duplicateMatch!.tags || []), ...cand.tags, 'Importé', 'Mis à jour']))
+    };
+  }
+  return {
+    id: `imp-${cand.rowIndex}-${Date.now()}`,
+    name: cand.fullName,
+    initials: cand.fullName.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) || 'NC',
+    firstName: cand.firstName,
+    lastName: cand.lastName,
+    email: cand.email,
+    phone: cand.phone,
+    gender: cand.gender,
+    countryOfOrigin: cand.countryOfOrigin,
+    city: cand.city,
+    affiliation: cand.affiliation,
+    function: cand.function || undefined,
+    experience: cand.experience || undefined,
+    facultyDepartment: cand.facultyDepartment || undefined,
+    researchCareerStage: cand.researchCareerStage,
+    tags: cand.tags
+  };
+};
+
+const buildErrorReportEntries = (skipped: ParsedContactCandidate[], serverErrors: Array<{ row: number; message: string }>) => {
+  if (skipped.length > 0) return skipped;
+  return serverErrors.map((e: { row: number; message: string }) => ({
+    id: `err-${e.row}`,
+    rowIndex: e.row,
+    fullName: '', firstName: '', lastName: '', email: '',
+    gender: 'NOT_SPECIFIED' as const, phone: '', affiliation: '',
+    countryOfOrigin: '', city: '', function: '', experience: '',
+    facultyDepartment: '', researchCareerStage: 'R1_FIRST_STAGE' as const,
+    tags: [], status: 'invalid' as const,
+    errorReason: e.message, resolutionAction: 'skip' as const, originalData: {}
+  }));
+};
+
 export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
   onImportContacts,
   existingContacts
@@ -309,15 +484,15 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
     }
 
     // Rule 2: fullName ↔ firstName/lastName mutual exclusion
-    const nameFields = ['firstName', 'lastName'];
+    const nameFields = new Set(['firstName', 'lastName']);
     if (newKey === 'fullName') {
       // Reset any firstName/lastName mappings
       Object.entries(updated).forEach(([h, f]) => {
-        if (h !== header && nameFields.includes(f)) {
+        if (h !== header && nameFields.has(f)) {
           updated[h] = '__ignore__';
         }
       });
-    } else if (nameFields.includes(newKey)) {
+    } else if (nameFields.has(newKey)) {
       // Reset any fullName mapping
       Object.entries(updated).forEach(([h, f]) => {
         if (h !== header && f === 'fullName') {
@@ -343,135 +518,16 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
   const analyzeRowsAndProceedToStep3 = useCallback(async () => {
     setIsAnalyzing(true);
     try {
-    // Build candidate payloads for server-side duplicate preview
-    const serverRows = rawRows.map(row => {
-      const getVal = (sysKey: string): string => {
-        const headerMatch = Object.keys(columnMapping).find(h => columnMapping[h] === sysKey);
-        return headerMatch ? row.originalData[headerMatch] || '' : '';
-      };
-      return {
-        email: getVal('email').trim(),
-        firstName: getVal('firstName').trim(),
-        lastName: getVal('lastName').trim(),
-        fullName: getVal('fullName').trim()
-      };
-    }).filter(r => r.email || r.firstName || r.lastName || r.fullName);
+      const serverRows = buildServerPreviewRows(rawRows, columnMapping);
+      const duplicateEmails = await fetchDuplicateEmails(serverRows, existingContacts);
+      serverDuplicateEmailsRef.current = duplicateEmails;
 
-    let duplicateEmails = new Set<string>();
-    try {
-      const preview = await apiFetch('/api/contacts/bulk/preview', {
-        method: 'POST',
-        suppressGlobalError: true,
-        body: JSON.stringify({ rows: serverRows })
-      });
-      if (preview?.data?.preview) {
-        for (const p of preview.data.preview) {
-          if (p.status === 'DUPLICATE' && p.existingContactId) {
-            const email = p.inputData?.email;
-            if (email) duplicateEmails.add(email.toLowerCase());
-          }
-        }
-      }
-    } catch {
-      // Fallback: client-side check against existingContacts prop
-      for (const c of existingContacts) {
-        if (c.email) duplicateEmails.add(c.email.toLowerCase());
-      }
-    }
-    serverDuplicateEmailsRef.current = duplicateEmails;
-    const analyzed: ParsedContactCandidate[] = rawRows.map(row => {
-      const getVal = (sysKey: string): string => {
-        const headerMatch = Object.keys(columnMapping).find(h => columnMapping[h] === sysKey);
-        return headerMatch ? row.originalData[headerMatch] || '' : '';
-      };
+      const analyzed = rawRows.map(row =>
+        analyzeSingleRow(row, columnMapping, autoGenerateEmails, duplicateEmails, existingContacts, normalizeGenderInput, normalizeCountry, parseCareerStage)
+      );
 
-      const rawEmail = getVal('email').trim();
-      const email = rawEmail.includes('@') ? rawEmail : (autoGenerateEmails ? `import_${row.rowIndex}_${Math.random().toString(36).slice(2, 6)}@euraxess.africa` : rawEmail);
-      let firstName = getVal('firstName').trim();
-      let lastName = getVal('lastName').trim();
-      const fullNameVal = getVal('fullName').trim();
-
-      // Split the "Nom complet" column into firstName / lastName when
-      // individual name columns are not mapped.
-      if (!firstName && !lastName && fullNameVal) {
-        const split = splitFullName(fullNameVal);
-        firstName = split.firstName;
-        lastName = split.lastName;
-      }
-
-      const genderRaw = getVal('gender').trim();
-      const gender: Gender = genderRaw ? normalizeGenderInput(genderRaw) : 'NOT_SPECIFIED';
-      const countryOfOrigin = normalizeCountry(getVal('countryOfOrigin').trim());
-      const city = getVal('city').trim();
-      const phone = getVal('phone').trim() || '';
-      const affiliation = getVal('affiliation').trim() || '';
-      const fonction = getVal('function').trim() || '';
-      const experience = getVal('experience').trim() || '';
-      const facultyDepartment = getVal('facultyDepartment').trim() || '';
-      const researchCareerStage = parseCareerStage(getVal('researchCareerStage'));
-
-      const rawTags = getVal('tags');
-      const tags = rawTags ? rawTags.split(/[,;|/]/).map(s => s.trim()).filter(Boolean) : ['Importation'];
-
-      // Derive fullName
-      let finalFullName = fullNameVal;
-      if (!finalFullName) {
-        finalFullName = [firstName, lastName].filter(Boolean).join(' ');
-      }
-      if (!finalFullName) {
-        finalFullName = email.split('@')[0] || `Contact #${row.rowIndex}`;
-      }
-      finalFullName = finalFullName.trim();
-
-      // Validate email & required identity
-      const isValidEmailFormat = !email || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-      const cleanEmail = email.toLowerCase();
-
-      // Check duplicate against server-side results (all DB contacts, not just first 100)
-      const isDuplicate = Boolean(cleanEmail && duplicateEmails.has(cleanEmail));
-      const duplicateMatch = isDuplicate ? (existingContacts.find(c => c.email.toLowerCase() === cleanEmail) || { id: 'server-match', email: cleanEmail } as Contact) : undefined;
-
-      let status: 'valid' | 'duplicate' | 'invalid' = 'valid';
-      let errorReason: string | undefined = undefined;
-
-      if (!isValidEmailFormat && email.length > 0) {
-        status = 'invalid';
-        errorReason = 'Format e-mail invalide';
-      } else if (!email && !firstName && !lastName && !fullNameVal) {
-        status = 'invalid';
-        errorReason = 'Identifiant manquant (E-mail ou Nom absent)';
-      } else if (isDuplicate) {
-        status = 'duplicate';
-      }
-
-      const defaultAction = status === 'duplicate' ? 'overwrite' : status === 'invalid' ? 'skip' : 'import';
-
-      return {
-        id: `candidate-${row.rowIndex}-${Date.now()}`,
-        rowIndex: row.rowIndex,
-        firstName,
-        lastName,
-        fullName: finalFullName,
-        email,
-        gender,
-        countryOfOrigin,
-        city,
-        phone,
-        affiliation,
-        function: fonction,
-        experience,
-        facultyDepartment,
-        researchCareerStage,
-        tags,
-        status,
-        errorReason,
-        duplicateMatch,
-        resolutionAction: defaultAction
-      };
-    });
-
-    setCandidates(analyzed);
-    setCurrentStep(3);
+      setCandidates(analyzed);
+      setCurrentStep(3);
     } finally {
       setIsAnalyzing(false);
     }
@@ -549,52 +605,10 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
       }
 
       if (cand.resolutionAction === 'overwrite' && cand.duplicateMatch) {
-        const merged: Contact = {
-          ...cand.duplicateMatch,
-          name: cand.fullName || cand.duplicateMatch.name,
-          firstName: cand.firstName || cand.duplicateMatch.firstName,
-          lastName: cand.lastName || cand.duplicateMatch.lastName,
-          email: cand.email || cand.duplicateMatch.email,
-          phone: cand.phone || cand.duplicateMatch.phone,
-          gender: cand.gender,
-          countryOfOrigin: cand.countryOfOrigin || cand.duplicateMatch.countryOfOrigin,
-          city: cand.city || cand.duplicateMatch.city,
-          affiliation: cand.affiliation || cand.duplicateMatch.affiliation,
-          function: cand.function || cand.duplicateMatch.function,
-          experience: cand.experience || cand.duplicateMatch.experience,
-          facultyDepartment: cand.facultyDepartment || cand.duplicateMatch.facultyDepartment,
-          researchCareerStage: cand.researchCareerStage,
-          tags: Array.from(new Set([...(cand.duplicateMatch.tags || []), ...cand.tags, 'Importé', 'Mis à jour']))
-        };
-        updatedContactsToMerge.push(merged);
+        updatedContactsToMerge.push({ ...cand.duplicateMatch, ...buildCandidatePayload(cand, 'merged') } as Contact);
         countMerged++;
       } else {
-        const initials = cand.fullName
-          .split(' ')
-          .map(n => n[0])
-          .join('')
-          .toUpperCase()
-          .slice(0, 2) || 'NC';
-
-        const newContact: Contact = {
-          id: `imp-${cand.rowIndex}-${Date.now()}`,
-          name: cand.fullName,
-          initials: initials,
-          firstName: cand.firstName,
-          lastName: cand.lastName,
-          email: cand.email,
-          phone: cand.phone,
-          gender: cand.gender,
-          countryOfOrigin: cand.countryOfOrigin,
-          city: cand.city,
-          affiliation: cand.affiliation,
-          function: cand.function || undefined,
-          experience: cand.experience || undefined,
-          facultyDepartment: cand.facultyDepartment || undefined,
-          researchCareerStage: cand.researchCareerStage,
-          tags: cand.tags
-        };
-        newContactsToAdd.push(newContact);
+        newContactsToAdd.push(buildCandidatePayload(cand, 'new') as Contact);
         countNew++;
       }
     });
@@ -614,30 +628,7 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
       importedNew: result.data?.createdCount ?? countNew,
       updatedMerged: result.data?.updatedCount ?? countMerged,
       skippedIgnored: skippedList.length + serverErrors.length,
-      errors: skippedList.length > 0
-        ? skippedList
-        : serverErrors.map((e: { row: number; message: string }) => ({
-            id: `err-${e.row}`,
-            rowIndex: e.row,
-            fullName: '',
-            firstName: '',
-            lastName: '',
-            email: '',
-            gender: 'NOT_SPECIFIED' as const,
-            phone: '',
-            affiliation: '',
-            countryOfOrigin: '',
-            city: '',
-            function: '',
-            experience: '',
-            facultyDepartment: '',
-            researchCareerStage: 'R1_FIRST_STAGE' as const,
-            tags: [],
-            status: 'invalid' as const,
-            errorReason: e.message,
-            resolutionAction: 'skip' as const,
-            originalData: {}
-          }))
+      errors: buildErrorReportEntries(skippedList, serverErrors)
     });
 
     setCurrentStep(4);
@@ -666,7 +657,7 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
     link.setAttribute('download', `rapport_erreurs_import_${Date.now()}.csv`);
     document.body.appendChild(link);
     link.click();
-    document.body.removeChild(link);
+    link.remove();
   };
 
   // Candidates count by status
@@ -680,6 +671,22 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
     if (filterStatus === 'invalid') return candidates.filter(c => c.status === 'invalid');
     return candidates;
   }, [candidates, filterStatus]);
+
+  const step1CircleClass = currentStep === 1
+    ? 'bg-[#005596] text-white ring-4 ring-[#005596]/30 scale-105 shadow-md'
+    : currentStep > 1 ? 'bg-[#005596] text-white' : 'bg-slate-200 text-slate-500';
+
+  const step2CircleClass = currentStep === 2
+    ? 'bg-[#005596] text-white ring-4 ring-[#005596]/30 scale-105 shadow-md'
+    : currentStep > 2 ? 'bg-[#005596] text-white' : 'bg-slate-200 text-slate-500';
+
+  const step3CircleClass = currentStep === 3
+    ? 'bg-[#005596] text-white ring-4 ring-[#005596]/30 scale-105 shadow-md'
+    : currentStep > 3 ? 'bg-[#005596] text-white' : 'bg-slate-200 text-slate-500';
+
+  const fileExtension = file?.name.endsWith('.xlsx')
+    ? '.xlsx'
+    : file?.name.endsWith('.xls') ? '.xls' : file?.name.endsWith('.json') ? '.json' : '.csv';
 
   return (
     <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-10 py-8 space-y-8 animate-fade-in">
@@ -745,11 +752,7 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
             className="flex flex-col items-center gap-1.5 z-10 cursor-pointer group bg-transparent border-0 outline-none"
             title="Aller à l'étape 1 (Chargement du fichier)"
           >
-            <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm transition-all group-hover:scale-105 ${
-              currentStep === 1 
-                ? 'bg-[#005596] text-white ring-4 ring-[#005596]/30 scale-105 shadow-md' 
-                : currentStep > 1 ? 'bg-[#005596] text-white' : 'bg-slate-200 text-slate-500'
-            }`}>
+            <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm transition-all group-hover:scale-105 ${step1CircleClass}`}>
               {currentStep > 1 ? <Check className="w-5 h-5" /> : '1'}
             </div>
             <span className={`text-[11px] font-extrabold uppercase tracking-wider transition-colors ${
@@ -775,11 +778,7 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
             }`}
             title={file && rawRows.length > 0 ? "Aller à l'étape 2 (Mappage des colonnes)" : "Chargez d'abord un fichier valide"}
           >
-            <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm transition-all ${
-              currentStep === 2 
-                ? 'bg-[#005596] text-white ring-4 ring-[#005596]/30 scale-105 shadow-md' 
-                : currentStep > 2 ? 'bg-[#005596] text-white' : 'bg-slate-200 text-slate-500'
-            } ${file && rawRows.length > 0 ? 'group-hover:scale-105' : ''}`}>
+            <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm transition-all ${step2CircleClass} ${file && rawRows.length > 0 ? 'group-hover:scale-105' : ''}`}>
               {currentStep > 2 ? <Check className="w-5 h-5" /> : '2'}
             </div>
             <span className={`text-[11px] font-extrabold uppercase tracking-wider transition-colors ${
@@ -806,11 +805,7 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
             }`}
             title={rawRows.length > 0 ? "Aller à l'étape 3 (Analyse et résolution des conflits)" : "Mappez d'abord les colonnes d'un fichier"}
           >
-            <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm transition-all ${
-              currentStep === 3 
-                ? 'bg-[#005596] text-white ring-4 ring-[#005596]/30 scale-105 shadow-md' 
-                : currentStep > 3 ? 'bg-[#005596] text-white' : 'bg-slate-200 text-slate-500'
-            } ${rawRows.length > 0 ? 'group-hover:scale-105' : ''}`}>
+            <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm transition-all ${step3CircleClass} ${rawRows.length > 0 ? 'group-hover:scale-105' : ''}`}>
               {currentStep > 3 ? <Check className="w-5 h-5" /> : '3'}
             </div>
             <span className={`text-[11px] font-extrabold uppercase tracking-wider transition-colors ${
@@ -879,6 +874,15 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
             onDragOver={(e) => e.preventDefault()}
             onDrop={handleDrop}
             onClick={() => fileInputRef.current?.click()}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                fileInputRef.current?.click();
+              }
+            }}
+            role="button"
+            tabIndex={0}
+            aria-label="Choisir un fichier de contacts"
             className={`border-3 border-dashed rounded-2xl p-6 sm:p-10 text-center cursor-pointer transition-all space-y-4 group ${
               file && !fileError
                 ? 'border-[#005596] bg-[#E8F1F8]/40'
@@ -917,7 +921,7 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
                     <div className="flex items-center gap-2 flex-wrap">
                       <p className="font-bold text-sm text-emerald-950">{file.name}</p>
                       <span className="px-2 py-0.5 bg-emerald-200/80 text-emerald-900 text-[10px] font-extrabold rounded-md uppercase">
-                        {file.name.endsWith('.xlsx') ? '.xlsx' : file.name.endsWith('.xls') ? '.xls' : file.name.endsWith('.json') ? '.json' : '.csv'}
+                        {fileExtension}
                       </span>
                       <span className="text-xs text-emerald-700 font-semibold">
                         ({(file.size / 1024).toFixed(1)} KB)
@@ -1029,7 +1033,7 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
                         <p className="text-xs text-slate-500 truncate" title={display.join(' | ')}>
                           Aperçu: <span className="italic font-mono text-slate-700">
                             {display.map((v, i) => (
-                              <span key={i}>{i > 0 && <span className="text-slate-400 not-italic"> / </span>}"{v}"</span>
+                              <span key={v}>{i > 0 && <span className="text-slate-400 not-italic"> / </span>}"{v}"</span>
                             ))}
                           </span>
                         </p>
@@ -1202,7 +1206,24 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {filteredCandidates.map(cand => (
+                  {filteredCandidates.map(cand => {
+                    const actionOptions = cand.status === 'duplicate' ? (
+                      <>
+                        <option value="overwrite">Mettre à jour</option>
+                        <option value="skip">Ignorer</option>
+                      </>
+                    ) : cand.status === 'invalid' ? (
+                      <>
+                        <option value="skip">Ignorer</option>
+                        <option value="import">Importer</option>
+                      </>
+                    ) : (
+                      <>
+                        <option value="import">Importer</option>
+                        <option value="skip">Ignorer</option>
+                      </>
+                    );
+                    return (
                     <tr 
                       key={cand.id} 
                       className={`transition-colors ${
@@ -1279,26 +1300,12 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
                           onChange={(e) => handleCandidateResolutionChange(cand.id, e.target.value as any)}
                           className="bg-white border border-[#C9D4DE] font-bold text-[10px] sm:text-xs rounded-lg sm:rounded-xl px-1.5 sm:px-3 py-1 sm:py-1.5 focus:ring-2 focus:ring-[#005596] outline-none cursor-pointer shadow-sm max-w-full"
                         >
-                          {cand.status === 'duplicate' ? (
-                            <>
-                              <option value="overwrite">Mettre à jour</option>
-                              <option value="skip">Ignorer</option>
-                            </>
-                          ) : cand.status === 'invalid' ? (
-                            <>
-                              <option value="skip">Ignorer</option>
-                              <option value="import">Importer</option>
-                            </>
-                          ) : (
-                            <>
-                              <option value="import">Importer</option>
-                              <option value="skip">Ignorer</option>
-                            </>
-                          )}
+                          {actionOptions}
                         </select>
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

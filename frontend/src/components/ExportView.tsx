@@ -180,12 +180,11 @@ export const ExportView: React.FC<ExportViewProps> = ({ selection, tags = [] }) 
             <div className="p-4 rounded-xl border-2 border-[#005596] bg-[#E8F1F8]/60">
               <div>
                 <p className="text-xs text-[#1C2529] font-bold">
-                  {targetCount !== null && selection.ids.length > 0 && selection.ids.length >= targetCount
-                    ? 'Tous les contacts'
-                    : selection.mode === 'all-filtered'
-                      ? 'Tous les contacts des filtres actifs'
-                      : 'Contacts cochés'
-                  }
+                  {(() => {
+                    if (targetCount !== null && selection.ids.length > 0 && selection.ids.length >= targetCount) return 'Tous les contacts';
+                    if (selection.mode === 'all-filtered') return 'Tous les contacts des filtres actifs';
+                    return 'Contacts cochés';
+                  })()}
                 </p>
                 <p className="text-[11px] text-[#55636B] mt-0.5 font-semibold">
                   {selection.mode === 'all-filtered'
@@ -317,9 +316,7 @@ export const ExportView: React.FC<ExportViewProps> = ({ selection, tags = [] }) 
                         <tr key={c.id}>
                           {FIELD_LABELS.filter(f => fields[f.key]).map(f => (
                             <td key={f.key} className="px-3 py-2 text-[#55636B]">
-                              {f.key === 'firstName' || f.key === 'lastName'
-                                ? getCellValue(c, f.key)
-                                : getCellValue(c, f.key)}
+                              {getCellValue(c, f.key)}
                             </td>
                           ))}
                           {includeTags && <td className="px-3 py-2 text-[#55636B]">{(c.tags || []).join('; ')}</td>}
@@ -406,16 +403,19 @@ export const ExportView: React.FC<ExportViewProps> = ({ selection, tags = [] }) 
 
 function getCellValue(c: Contact, key: FieldKey): string {
   switch (key) {
-    case 'gender':
-      return c.gender === 'FEMALE' ? 'Femme' : c.gender === 'MALE' ? 'Homme' : 'Non spécifié';
+    case 'gender': {
+      if (c.gender === 'FEMALE') return 'Femme';
+      if (c.gender === 'MALE') return 'Homme';
+      return 'Non spécifié';
+    }
     case 'researchCareerStage':
-      return c.researchCareerStage || '';
+      return String(c.researchCareerStage ?? '');
     case 'firstName':
-      return c.firstName || '';
+      return String(c.firstName ?? '');
     case 'lastName':
-      return c.lastName || '';
+      return String(c.lastName ?? '');
     default:
-      return String((c as unknown as Record<string, unknown>)[key] || '');
+      return String((c as unknown as Record<string, unknown>)[key] ?? '');
   }
 }
 

@@ -13,10 +13,10 @@ export function decodeJwt(token: string): DecodedJwt | null {
   try {
     const parts = token.split('.');
     if (parts.length !== 3 || !parts[1]) return null;
-    const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const base64 = parts[1].replaceAll('-', '+').replaceAll('_', '/');
     const padded = base64 + '='.repeat((4 - (base64.length % 4)) % 4);
     const binary = atob(padded);
-    const bytes = Uint8Array.from(binary, c => c.charCodeAt(0));
+    const bytes = Uint8Array.from(binary, c => c.codePointAt(0) ?? 0);
     return JSON.parse(new TextDecoder().decode(bytes)) as DecodedJwt;
   } catch {
     return null;

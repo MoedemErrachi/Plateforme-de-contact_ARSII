@@ -47,7 +47,7 @@ export function buildContactsListQuery(
   if (sort?.sortBy) params.set('sortBy', sort.sortBy);
   if (sort?.sortOrder) params.set('sortOrder', sort.sortOrder);
   const qs = params.toString();
-  return `/api/contacts${qs ? `?${qs}` : ''}`;
+  return qs ? `/api/contacts?${qs}` : '/api/contacts';
 }
 
 export function buildContactsExportQuery(
@@ -57,7 +57,7 @@ export function buildContactsExportQuery(
   extra?: ExportExtraParams
 ): string {
   const params = filterStateToSearchParams(filters, tags);
-  if (ids && ids.length) {
+  if (ids?.length) {
     ids.forEach(id => params.append('ids', id));
   }
   if (extra?.format) params.set('format', extra.format);
@@ -68,7 +68,7 @@ export function buildContactsExportQuery(
     params.set('includeTags', extra.includeTags ? '1' : '0');
   }
   const qs = params.toString();
-  return `/api/contacts/export${qs ? `?${qs}` : ''}`;
+  return qs ? `/api/contacts/export?${qs}` : '/api/contacts/export';
 }
 
 export function isEmptyFilterState(filters: FilterState): boolean {

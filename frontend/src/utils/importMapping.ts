@@ -32,11 +32,11 @@ export function normalizeHeader(header: string): string {
   return stripAccents(header)
     .toLowerCase()
     .trim()
-    .replace(/[_\-]+/g, ' ')
+    .replace(/[_-]+/g, ' ')
     .replace(/['\u2019]/g, ' ')
     .replace(/\s+/g, ' ')
-    .replace(/[^\w\s\/]/g, '')
-    .replace(/\//g, ' / ')
+    .replace(/[^\w\s/]/g, '')
+    .replaceAll('/', ' / ')
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -165,7 +165,7 @@ function levenshtein(a: string, b: string): number {
   if (la === 0) return lb;
   if (lb === 0) return la;
 
-  const matrix: number[][] = Array.from({ length: la + 1 }, () => Array(lb + 1).fill(0));
+  const matrix: number[][] = Array.from({ length: la + 1 }, () => new Array(lb + 1).fill(0));
   for (let i = 0; i <= la; i++) matrix[i][0] = i;
   for (let j = 0; j <= lb; j++) matrix[0][j] = j;
 
@@ -201,6 +201,16 @@ function collapse(s: string): string {
   return s.replace(/\s/g, '');
 }
 
+/** Find the first alias matching `predicate`, returning its field and length. */
+function findAlias(predicate: (alias: string) => boolean): { field: string; aliasLength: number } | null {
+  for (const [field, aliases] of Object.entries(FIELD_ALIASES)) {
+    for (const alias of aliases) {
+      if (predicate(alias)) return { field, aliasLength: alias.length };
+    }
+  }
+  return null;
+}
+
 /**
  * Predict the system field name for a single header column.
  *
@@ -216,42 +226,66 @@ export function predictMapping(header: string): MappingResult {
   const collapsedNormalized = collapse(normalized);
 
   // Phase 1: Exact match on normalized form
-  for (const [field, aliases] of Object.entries(FIELD_ALIASES)) {
-    for (const alias of aliases) {
-      if (normalized === alias) {
-        return { field, priority: 4, aliasLength: alias.length };
-      }
-    }
-  }
+  const exact = findAlias((alias) => alias === normalized);
+  if (exact) return { priority: 4, ...exact };
 
   // Phase 2: Exact match on collapsed form (handles broken encodings with extra spaces)
-  for (const [field, aliases] of Object.entries(FIELD_ALIASES)) {
-    for (const alias of aliases) {
-      if (collapsedNormalized === collapse(alias)) {
-        return { field, priority: 3, aliasLength: alias.length };
-      }
-    }
-  }
+  const collapsed = findAlias((alias) => collapse(alias) === collapsedNormalized);
+  if (collapsed) return { priority: 3, ...collapsed };
 
   // Phase 3: Fuzzy match on collapsed form
-  for (const [field, aliases] of Object.entries(FIELD_ALIASES)) {
-    for (const alias of aliases) {
-      if (fuzzyMatch(collapsedNormalized, collapse(alias))) {
-        return { field, priority: 2, aliasLength: alias.length };
-      }
-    }
-  }
+  const fuzzy = findAlias((alias) => fuzzyMatch(collapsedNormalized, collapse(alias)));
+  if (fuzzy) return { priority: 2, ...fuzzy };
 
   // Phase 4: Substring match (aliases ≥5 chars only — short aliases like "nom" are too ambiguous)
-  for (const [field, aliases] of Object.entries(FIELD_ALIASES)) {
-    for (const alias of aliases) {
-      if (alias.length >= 5 && (normalized.includes(alias) || alias.includes(normalized))) {
-        return { field, priority: 1, aliasLength: alias.length };
-      }
-    }
-  }
+  const substring = findAlias(
+    (alias) => alias.length >= 5 && (normalized.includes(alias) || alias.includes(normalized)),
+  );
+  if (substring) return { priority: 1, ...substring };
 
   return { field: '__ignore__', priority: 0, aliasLength: 0 };
+}
+
+/**
+ * Assign a mapping to `header`, resolving conflicts with higher-priority
+ * mappings already taken from other columns.
+ */
+function resolveFieldConflict(
+  header: string,
+  result: MappingResult,
+  takenFields: Record<string, { header: string; priority: number; aliasLength: number }>,
+  finalMappings: Record<string, string>,
+): void {
+  const existing = takenFields[result.field];
+  if (!existing) {
+    finalMappings[header] = result.field;
+    takenFields[result.field] = { header, priority: result.priority, aliasLength: result.aliasLength };
+    return;
+  }
+
+  const winsByPriority = result.priority > existing.priority;
+  const winsByAliasLength = result.priority === existing.priority && result.aliasLength > existing.aliasLength;
+
+  if (winsByPriority || winsByAliasLength) {
+    finalMappings[existing.header] = '__ignore__';
+    finalMappings[header] = result.field;
+    takenFields[result.field] = { header, priority: result.priority, aliasLength: result.aliasLength };
+  } else {
+    finalMappings[header] = '__ignore__';
+  }
+}
+
+/** If a fullName column is mapped, drop any separate firstName/lastName columns. */
+function applyFullNameExclusion(finalMappings: Record<string, string>): void {
+  const hasFullName = Object.values(finalMappings).includes('fullName');
+  if (!hasFullName) return;
+
+  const nameFields = new Set(['firstName', 'lastName']);
+  for (const [header, field] of Object.entries(finalMappings)) {
+    if (nameFields.has(field)) {
+      finalMappings[header] = '__ignore__';
+    }
+  }
 }
 
 /**
@@ -263,11 +297,7 @@ export function predictMapping(header: string): MappingResult {
  *   - Still tied → first column in order wins
  */
 export function predictAllMappings(headers: string[]): Record<string, string> {
-  const results: { header: string; result: MappingResult }[] = [];
-
-  for (const header of headers) {
-    results.push({ header, result: predictMapping(header) });
-  }
+  const results = headers.map(header => ({ header, result: predictMapping(header) }));
 
   const takenFields: Record<string, { header: string; priority: number; aliasLength: number }> = {};
   const finalMappings: Record<string, string> = {};
@@ -277,44 +307,10 @@ export function predictAllMappings(headers: string[]): Record<string, string> {
       finalMappings[header] = '__ignore__';
       continue;
     }
-
-    const existing = takenFields[result.field];
-    if (!existing) {
-      finalMappings[header] = result.field;
-      takenFields[result.field] = { header, priority: result.priority, aliasLength: result.aliasLength };
-    } else {
-      const winsByPriority = result.priority > existing.priority;
-      const winsByAliasLength = result.priority === existing.priority && result.aliasLength > existing.aliasLength;
-
-      if (winsByPriority || winsByAliasLength) {
-        finalMappings[existing.header] = '__ignore__';
-        finalMappings[header] = result.field;
-        takenFields[result.field] = { header, priority: result.priority, aliasLength: result.aliasLength };
-      } else {
-        finalMappings[header] = '__ignore__';
-      }
-    }
+    resolveFieldConflict(header, result, takenFields, finalMappings);
   }
 
-  // ── Post-pass: fullName ↔ firstName/lastName mutual exclusion ──
-  // If fullName is mapped, remove firstName/lastName from other columns.
-  // If firstName or lastName is mapped, remove fullName from other columns.
-  const nameFields = ['firstName', 'lastName'];
-  const fullNameHeaders = Object.entries(finalMappings)
-    .filter(([_, f]) => f === 'fullName')
-    .map(([h]) => h);
-
-  if (fullNameHeaders.length > 0) {
-    // fullName wins: reset any firstName/lastName mappings
-    for (const [header, field] of Object.entries(finalMappings)) {
-      if (nameFields.includes(field)) {
-        finalMappings[header] = '__ignore__';
-      }
-    }
-  } else {
-    // No fullName: ensure firstName/lastName are present but no fullName conflicts
-    // (already handled by same-field dedup above, no extra work needed)
-  }
+  applyFullNameExclusion(finalMappings);
 
   return finalMappings;
 }

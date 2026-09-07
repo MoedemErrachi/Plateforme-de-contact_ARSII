@@ -106,7 +106,7 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
   const countries = useMemo(() => {
     const set = new Set<string>();
     contacts.forEach(c => { if (c.countryOfOrigin && c.countryOfOrigin.trim() !== 'N/A') set.add(c.countryOfOrigin.trim()); });
-    return Array.from(set).sort();
+    return Array.from(set).sort((a, b) => a.localeCompare(b, 'fr'));
   }, [contacts]);
 
   // Helper to count contacts in segment
@@ -225,12 +225,12 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
 
   const filteredSegments = segments.filter(s => 
     s.name.toLowerCase().includes(segmentSearchQuery.toLowerCase()) ||
-    (s.description && s.description.toLowerCase().includes(segmentSearchQuery.toLowerCase()))
+    (s.description?.toLowerCase().includes(segmentSearchQuery.toLowerCase()))
   );
 
   const filteredTags = tags.filter(t =>
     t.name.toLowerCase().includes(tagSearchQuery.toLowerCase()) ||
-    (t.description && t.description.toLowerCase().includes(tagSearchQuery.toLowerCase()))
+    (t.description?.toLowerCase().includes(tagSearchQuery.toLowerCase()))
   );
 
   return (
@@ -288,8 +288,19 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
                 value={segmentSearchQuery}
                 onChange={(e) => setSegmentSearchQuery(e.target.value)}
                 placeholder="Rechercher un segment..."
-                className="w-full pl-9 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-[#005596]"
+                className="w-full pl-9 pr-9 py-2 bg-white border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-[#005596]"
               />
+              {segmentSearchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSegmentSearchQuery('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 rounded-full text-slate-500 hover:text-white hover:bg-slate-400 transition-colors cursor-pointer"
+                  title="Effacer la recherche"
+                  aria-label="Effacer la recherche"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
             </div>
 
             {showCreate && (
@@ -395,17 +406,17 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
                           <span className="px-2 py-0.5 bg-slate-100 text-slate-600 rounded text-[11px]">Tous les filtres réinitialisés</span>
                         ) : (
                           <>
-                            {f.countries && f.countries.map(country => (
+                            {f.countries?.map(country => (
                               <span key={country} className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded font-medium flex items-center gap-1">
                                 <Globe className="w-3 h-3" /> {country}
                               </span>
                             ))}
-                            {f.genders && f.genders.map(g => (
+                            {f.genders?.map(g => (
                               <span key={g} className="px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded font-medium flex items-center gap-1">
                                 <Users className="w-3 h-3" /> {GENDER_LABELS[g]}
                               </span>
                             ))}
-                            {f.careerStages && f.careerStages.map(s => (
+                            {f.careerStages?.map(s => (
                               <span key={s} className="px-2 py-0.5 bg-amber-50 text-amber-700 rounded font-medium flex items-center gap-1">
                                 <Bookmark className="w-3 h-3" /> {CAREER_STAGE_SHORT_LABELS[s]}
                               </span>
@@ -456,8 +467,19 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
                   value={tagSearchQuery}
                   onChange={(e) => setTagSearchQuery(e.target.value)}
                   placeholder="Rechercher un tag..."
-                  className="w-full pl-9 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-[#005596]"
+                  className="w-full pl-9 pr-9 py-2 bg-white border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-[#005596]"
                 />
+                {tagSearchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setTagSearchQuery('')}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 rounded-full text-slate-500 hover:text-white hover:bg-slate-400 transition-colors cursor-pointer"
+                    title="Effacer la recherche"
+                    aria-label="Effacer la recherche"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
               </div>
             </div>
 
@@ -589,8 +611,19 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
                         value={contactSearchInTagModal}
                         onChange={(e) => setContactSearchInTagModal(e.target.value)}
                         placeholder="Chercher un contact..."
-                        className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-[#005596]"
+                        className="w-full pl-9 pr-9 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-[#005596]"
                       />
+                      {contactSearchInTagModal && (
+                        <button
+                          type="button"
+                          onClick={() => setContactSearchInTagModal('')}
+                          className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 rounded-full text-slate-500 hover:text-white hover:bg-slate-400 transition-colors cursor-pointer"
+                          title="Effacer la recherche"
+                          aria-label="Effacer la recherche"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                     </div>
                   </div>
 
@@ -727,8 +760,8 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
                 </span>
 
                 {/* Country of origin */}
-                <div>
-                  <label className="font-semibold text-slate-700 block mb-1">Pays d'origine</label>
+                <fieldset>
+                  <legend className="font-semibold text-slate-700 block mb-1">Pays d'origine</legend>
                   <div className="flex flex-wrap gap-2">
                     {countries.map(country => {
                       const active = segFilters.countries.includes(country);
@@ -753,11 +786,11 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
                       );
                     })}
                   </div>
-                </div>
+                </fieldset>
 
                 {/* Genders */}
-                <div>
-                  <label className="font-semibold text-slate-700 block mb-1">Genres inclus</label>
+                <fieldset>
+                  <legend className="font-semibold text-slate-700 block mb-1">Genres inclus</legend>
                   <div className="flex flex-wrap gap-2">
                     {allGenders.map(g => {
                       const active = segFilters.genders.includes(g);
@@ -782,11 +815,11 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
                       );
                     })}
                   </div>
-                </div>
+                </fieldset>
 
                 {/* Career stages */}
-                <div>
-                  <label className="font-semibold text-slate-700 block mb-1">Stades de carrière</label>
+                <fieldset>
+                  <legend className="font-semibold text-slate-700 block mb-1">Stades de carrière</legend>
                   <div className="flex flex-wrap gap-2">
                     {allCareerStages.map(s => {
                       const active = segFilters.careerStages.includes(s);
@@ -811,12 +844,13 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
                       );
                     })}
                   </div>
-                </div>
+                </fieldset>
 
                 {/* Search keyword */}
                 <div>
-                  <label className="font-semibold text-slate-700 block mb-1">Recherche (nom, e-mail, affiliation, pays…)</label>
+                  <label htmlFor="seg-search" className="font-semibold text-slate-700 block mb-1">Recherche (nom, e-mail, affiliation, pays…)</label>
                   <input
+                    id="seg-search"
                     type="text"
                     value={segFilters.search}
                     onChange={(e) => setSegFilters({ ...segFilters, search: e.target.value })}

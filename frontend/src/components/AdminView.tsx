@@ -99,7 +99,7 @@ export const AdminView: React.FC = () => {
   // Étape 1 du formulaire : validation locale puis panneau de confirmation
   // dédié. Un doublon d'e-mail est détecté en amont : alerte sous le champ
   // au lieu d'un échec serveur après confirmation.
-  const handleCreateSubmit = (e: React.FormEvent) => {
+  const handleCreateSubmit = (e) => {
     e.preventDefault();
     const name = createForm.name.trim();
     const email = createForm.email.trim();
@@ -158,7 +158,7 @@ export const AdminView: React.FC = () => {
   );
 
   const privilegeBadge = (privilege?: Privilege | null) => {
-    const p = privilege || 'FULL_ACCESS';
+    const p: Privilege = privilege ?? 'FULL_ACCESS';
     const styles: Record<Privilege, string> = {
       READ: 'bg-amber-50 text-amber-700',
       READ_WRITE: 'bg-[#E8F1F8] text-[#005596]',
@@ -182,7 +182,7 @@ export const AdminView: React.FC = () => {
 
       {/* Recherche + filtre par rôle + création */}
       <div className="flex flex-wrap items-center gap-2">
-        <div className="relative flex-1 min-w-[220px]">
+        <div className="relative flex-1 w-full min-w-0 sm:min-w-[220px]">
           <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
           <input
             type="text"
@@ -248,15 +248,15 @@ export const AdminView: React.FC = () => {
           <Loader2 className="w-6 h-6 text-[#005596] animate-spin" />
         </div>
       ) : (
-        <div className="bg-white rounded-2xl border border-[#C9D4DE]/40 shadow-sm overflow-hidden">
-          <table className="w-full text-xs">
+        <div className="bg-white rounded-2xl border border-[#C9D4DE]/40 shadow-sm overflow-x-auto">
+          <table className="w-full min-w-[640px] text-xs">
             <thead>
               <tr className="bg-[#F4F6F8] border-b border-[#C9D4DE]/40">
                 <th className="text-left px-4 py-3 font-bold text-[#55636B]">Nom</th>
                 <th className="text-left px-4 py-3 font-bold text-[#55636B]">Email</th>
                 <th className="text-left px-4 py-3 font-bold text-[#55636B]">Rôle</th>
-                <th className="text-left px-4 py-3 font-bold text-[#55636B]">Privilège</th>
-                <th className="text-left px-4 py-3 font-bold text-[#55636B]">Dernière connexion</th>
+                <th className="text-left px-4 py-3 font-bold text-[#55636B] hidden md:table-cell">Privilège</th>
+                <th className="text-left px-4 py-3 font-bold text-[#55636B] hidden md:table-cell">Dernière connexion</th>
                 <th className="text-right px-4 py-3 font-bold text-[#55636B]">Actions</th>
               </tr>
             </thead>
@@ -272,8 +272,8 @@ export const AdminView: React.FC = () => {
                   <td className="px-4 py-3 font-bold text-[#1C2529]">{u.name}</td>
                   <td className="px-4 py-3 text-[#55636B]">{u.email}</td>
                   <td className="px-4 py-3">{roleBadge(u.role)}</td>
-                  <td className="px-4 py-3">{privilegeBadge(u.privilege)}</td>
-                  <td className="px-4 py-3 text-[#8A98A1] text-[11px]">{formatDateTime(u.lastLogin)}</td>
+                  <td className="px-4 py-3 hidden md:table-cell">{privilegeBadge(u.privilege)}</td>
+                  <td className="px-4 py-3 text-[#8A98A1] text-[11px] hidden md:table-cell">{formatDateTime(u.lastLogin)}</td>
                   <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                     <div className="flex items-center justify-end gap-1">
                       <button
@@ -309,8 +309,15 @@ export const AdminView: React.FC = () => {
 
       {/* Create User Modal */}
       {showCreateModal && (
-        <div className="fixed inset-0 z-[10000] bg-black/40 flex items-center justify-center p-4" onClick={() => !isCreating && setShowCreateModal(false)}>
-          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 space-y-4" onClick={e => e.stopPropagation()}>
+        <div
+          className="fixed inset-0 z-[10000] bg-black/40 flex items-center justify-center p-4"
+          onClick={e => { if (e.target === e.currentTarget && !isCreating) setShowCreateModal(false); }}
+          onKeyDown={e => { if ((e.key === 'Enter' || e.key === ' ') && !isCreating) setShowCreateModal(false); }}
+          role="button"
+          aria-label="Fermer"
+          tabIndex={-1}
+        >
+          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-black text-[#1C2529]">Créer un utilisateur</h2>
               <button onClick={() => setShowCreateModal(false)} className="cursor-pointer"><X className="w-4 h-4 text-[#55636B]" /></button>
@@ -331,12 +338,13 @@ export const AdminView: React.FC = () => {
             ) : (
               <form onSubmit={handleCreateSubmit} className="space-y-3">
                 <div>
-                  <label className="font-bold text-slate-700 block mb-1 text-[11px]">Nom complet *</label>
-                  <input type="text" required value={createForm.name} onChange={e => setCreateForm(p => ({ ...p, name: e.target.value }))} className="w-full p-2.5 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-[#005596]" />
+                  <label htmlFor="admin-create-name" className="font-bold text-slate-700 block mb-1 text-[11px]">Nom complet *</label>
+                  <input id="admin-create-name" type="text" required value={createForm.name} onChange={e => setCreateForm(p => ({ ...p, name: e.target.value }))} className="w-full p-2.5 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-[#005596]" />
                 </div>
                 <div>
-                  <label className="font-bold text-slate-700 block mb-1 text-[11px]">Email *</label>
+                  <label htmlFor="admin-create-email" className="font-bold text-slate-700 block mb-1 text-[11px]">Email *</label>
                   <input
+                    id="admin-create-email"
                     type="email"
                     required
                     value={createForm.email}
@@ -354,16 +362,17 @@ export const AdminView: React.FC = () => {
                   )}
                 </div>
                 <div>
-                  <label className="font-bold text-slate-700 block mb-1 text-[11px]">Rôle</label>
-                  <select value={createForm.role} onChange={e => setCreateForm(p => ({ ...p, role: e.target.value as 'user' | 'admin' }))} className="w-full p-2.5 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-[#005596]">
+                  <label htmlFor="admin-create-role" className="font-bold text-slate-700 block mb-1 text-[11px]">Rôle</label>
+                  <select id="admin-create-role" value={createForm.role} onChange={e => setCreateForm(p => ({ ...p, role: e.target.value as 'user' | 'admin' }))} className="w-full p-2.5 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-[#005596]">
                     <option value="user">Utilisateur</option>
                     <option value="admin">Administrateur</option>
                   </select>
                 </div>
                 {createForm.role === 'user' && (
                   <div>
-                    <label className="font-bold text-slate-700 block mb-1 text-[11px]">Privilège</label>
+                    <label htmlFor="admin-create-privilege" className="font-bold text-slate-700 block mb-1 text-[11px]">Privilège</label>
                     <select
+                      id="admin-create-privilege"
                       value={createForm.privilege}
                       onChange={e => setCreateForm(p => ({ ...p, privilege: e.target.value as Privilege }))}
                       className="w-full p-2.5 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-[#005596]"

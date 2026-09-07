@@ -21,8 +21,8 @@ import { isServiceUnreachable } from '../services/api';
 import { validateImageFile, uploadImage, readFileAsDataUrl } from '../utils/upload';
 
 interface NewContactViewProps {
-  onAddContact: (contact: Contact) => void;
-  onUpdateContact?: (updated: Contact) => void;
+  onAddContact: (contact: Contact) => Promise<void>;
+  onUpdateContact?: (updated: Contact) => Promise<void>;
   existingContacts?: Contact[];
   tags?: Tag[];
 }
@@ -36,6 +36,7 @@ const INVALID_INPUT_CLASS = '!border-red-400 !ring-red-400/20 focus:!border-red-
 const COUNTRY_OPTIONS = COUNTRIES.map(c => c.label);
 
 interface SearchableSelectProps {
+  id: string;
   value: string;
   onChange: (value: string) => void;
   options: string[];
@@ -43,7 +44,7 @@ interface SearchableSelectProps {
   invalid?: boolean;
 }
 
-function SearchableSelect({ value, onChange, options, placeholder, invalid = false }: SearchableSelectProps) {
+function SearchableSelect({ id, value, onChange, options, placeholder, invalid = false }: Readonly<SearchableSelectProps>) {
   const [query, setQuery] = useState(value);
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -70,6 +71,7 @@ function SearchableSelect({ value, onChange, options, placeholder, invalid = fal
   return (
     <div ref={containerRef} className="relative">
       <input
+        id={id}
         type="text"
         value={query}
         onChange={(e) => {
@@ -108,6 +110,45 @@ function SearchableSelect({ value, onChange, options, placeholder, invalid = fal
     </div>
   );
 }
+
+type FieldKey = 'firstName' | 'lastName' | 'email';
+
+const validateFormFields = (fields: Record<FieldKey, string>): Record<string, string> => {
+  const next: Record<string, string> = {};
+  if (!fields.firstName.trim()) next.firstName = 'Prénom requis';
+  if (!fields.lastName.trim()) next.lastName = 'Nom requis';
+  if (!fields.email.trim()) next.email = 'Adresse e-mail requise';
+  else if (!/^\S+@\S+\.\S+$/.test(fields.email.trim())) next.email = 'Adresse e-mail invalide';
+  return next;
+};
+
+const buildContactPayload = (
+  firstName: string, lastName: string, email: string, phone: string,
+  gender: Gender, countryOfOrigin: string, city: string, affiliation: string,
+  fonction: string, experience: string, facultyDepartment: string,
+  researchCareerStage: ResearchCareerStage, selectedTagNames: string[], avatarUrl: string | null
+) => ({
+  firstName: firstName.trim(),
+  lastName: lastName.trim(),
+  email: email.trim(),
+  phone: phone.trim(),
+  gender: gender || 'NOT_SPECIFIED',
+  countryOfOrigin: countryOfOrigin.trim() || '',
+  city: city.trim(),
+  affiliation: affiliation.trim(),
+  function: fonction.trim() || undefined,
+  experience: experience.trim() || undefined,
+  facultyDepartment: facultyDepartment.trim() || undefined,
+  researchCareerStage,
+  tags: selectedTagNames,
+  avatarUrl: avatarUrl || undefined
+});
+
+const handleContactSaveSuccess = (navigate: ReturnType<typeof useNavigate>, setIsSaving: (v: boolean) => void, setIsConfirmOpen: (v: boolean) => void) => {
+  navigate('/contacts');
+  setIsSaving(false);
+  setIsConfirmOpen(false);
+};
 
 export const NewContactView: React.FC<NewContactViewProps> = ({
   onAddContact,
@@ -233,12 +274,7 @@ export const NewContactView: React.FC<NewContactViewProps> = ({
   };
 
   const validateForm = (): boolean => {
-    const next: Record<string, string> = {};
-    if (!firstName.trim()) next.firstName = 'Prénom requis';
-    if (!lastName.trim()) next.lastName = 'Nom requis';
-    if (!email.trim()) next.email = 'Adresse e-mail requise';
-    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) next.email = 'Adresse e-mail invalide';
-
+    const next = validateFormFields({ firstName, lastName, email });
     setErrors(next);
     if (Object.keys(next).length > 0) {
       showToast('Veuillez remplir tous les champs obligatoires avant d\'enregistrer.', 'error');
@@ -256,46 +292,17 @@ export const NewContactView: React.FC<NewContactViewProps> = ({
     try {
       const fullName = formatFullName(firstName, lastName);
       const initials = `${firstName[0] || ''}${lastName[0] || ''}`.toUpperCase() || 'NC';
-
-      const basePayload = {
-        firstName: firstName.trim(),
-        lastName: lastName.trim(),
-        email: email.trim(),
-        phone: phone.trim(),
-        gender: gender || 'NOT_SPECIFIED',
-        countryOfOrigin: countryOfOrigin.trim() || '',
-        city: city.trim(),
-        affiliation: affiliation.trim(),
-        function: fonction.trim() || undefined,
-        experience: experience.trim() || undefined,
-        facultyDepartment: facultyDepartment.trim() || undefined,
-        researchCareerStage,
-        tags: selectedTagNames,
-        avatarUrl: avatarUrl || undefined
-      };
+      const payload = buildContactPayload(firstName, lastName, email, phone, gender, countryOfOrigin, city, affiliation, fonction, experience, facultyDepartment, researchCareerStage, selectedTagNames, avatarUrl);
 
       if (contactToEdit && onUpdateContact) {
-        const updatedContact: Contact = {
-          ...contactToEdit,
-          ...basePayload,
-          name: fullName,
-          initials
-        };
-
-        await onUpdateContact(updatedContact);
-        navigate('/contacts');
+        await onUpdateContact({ ...contactToEdit, ...payload, name: fullName, initials });
       } else {
-        const newContact: Contact = {
-          id: '',
-          ...basePayload,
-          name: fullName,
-          initials
-        };
-
-        await onAddContact(newContact);
-        navigate('/contacts');
+        await onAddContact({ id: '', ...payload, name: fullName, initials });
       }
-    } finally {
+      handleContactSaveSuccess(navigate, setIsSaving, setIsConfirmOpen);
+    } catch {
+      // Le handler parent (App) affiche déjà le toast d'erreur ; on reste
+      // sur la page sans naviguer. On referme simplement la modale.
       setIsSaving(false);
       setIsConfirmOpen(false);
     }
@@ -308,7 +315,7 @@ export const NewContactView: React.FC<NewContactViewProps> = ({
     setIsConfirmOpen(true);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = (e) => {
     e.preventDefault();
     requestSave();
   };
@@ -386,7 +393,7 @@ export const NewContactView: React.FC<NewContactViewProps> = ({
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
                 <div>
-                  <label className="block font-bold text-[#55636B] mb-1">Nom *</label>
+                  <label htmlFor="field-lastName" className="block font-bold text-[#55636B] mb-1">Nom *</label>
                   <input
                     id="field-lastName"
                     type="text"
@@ -403,7 +410,7 @@ export const NewContactView: React.FC<NewContactViewProps> = ({
                 </div>
 
                 <div>
-                  <label className="block font-bold text-[#55636B] mb-1">Prénom *</label>
+                  <label htmlFor="field-firstName" className="block font-bold text-[#55636B] mb-1">Prénom *</label>
                   <input
                     id="field-firstName"
                     type="text"
@@ -420,7 +427,7 @@ export const NewContactView: React.FC<NewContactViewProps> = ({
                 </div>
 
                 <div>
-                  <label className="block font-bold text-[#55636B] mb-1">Email Professionnel *</label>
+                  <label htmlFor="field-email" className="block font-bold text-[#55636B] mb-1">Email Professionnel *</label>
                   <input
                     id="field-email"
                     type="email"
@@ -437,8 +444,9 @@ export const NewContactView: React.FC<NewContactViewProps> = ({
                 </div>
 
                 <div>
-                  <label className="block font-bold text-[#55636B] mb-1">Téléphone</label>
+                  <label htmlFor="field-phone" className="block font-bold text-[#55636B] mb-1">Téléphone</label>
                   <input
+                    id="field-phone"
                     type="tel"
                     value={phone}
                     onChange={(e) => setPhone(e.target.value)}
@@ -448,8 +456,9 @@ export const NewContactView: React.FC<NewContactViewProps> = ({
                 </div>
 
                 <div>
-                  <label className="block font-bold text-[#55636B] mb-1">Genre</label>
+                  <label htmlFor="field-gender" className="block font-bold text-[#55636B] mb-1">Genre</label>
                   <select
+                    id="field-gender"
                     value={gender}
                     onChange={(e) => setGender(e.target.value as Gender)}
                     className={`${INPUT_CLASS} bg-white`}
@@ -461,8 +470,9 @@ export const NewContactView: React.FC<NewContactViewProps> = ({
                 </div>
 
                 <div>
-                  <label className="block font-bold text-[#55636B] mb-1">Stade de carrière</label>
+                  <label htmlFor="field-career-stage" className="block font-bold text-[#55636B] mb-1">Stade de carrière</label>
                   <select
+                    id="field-career-stage"
                     value={researchCareerStage}
                     onChange={(e) => setResearchCareerStage(e.target.value as ResearchCareerStage)}
                     className={`${INPUT_CLASS} bg-white`}
@@ -513,8 +523,9 @@ export const NewContactView: React.FC<NewContactViewProps> = ({
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
                 <div>
-                  <label className="block font-bold text-[#55636B] mb-1">Pays d'origine</label>
+                  <label htmlFor="field-country" className="block font-bold text-[#55636B] mb-1">Pays d'origine</label>
                   <SearchableSelect
+                    id="field-country"
                     value={countryOfOrigin}
                     onChange={handleCountryChange}
                     options={COUNTRY_OPTIONS}
@@ -523,8 +534,9 @@ export const NewContactView: React.FC<NewContactViewProps> = ({
                 </div>
 
                 <div>
-                  <label className="block font-bold text-[#55636B] mb-1">Ville</label>
+                  <label htmlFor="field-city" className="block font-bold text-[#55636B] mb-1">Ville</label>
                   <input
+                    id="field-city"
                     type="text"
                     value={city}
                     onChange={(e) => setCity(e.target.value)}
@@ -548,8 +560,9 @@ export const NewContactView: React.FC<NewContactViewProps> = ({
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
                 <div className="md:col-span-2">
-                  <label className="block font-bold text-[#55636B] mb-1">Affiliation (Organisation)</label>
+                  <label htmlFor="field-affiliation" className="block font-bold text-[#55636B] mb-1">Affiliation (Organisation)</label>
                   <input
+                    id="field-affiliation"
                     type="text"
                     value={affiliation}
                     onChange={(e) => setAffiliation(e.target.value)}
@@ -559,8 +572,9 @@ export const NewContactView: React.FC<NewContactViewProps> = ({
                 </div>
 
                 <div>
-                  <label className="block font-bold text-[#55636B] mb-1">Fonction</label>
+                  <label htmlFor="field-fonction" className="block font-bold text-[#55636B] mb-1">Fonction</label>
                   <input
+                    id="field-fonction"
                     type="text"
                     value={fonction}
                     onChange={(e) => setFonction(e.target.value)}
@@ -570,8 +584,9 @@ export const NewContactView: React.FC<NewContactViewProps> = ({
                 </div>
 
                 <div>
-                  <label className="block font-bold text-[#55636B] mb-1">Expérience</label>
+                  <label htmlFor="field-experience" className="block font-bold text-[#55636B] mb-1">Expérience</label>
                   <input
+                    id="field-experience"
                     type="text"
                     value={experience}
                     onChange={(e) => setExperience(e.target.value)}
@@ -581,8 +596,9 @@ export const NewContactView: React.FC<NewContactViewProps> = ({
                 </div>
 
                 <div className="md:col-span-2">
-                  <label className="block font-bold text-[#55636B] mb-1">Faculté / Département</label>
+                  <label htmlFor="field-faculty" className="block font-bold text-[#55636B] mb-1">Faculté / Département</label>
                   <input
+                    id="field-faculty"
                     type="text"
                     value={facultyDepartment}
                     onChange={(e) => setFacultyDepartment(e.target.value)}

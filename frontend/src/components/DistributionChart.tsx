@@ -37,7 +37,9 @@ interface HoveredSegment {
 }
 
 function toGender(value?: string): Gender {
-  return value === 'MALE' ? 'MALE' : value === 'FEMALE' ? 'FEMALE' : 'NOT_SPECIFIED';
+  if (value === 'MALE') return 'MALE';
+  if (value === 'FEMALE') return 'FEMALE';
+  return 'NOT_SPECIFIED';
 }
 
 export const DistributionChart: React.FC<DistributionChartProps> = ({ contacts, serverData }) => {
