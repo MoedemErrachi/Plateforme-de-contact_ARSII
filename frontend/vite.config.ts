@@ -15,8 +15,8 @@ export default defineConfig(() => {
         provider: 'v8',
         reporter: ['text', 'lcov'],
         reportsDirectory: 'coverage',
-        include: ['src/utils/format.ts', 'src/utils/formatFieldValue.ts', 'src/utils/privileges.ts', 'src/utils/jwt.ts', 'src/utils/contactQuery.ts', 'src/utils/mapContact.ts'],
-        exclude: ['tests/**', 'node_modules/**'],
+        include: ['src/**/*.{ts,tsx}'],
+        exclude: ['tests/**', 'node_modules/**', 'src/main.tsx', 'src/vite-env.d.ts', 'src/types/**'],
       },
     },
     build: {
