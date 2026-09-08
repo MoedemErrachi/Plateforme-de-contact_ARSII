@@ -268,12 +268,28 @@ const CompletionSidebar: React.FC<CompletionSidebarProps> = ({
 
 type FieldKey = 'firstName' | 'lastName' | 'email';
 
+const isValidEmailFormat = (email: string): boolean => {
+  const value = email.trim();
+  if (!value || value.length > 254 || /\s/.test(value)) return false;
+  let at = -1;
+  for (let i = 0; i < value.length; i += 1) {
+    if (value[i] === '@') {
+      if (at !== -1) return false;
+      at = i;
+    }
+  }
+  if (at <= 0 || at === value.length - 1) return false;
+  const afterAt = value.slice(at + 1);
+  const dot = afterAt.lastIndexOf('.');
+  return dot > 0 && dot < afterAt.length - 1;
+};
+
 const validateFormFields = (fields: Record<FieldKey, string>): Record<string, string> => {
   const next: Record<string, string> = {};
   if (!fields.firstName.trim()) next.firstName = 'Prénom requis';
   if (!fields.lastName.trim()) next.lastName = 'Nom requis';
   if (!fields.email.trim()) next.email = 'Adresse e-mail requise';
-  else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(fields.email.trim())) next.email = 'Adresse e-mail invalide';
+  else if (!isValidEmailFormat(fields.email.trim())) next.email = 'Adresse e-mail invalide';
   return next;
 };
 

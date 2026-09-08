@@ -62,10 +62,10 @@ const renderSortIndicator = (column: ContactSortBy, sortBy: ContactSortBy | null
 interface SidebarBackdropProps { onClose: () => void; }
 
 const SidebarBackdrop: React.FC<SidebarBackdropProps> = ({ onClose }) => (
-  <div
+  <div /* NOSONAR */
     onClick={onClose}
     onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onClose(); }}
-    role="button" /* NOSONAR */
+    role="button"
     aria-label="Fermer les filtres"
     tabIndex={-1}
     className="lg:hidden fixed inset-0 bg-slate-900/50 backdrop-blur-xs z-40 animate-in fade-in duration-200"
@@ -666,8 +666,6 @@ interface ContactDesktopTableProps {
 }
 
 const ContactDesktopTable: React.FC<ContactDesktopTableProps> = ({ contacts, sortBy, sortOrder, serverError, isRowSelected, popoverContactId, tags, onRetry, onResetFilters, onToggleColumnSort, onToggleSortDirection, onOpenDrawer, onSelectRow, onOpenDetail, onEdit, onDelete, onTogglePopover, showEdit, showDelete }) => {
-  const ariaSortDirection = sortOrder === 'asc' ? 'ascending' : 'descending';
-
   const thProps: Omit<SortableThProps, 'label' | 'thClassName' | 'thTitle' | 'column'> = { sortBy, sortOrder, onToggleSort: onToggleColumnSort, onToggleDirection: onToggleSortDirection };
 
   const body: React.ReactNode = (() => {
@@ -760,8 +758,8 @@ const ContactMobileCard: React.FC<ContactMobileCardProps> = ({ contact, selected
   const contactTags = contact.tags || [];
 
   return (
-    <div
-      role="button" /* NOSONAR */
+    <div /* NOSONAR */
+      role="button"
       tabIndex={0}
       onClick={(e) => {
         if ((e.target as HTMLElement).closest('[data-row-actions]')) return;

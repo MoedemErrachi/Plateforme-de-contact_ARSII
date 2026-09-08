@@ -641,6 +641,7 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
                         return (
                           <label
                             key={contact.id}
+                            aria-label={`Sélectionner ${contact.name}`}
                             htmlFor={`tag-contact-${contact.id}`}
                             className="py-3 flex items-center justify-between hover:bg-slate-50 px-2 rounded-lg cursor-pointer transition-colors"
                           >

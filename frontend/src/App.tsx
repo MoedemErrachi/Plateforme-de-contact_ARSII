@@ -299,8 +299,16 @@ const AuthenticatedRoutes: React.FC<{
 // --- Selection restore helpers (extracted to reduce cognitive complexity) ---
 function resolveSelectionMode(rawMode: string, ids: string[]): SelectionMode {
   const validModes: string[] = ['none', 'page', 'partial', 'all-filtered'];
-  const mode = validModes.includes(rawMode) ? (rawMode as SelectionMode) : (ids.length ? 'partial' as SelectionMode : 'none');
-  return (mode === 'page' || mode === 'all-filtered') ? (ids.length ? 'partial' : 'none') : mode;
+  let mode: SelectionMode;
+  if (validModes.includes(rawMode)) {
+    mode = rawMode as SelectionMode;
+  } else {
+    mode = ids.length ? 'partial' : 'none';
+  }
+  if (mode === 'page' || mode === 'all-filtered') {
+    return ids.length ? 'partial' : 'none';
+  }
+  return mode;
 }
 
 function restoreLegacySelection(parsed: any[]): ContactSelection {

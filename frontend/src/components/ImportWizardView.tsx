@@ -46,6 +46,11 @@ export interface RawRowData {
   originalData: Record<string, string>;
 }
 
+type CandidateStatus = 'valid' | 'duplicate' | 'invalid';
+type CandidateResolution = 'import' | 'overwrite' | 'skip';
+type CandidateEditableField = 'email' | 'fullName' | 'affiliation';
+type CandidateFilterStatus = 'all' | 'valid' | 'duplicate' | 'invalid';
+
 export interface ParsedContactCandidate {
   id: string;
   rowIndex: number;
@@ -65,10 +70,10 @@ export interface ParsedContactCandidate {
   tags: string[];
 
   // Validation and Conflict Status
-  status: 'valid' | 'duplicate' | 'invalid';
+  status: CandidateStatus;
   errorReason?: string;
   duplicateMatch?: Contact;
-  resolutionAction: 'import' | 'overwrite' | 'skip';
+  resolutionAction: CandidateResolution;
 }
 
 interface SystemFieldDef {
@@ -198,7 +203,7 @@ const classifyRowStatus = (
   lastName: string,
   fullNameVal: string,
   deps: AnalyzeRowDeps
-): { status: 'valid' | 'duplicate' | 'invalid'; errorReason?: string; duplicateMatch?: Contact } => {
+): { status: CandidateStatus; errorReason?: string; duplicateMatch?: Contact } => {
   const cleanEmail = email.toLowerCase();
   const isDuplicate = Boolean(cleanEmail && deps.duplicateEmails.has(cleanEmail));
   const duplicateMatch: Contact | undefined = isDuplicate
@@ -249,7 +254,7 @@ const analyzeSingleRow = (
 
   const classification = classifyRowStatus(email, firstName, lastName, fullNameVal, deps);
 
-  let resolutionAction: 'import' | 'overwrite' | 'skip';
+  let resolutionAction: CandidateResolution;
   if (classification.status === 'duplicate') resolutionAction = 'overwrite';
   else if (classification.status === 'invalid') resolutionAction = 'skip';
   else resolutionAction = 'import';
@@ -335,7 +340,7 @@ const applyColumnMappingChange = (columnMapping: Record<string, string>, header:
   return updated;
 };
 
-const updateCandidateInline = (c: ParsedContactCandidate, id: string, field: 'email' | 'fullName' | 'affiliation', val: string, serverDuplicateEmails: Set<string>): ParsedContactCandidate => {
+const updateCandidateInline = (c: ParsedContactCandidate, id: string, field: CandidateEditableField, val: string, serverDuplicateEmails: Set<string>): ParsedContactCandidate => {
   if (c.id !== id) return c;
   const updated = { ...c, [field]: val };
 
@@ -373,13 +378,13 @@ const updateCandidateInline = (c: ParsedContactCandidate, id: string, field: 'em
   return updated;
 };
 
-const setCandidateResolution = (c: ParsedContactCandidate, id: string, action: 'import' | 'overwrite' | 'skip'): ParsedContactCandidate =>
+const setCandidateResolution = (c: ParsedContactCandidate, id: string, action: CandidateResolution): ParsedContactCandidate =>
   c.id === id ? { ...c, resolutionAction: action } : c;
 
 const applyBulkCandidateAction = (c: ParsedContactCandidate, action: 'overwrite' | 'skip'): ParsedContactCandidate =>
   c.status === 'duplicate' ? { ...c, resolutionAction: action } : c;
 
-const filterCandidatesByStatus = (candidates: ParsedContactCandidate[], filterStatus: 'all' | 'valid' | 'duplicate' | 'invalid'): ParsedContactCandidate[] => {
+const filterCandidatesByStatus = (candidates: ParsedContactCandidate[], filterStatus: CandidateFilterStatus): ParsedContactCandidate[] => {
   if (filterStatus === 'valid') return candidates.filter(c => c.status === 'valid');
   if (filterStatus === 'duplicate') return candidates.filter(c => c.status === 'duplicate');
   if (filterStatus === 'invalid') return candidates.filter(c => c.status === 'invalid');
@@ -699,12 +704,12 @@ const FileStepView = (p: {
       )}
 
       {/* Drag & Drop Box */}
-      <div
+      <div /* NOSONAR */
         onDragOver={(e) => e.preventDefault()}
         onDrop={p.onDrop}
         onClick={p.onOpenFilePicker}
         onKeyDown={(e) => handlePickerKeyDown(e, p.onOpenFilePicker)}
-        role="button" /* NOSONAR — zone de dépôt accessible (clic + clavier + drag & drop) */
+        role="button"
         tabIndex={0}
         aria-label="Choisir un fichier de contacts"
         className={`border-3 border-dashed rounded-2xl p-6 sm:p-10 text-center cursor-pointer transition-all space-y-4 group ${
@@ -948,7 +953,7 @@ const MappingStepView = (p: {
   );
 };
 
-const ACTION_OPTIONS: Record<'valid' | 'duplicate' | 'invalid', Array<{ value: string; label: string }>> = {
+const ACTION_OPTIONS: Record<CandidateStatus, Array<{ value: string; label: string }>> = {
   duplicate: [
     { value: 'overwrite', label: 'Mettre à jour' },
     { value: 'skip', label: 'Ignorer' }
@@ -994,8 +999,8 @@ const CandidateStatusBadgeView = ({ cand }: { cand: ParsedContactCandidate }) =>
 
 const CandidateRowView = (p: {
   cand: ParsedContactCandidate;
-  onUpdateField: (id: string, field: 'email' | 'fullName' | 'affiliation', val: string) => void;
-  onResolutionChange: (id: string, action: 'import' | 'overwrite' | 'skip') => void;
+  onUpdateField: (id: string, field: CandidateEditableField, val: string) => void;
+  onResolutionChange: (id: string, action: CandidateResolution) => void;
 }) => {
   let rowClass = 'hover:bg-slate-50';
   if (p.cand.status === 'duplicate') rowClass = 'bg-amber-50/40 hover:bg-amber-50/80';
@@ -1057,16 +1062,16 @@ const CandidateRowView = (p: {
 const ConflictStepView = (p: {
   candidates: ParsedContactCandidate[];
   filteredCandidates: ParsedContactCandidate[];
-  filterStatus: 'all' | 'valid' | 'duplicate' | 'invalid';
+  filterStatus: CandidateFilterStatus;
   validCount: number;
   duplicateCount: number;
   invalidCount: number;
   isExecuting: boolean;
   importError: string | null;
-  onFilterChange: (f: 'all' | 'valid' | 'duplicate' | 'invalid') => void;
+  onFilterChange: (f: CandidateFilterStatus) => void;
   onBulkAction: (a: 'overwrite' | 'skip') => void;
-  onUpdateField: (id: string, field: 'email' | 'fullName' | 'affiliation', val: string) => void;
-  onResolutionChange: (id: string, action: 'import' | 'overwrite' | 'skip') => void;
+  onUpdateField: (id: string, field: CandidateEditableField, val: string) => void;
+  onResolutionChange: (id: string, action: CandidateResolution) => void;
   onBackToMapping: () => void;
   onExecute: () => void;
   onCloseError: () => void;
@@ -1294,7 +1299,7 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
   
   // Row Analysis & Candidates State
   const [candidates, setCandidates] = useState<ParsedContactCandidate[]>([]);
-  const [filterStatus, setFilterStatus] = useState<'all' | 'valid' | 'duplicate' | 'invalid'>('all');
+  const [filterStatus, setFilterStatus] = useState<CandidateFilterStatus>('all');
   
   // Step 4 Final State
   const [isExecuting, setIsExecuting] = useState(false);
@@ -1510,12 +1515,12 @@ export const ImportWizardView: React.FC<ImportWizardViewProps> = ({
   }, [rawRows, columnMapping, existingContacts, autoGenerateEmails]);
 
   // Resolution action change for a candidate in Step 3
-  const handleCandidateResolutionChange = (id: string, action: 'import' | 'overwrite' | 'skip') => {
+  const handleCandidateResolutionChange = (id: string, action: CandidateResolution) => {
     setCandidates(prev => prev.map(c => setCandidateResolution(c, id, action)));
   };
 
   // Inline edit handler for candidate fields
-  const handleUpdateCandidateField = (id: string, field: 'email' | 'fullName' | 'affiliation', val: string) => {
+  const handleUpdateCandidateField = (id: string, field: CandidateEditableField, val: string) => {
     setCandidates(prev => prev.map(c => updateCandidateInline(c, id, field, val, serverDuplicateEmailsRef.current)));
   };
 
