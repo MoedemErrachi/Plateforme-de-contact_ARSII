@@ -44,6 +44,9 @@ export const ModalConfirmation: React.FC<ModalConfirmationProps> = ({
     try {
       setIsSubmitting(true);
       await onConfirm();
+    } catch {
+      // L'échec de l'action est géré par le module appelant (toast/état).
+      // On laisse simplement le modal revenir à son état initial.
     } finally {
       setIsSubmitting(false);
     }

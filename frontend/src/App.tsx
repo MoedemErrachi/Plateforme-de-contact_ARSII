@@ -891,7 +891,7 @@ export default function App() {
           description: newTag.description
         })
       });
-      setTags(prev => [...prev, res.data.tag ?? newTag]);
+      setTags(prev => [...prev, res.data?.tag ?? newTag]);
     } catch (err: any) {
       console.error('Error creating tag:', err.message);
       if (!isServiceUnreachable(err)) showToast(`Erreur lors de la création du tag : ${err.message}`, 'error');
@@ -941,7 +941,11 @@ export default function App() {
         method: 'PUT',
         body: JSON.stringify({ contactIds })
       });
-      const savedTag = res.data.tag;
+      const savedTag = res.data?.tag;
+      if (!savedTag) {
+        showToast("Réponse serveur invalide : tag non retourné.", 'error');
+        return;
+      }
       const savedContactIds = new Set((savedTag.contacts || []).map((rel: any) => rel.contactId));
       setContacts(prev => prev.map(c => {
         const currentTags = c.tags || [];

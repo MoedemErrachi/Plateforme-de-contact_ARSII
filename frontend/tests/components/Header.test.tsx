@@ -7,7 +7,7 @@ import { User } from '../../src/types';
 function renderHeader(overrides: Partial<React.ComponentProps<typeof Header>> = {}) {
   const props = {
     isAuthenticated: true,
-    user: { id: '1', name: 'Jean Pierre Dupont', email: 'jpd@x.fr', role: 'researcher', privilege: 'FULL_ACCESS' } as User,
+    user: { id: '1', name: 'Jean Pierre Dupont', email: 'jpd@x.fr', role: 'user', privilege: 'FULL_ACCESS' } as User,
     onLogout: vi.fn(),
     onExportAll: vi.fn(),
     ...overrides
@@ -70,7 +70,7 @@ describe('Header', () => {
   });
 
   it('does not show the create link for a READ-only user', () => {
-    renderHeader({ user: { id: '1', name: 'Lecteur', email: 'l@x.fr', role: 'researcher', privilege: 'READ' } as User });
+    renderHeader({ user: { id: '1', name: 'Lecteur', email: 'l@x.fr', role: 'user', privilege: 'READ' } as User });
     const header = screen.getByRole('banner');
     fireEvent.click(header.querySelector('button.rounded-full') as HTMLElement);
     expect(screen.queryByRole('link', { name: 'Nouveau contact' })).not.toBeInTheDocument();

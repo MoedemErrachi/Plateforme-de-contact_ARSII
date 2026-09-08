@@ -11,6 +11,13 @@ export default defineConfig(() => {
       globals: true,
       setupFiles: './tests/setup.ts',
       include: ['tests/**/*.test.{ts,tsx}'],
+      testTimeout: 15000,
+      hookTimeout: 20000,
+      // Les tests rendent des widgets ECharts lourds ; limiter la parallélisation
+      // évite la sur-sollicitation CPU qui rend les assertions async aléatoires
+      // (races de timing) sous charge. 4 workers laissent de la marge sur 12 cœurs.
+      maxWorkers: 4,
+      minWorkers: 2,
       coverage: {
         provider: 'v8',
         reporter: ['text', 'lcov'],
