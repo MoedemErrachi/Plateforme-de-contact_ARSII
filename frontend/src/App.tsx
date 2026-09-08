@@ -599,6 +599,14 @@ export default function App() {
   // attendre ni déclencher d'autres appels API.
   useEffect(() => {
     const onAuthExpired = () => {
+      // Anti-course post-login : dans la fenêtre AUTH_LINK_SUPPRESSION_MS qui
+      // suit un login réussi, une requête partie avec un jeton STALE (cookie
+      // HttpOnly obsolète, /me lancée avant la connexion…) peut encore recevoir
+      // un 401. Cette réponse parasite ne doit pas déconnecter la session qui
+      // vient d'être établie — on l'ignore, comme le fait PublicOnlyRoute.
+      if (Date.now() - lastLoginAtRef.current < AUTH_LINK_SUPPRESSION_MS) {
+        return;
+      }
       setUser(null);
       setIsAuthenticated(false);
       setAuthToken(null);
@@ -614,7 +622,7 @@ export default function App() {
     };
     window.addEventListener('auth:expired', onAuthExpired);
     return () => window.removeEventListener('auth:expired', onAuthExpired);
-  }, [navigate, showToast]);
+  }, [navigate, showToast, lastLoginAtRef]);
 
   // ──────────────────────────────────────────────
   // AUTH

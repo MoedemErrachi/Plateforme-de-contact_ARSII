@@ -1025,6 +1025,35 @@ describe('App - Handler & Effect Coverage', () => {
       await new Promise(r => setTimeout(r, 200));
       expect(screen.queryByText('Votre session a expiré. Veuillez vous reconnecter.')).not.toBeInTheDocument();
     });
+
+    it('ignores auth:expired within the post-login suppression window', async () => {
+      mockGetAuthToken.mockReturnValue(null);
+      mockApiFetch.mockImplementation(async (path: string) => {
+        if (path === '/api/auth/login') return { token: 'fresh-token', user: regularUser };
+        if (path.startsWith('/api/contacts')) return { data: { contacts: [] } };
+        if (path === '/api/segments') return { data: { tags: [], segments: [] } };
+        return {};
+      });
+      renderApp(['/login']);
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /se connecter/i })).toBeInTheDocument();
+      });
+      fireEvent.change(screen.getByLabelText(/identifiant/i), { target: { value: 'jean@example.com' } });
+      fireEvent.change(screen.getByLabelText(/mot de passe/i), { target: { value: 'secret' } });
+      fireEvent.click(screen.getByRole('button', { name: /se connecter/i }));
+      await waitFor(() => {
+        expect(screen.getByTestId('mock-dashboard')).toBeInTheDocument();
+      });
+      // Requête arrivée en retard avec un jeton stale juste après le login :
+      // le 401 ne doit pas déconnecter la session qui vient d'être établie.
+      act(() => {
+        window.dispatchEvent(new Event('auth:expired'));
+      });
+      await new Promise(r => setTimeout(r, 100));
+      expect(screen.getByTestId('mock-dashboard')).toBeInTheDocument();
+      expect(mockClearStoredAuth).not.toHaveBeenCalled();
+      expect(screen.queryByText('Votre session a expiré. Veuillez vous reconnecter.')).not.toBeInTheDocument();
+    });
   });
 
   describe('Data loading errors', () => {

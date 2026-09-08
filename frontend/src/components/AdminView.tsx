@@ -249,7 +249,7 @@ export const AdminView: React.FC = () => {
         </div>
       ) : (
         <div className="bg-white rounded-2xl border border-[#C9D4DE]/40 shadow-sm overflow-x-auto">
-          <table className="w-full min-w-[640px] text-xs">
+          <table className="w-full min-w-[560px] text-xs">
             <thead>
               <tr className="bg-[#F4F6F8] border-b border-[#C9D4DE]/40">
                 <th className="text-left px-4 py-3 font-bold text-[#55636B]">Nom</th>
@@ -257,7 +257,7 @@ export const AdminView: React.FC = () => {
                 <th className="text-left px-4 py-3 font-bold text-[#55636B]">Rôle</th>
                 <th className="text-left px-4 py-3 font-bold text-[#55636B] hidden md:table-cell">Privilège</th>
                 <th className="text-left px-4 py-3 font-bold text-[#55636B] hidden md:table-cell">Dernière connexion</th>
-                <th className="text-right px-4 py-3 font-bold text-[#55636B]">Actions</th>
+                <th className="sticky right-0 bg-[#F4F6F8] text-right px-4 py-3 font-bold text-[#55636B] shadow-[-8px_0_8px_-8px_rgba(0,0,0,0.12)]">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -274,7 +274,7 @@ export const AdminView: React.FC = () => {
                   <td className="px-4 py-3">{roleBadge(u.role)}</td>
                   <td className="px-4 py-3 hidden md:table-cell">{privilegeBadge(u.privilege)}</td>
                   <td className="px-4 py-3 text-[#8A98A1] text-[11px] hidden md:table-cell">{formatDateTime(u.lastLogin)}</td>
-                  <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
+                  <td className="sticky right-0 bg-white px-4 py-3 shadow-[-8px_0_8px_-8px_rgba(0,0,0,0.12)]" onClick={e => e.stopPropagation()}>
                     <div className="flex items-center justify-end gap-1">
                       <button
                         onClick={() => openUserDetails(u)}

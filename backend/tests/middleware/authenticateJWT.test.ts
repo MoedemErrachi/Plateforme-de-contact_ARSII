@@ -88,6 +88,19 @@ describe('authenticateJWT', () => {
     expect(res.status).toBe(200);
   });
 
+  it('préfère un en-tête Authorization frais à un cookie obsolète', async () => {
+    prismaMock.user.findUnique.mockResolvedValueOnce({ id: 'u1', tokenVersion: 99, role: 'user', privilege: null });
+    // Cookie stale : tokenVersion 0 → TOKEN_VERSION_MISMATCH. En-tête frais :
+    // tokenVersion 99 → valide. L'en-tête doit primer sur le cookie.
+    const staleCookie = signToken({ id: 'u1', email: 'a@b.c', name: 'A', role: 'user', tokenVersion: 0 });
+    const freshHeader = signToken({ id: 'u1', email: 'a@b.c', name: 'A', role: 'user', tokenVersion: 99 });
+    const res = await request(appWithMiddleware())
+      .get('/protected')
+      .set('Cookie', [`accessToken=${staleCookie}`])
+      .set('Authorization', `Bearer ${freshHeader}`);
+    expect(res.status).toBe(200);
+  });
+
   it('stoppe le démarrage si JWT_SECRET est absent', async () => {
     const exitSpy = vi.spyOn(process, 'exit').mockImplementation((() => undefined) as any);
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});

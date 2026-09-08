@@ -74,6 +74,20 @@ describe('AdminView', () => {
     expect(screen.getByText('utilisateur(s)')).toBeInTheDocument();
   });
 
+  it('pins the Actions column to the right edge for small screens', async () => {
+    renderAdminView();
+    await screen.findByText('Alice Dupont');
+    const header = screen.getByRole('columnheader', { name: 'Actions' });
+    expect(header).toHaveClass('sticky', 'right-0', 'bg-[#F4F6F8]');
+    const actionCells = screen
+      .getAllByTitle('Consulter')
+      .map(btn => btn.closest('td'));
+    expect(actionCells.length).toBeGreaterThan(0);
+    for (const cell of actionCells) {
+      expect(cell).toHaveClass('sticky', 'right-0', 'bg-white');
+    }
+  });
+
   it('displays an empty message when the API returns no users', async () => {
     const emptyMock = vi.fn(() => Promise.resolve(fakeJsonResponse({ users: [] })));
     vi.stubGlobal('fetch', emptyMock);
