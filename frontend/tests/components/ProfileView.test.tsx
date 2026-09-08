@@ -69,7 +69,7 @@ describe('ProfileView', () => {
 
   it('shows the avatar image when avatarUrl is set', () => {
     renderProfile({ ...baseUser, avatarUrl: 'https://img.test/a.png' });
-    const img = screen.getByAltText('Photo de profil');
+    const img = screen.getByAltText('Avatar de profil');
     expect(img).toHaveAttribute('src', 'https://img.test/a.png');
   });
 

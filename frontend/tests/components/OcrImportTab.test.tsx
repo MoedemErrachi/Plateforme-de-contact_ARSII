@@ -391,7 +391,7 @@ describe('OcrImportTab', () => {
         screen.getByText(/Photo de profil détectée automatiquement/),
       ).toBeInTheDocument();
     });
-    expect(screen.getByAltText('Photo détectée')).toBeInTheDocument();
+    expect(screen.getByAltText('Visage détecté')).toBeInTheDocument();
   });
 
   it('passes the prefixed photo avatar when saving with a detected photoUrl', async () => {

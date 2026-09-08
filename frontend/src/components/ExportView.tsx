@@ -414,8 +414,11 @@ function getCellValue(c: Contact, key: FieldKey): string {
       return String(c.firstName ?? '');
     case 'lastName':
       return String(c.lastName ?? '');
-    default:
-      return String((c as unknown as Record<string, unknown>)[key] ?? '');
+    default: {
+      const raw = (c as unknown as Record<string, unknown>)[key];
+      if (raw == null) return '';
+      return typeof raw === 'object' ? JSON.stringify(raw) : String(raw);
+    }
   }
 }
 

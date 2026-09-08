@@ -112,6 +112,79 @@ async function resolveAvatarUrl(croppedPreview: string | null, photoUrl: string 
   return null;
 }
 
+function saveButtonLabel(isSaving: boolean, saveResult: 'success' | null): string {
+  if (isSaving) return 'Enregistrement...';
+  return saveResult === 'success' ? 'Enregistré !' : 'Enregistrer le contact';
+}
+
+interface CropFrameProps {
+  imagePreview: string | null;
+  cropRect: { x: number; y: number; w: number; h: number };
+  cropImgRef: React.RefObject<HTMLImageElement>;
+  isCropping: boolean;
+  onMoveDown: (e: React.MouseEvent) => void;
+  onResizeDown: (e: React.MouseEvent) => void;
+  onKeyDownMove: (e: React.KeyboardEvent) => void;
+  onKeyDownResize: (e: React.KeyboardEvent) => void;
+  onApply: () => void;
+  onCancel: () => void;
+}
+
+const CropFrame: React.FC<CropFrameProps> = (props) => {
+  const { imagePreview, cropRect, cropImgRef, isCropping, onMoveDown, onResizeDown, onKeyDownMove, onKeyDownResize, onApply, onCancel } = props;
+  const cornerClassByPos: Record<string, string> = {
+    'top-left': 'top-0 left-0 border-t-2 border-l-2',
+    'top-right': 'top-0 right-0 border-t-2 border-r-2',
+    'bottom-left': 'bottom-0 left-0 border-b-2 border-l-2',
+  };
+  return (
+    <div className="space-y-3">
+      <p className="text-xs font-bold text-[#55636B] flex items-center gap-1.5"><Move className="w-3.5 h-3.5" /> Déplacez et redimensionnez le cadre de recadrage</p>
+      <div className="relative inline-block max-w-full rounded-xl overflow-hidden border border-[#C9D4DE]/50 select-none">
+        <img ref={cropImgRef} src={imagePreview || ''} alt="Recadrage" className="block max-h-[50vh] w-full object-contain pointer-events-none" draggable={false} />
+        {/* Dark overlay */}
+        <div className="absolute inset-0 pointer-events-none" style={{
+          background: `linear-gradient(to right, rgba(0,0,0,0.55) ${cropRect.x}%, transparent ${cropRect.x}%, transparent ${cropRect.x + cropRect.w}%, rgba(0,0,0,0.55) ${cropRect.x + cropRect.w}%),
+            linear-gradient(to bottom, rgba(0,0,0,0.55) ${cropRect.y}%, transparent ${cropRect.y}%, transparent ${cropRect.y + cropRect.h}%, rgba(0,0,0,0.55) ${cropRect.y + cropRect.h}%)`
+        }} />
+        {/* Crop frame — widget de recadrage personnalisé (déplacement souris/clavier) */}
+        <div /* NOSONAR */
+          className="absolute border-2 border-white/90 cursor-move shadow-lg"
+          style={{ left: `${cropRect.x}%`, top: `${cropRect.y}%`, width: `${cropRect.w}%`, height: `${cropRect.h}%` }}
+          onMouseDown={onMoveDown}
+          role="button"
+          tabIndex={0}
+          aria-label="Cadre de recadrage"
+          onKeyDown={onKeyDownMove}
+        >
+          {/* Resize handle (bottom-right corner) */}
+          <div /* NOSONAR */
+            className="absolute bottom-0 right-0 w-4 h-4 cursor-se-resize"
+            onMouseDown={onResizeDown}
+            role="button"
+            tabIndex={0}
+            aria-label="Redimensionner le cadre de recadrage"
+            onKeyDown={onKeyDownResize}
+          >
+            <div className="absolute bottom-1 right-1 w-2.5 h-2.5 border-r-2 border-b-2 border-white/80" />
+          </div>
+          {/* Corner marks */}
+          {['top-left', 'top-right', 'bottom-left'].map(pos => (
+            <div key={pos} className={`absolute w-3 h-3 border-white/60 ${cornerClassByPos[pos]}`} />
+          ))}
+        </div>
+      </div>
+      <div className="flex gap-2">
+        <button onClick={onApply} disabled={isCropping} className="flex items-center gap-2 px-4 py-2 bg-[#005596] text-white text-xs font-bold rounded-lg hover:bg-[#003d6d] disabled:opacity-50">
+          {isCropping ? <Loader2 className="w-4 h-4 animate-spin" /> : <Crop className="w-4 h-4" />}
+          {isCropping ? 'Recadrage...' : 'Appliquer le recadrage'}
+        </button>
+        <button onClick={onCancel} className="px-3 py-2 text-xs font-bold text-[#55636B] hover:text-red-600 transition-colors">Annuler</button>
+      </div>
+    </div>
+  );
+};
+
 // ──────────────────────────────────────────────
 // OcrImportTab
 // ──────────────────────────────────────────────
@@ -339,84 +412,54 @@ export const OcrImportTab: React.FC<OcrImportTabProps> = ({ onSaveContact }) => 
     { key: 'countryOfOrigin', label: 'Pays d\'origine' },
   ];
 
-  const saveButtonText = isSaving ? 'Enregistrement...' : saveResult === 'success' ? 'Enregistré !' : 'Enregistrer le contact';
+  const saveButtonText = saveButtonLabel(isSaving, saveResult);
 
-  const photoSection = (photoUrl || croppedPreview) ? (
-    <div className="p-3 bg-[#E8F1F8]/40 rounded-xl flex items-center gap-3">
-      <img src={croppedPreview || `${CHATBOT_API_PREFIX}${photoUrl}`} alt="Photo détectée" className="w-12 h-12 rounded-full object-cover border-2 border-[#005596]/30" />
-      <span className="text-xs text-[#55636B] font-medium">
-        {croppedPreview ? 'Photo recadrée manuellement' : 'Photo de profil détectée automatiquement'}
-      </span>
-      {croppedPreview && (
-        <button onClick={() => setCroppedPreview(null)} className="text-xs text-[#55636B] hover:text-red-600 underline ml-auto">Annuler le recadrage</button>
-      )}
-    </div>
-  ) : cropMode ? (
-    <div className="space-y-3">
-      <p className="text-xs font-bold text-[#55636B] flex items-center gap-1.5"><Move className="w-3.5 h-3.5" /> Déplacez et redimensionnez le cadre de recadrage</p>
-      <div className="relative inline-block max-w-full rounded-xl overflow-hidden border border-[#C9D4DE]/50 select-none">
-        <img ref={cropImgRef} src={imagePreview || ''} alt="Recadrage" className="block max-h-[50vh] w-full object-contain pointer-events-none" draggable={false} />
-        {/* Dark overlay */}
-        <div className="absolute inset-0 pointer-events-none" style={{
-          background: `linear-gradient(to right, rgba(0,0,0,0.55) ${cropRect.x}%, transparent ${cropRect.x}%, transparent ${cropRect.x + cropRect.w}%, rgba(0,0,0,0.55) ${cropRect.x + cropRect.w}%),
-            linear-gradient(to bottom, rgba(0,0,0,0.55) ${cropRect.y}%, transparent ${cropRect.y}%, transparent ${cropRect.y + cropRect.h}%, rgba(0,0,0,0.55) ${cropRect.y + cropRect.h}%)`
-        }} />
-        {/* Crop frame */}
-        <div
-          className="absolute border-2 border-white/90 cursor-move shadow-lg"
-          style={{ left: `${cropRect.x}%`, top: `${cropRect.y}%`, width: `${cropRect.w}%`, height: `${cropRect.h}%` }}
-          onMouseDown={e => handleCropMouseDown(e, 'move')}
-          role="button"
-          tabIndex={0}
-          aria-label="Cadre de recadrage"
-          onKeyDown={e => handleCropKeyDown(e, 'move')}
-        >
-          {/* Resize handle (bottom-right corner) */}
-          <div
-            className="absolute bottom-0 right-0 w-4 h-4 cursor-se-resize"
-            onMouseDown={e => handleCropMouseDown(e, 'resize')}
-            role="button"
-            tabIndex={0}
-            aria-label="Redimensionner le cadre de recadrage"
-            onKeyDown={e => handleCropKeyDown(e, 'resize')}
-          >
-            <div className="absolute bottom-1 right-1 w-2.5 h-2.5 border-r-2 border-b-2 border-white/80" />
-          </div>
-          {/* Corner marks */}
-          {['top-left', 'top-right', 'bottom-left'].map(pos => {
-            const cornerClass = pos === 'top-left' ? 'top-0 left-0 border-t-2 border-l-2' :
-              pos === 'top-right' ? 'top-0 right-0 border-t-2 border-r-2' :
-              'bottom-0 left-0 border-b-2 border-l-2';
-            return (
-              <div key={pos} className={`absolute w-3 h-3 border-white/60 ${cornerClass}`} />
-            );
-          })}
-        </div>
+  let photoSection: React.ReactNode;
+  if (photoUrl || croppedPreview) {
+    photoSection = (
+      <div className="p-3 bg-[#E8F1F8]/40 rounded-xl flex items-center gap-3">
+        <img src={croppedPreview || `${CHATBOT_API_PREFIX}${photoUrl}`} alt="Visage détecté" className="w-12 h-12 rounded-full object-cover border-2 border-[#005596]/30" />
+        <span className="text-xs text-[#55636B] font-medium">
+          {croppedPreview ? 'Photo recadrée manuellement' : 'Photo de profil détectée automatiquement'}
+        </span>
+        {croppedPreview && (
+          <button onClick={() => setCroppedPreview(null)} className="text-xs text-[#55636B] hover:text-red-600 underline ml-auto">Annuler le recadrage</button>
+        )}
       </div>
-      <div className="flex gap-2">
-        <button onClick={applyCrop} disabled={isCropping} className="flex items-center gap-2 px-4 py-2 bg-[#005596] text-white text-xs font-bold rounded-lg hover:bg-[#003d6d] disabled:opacity-50">
-          {isCropping ? <Loader2 className="w-4 h-4 animate-spin" /> : <Crop className="w-4 h-4" />}
-          {isCropping ? 'Recadrage...' : 'Appliquer le recadrage'}
-        </button>
-        <button onClick={() => setCropMode(false)} className="px-3 py-2 text-xs font-bold text-[#55636B] hover:text-red-600 transition-colors">Annuler</button>
+    );
+  } else if (cropMode) {
+    photoSection = (
+      <CropFrame
+        imagePreview={imagePreview}
+        cropRect={cropRect}
+        cropImgRef={cropImgRef}
+        isCropping={isCropping}
+        onMoveDown={e => handleCropMouseDown(e, 'move')}
+        onResizeDown={e => handleCropMouseDown(e, 'resize')}
+        onKeyDownMove={e => handleCropKeyDown(e, 'move')}
+        onKeyDownResize={e => handleCropKeyDown(e, 'resize')}
+        onApply={applyCrop}
+        onCancel={() => setCropMode(false)}
+      />
+    );
+  } else {
+    photoSection = (
+      <div className="p-3 bg-slate-50 rounded-xl flex items-center gap-3">
+        <div className="w-12 h-12 rounded-full bg-slate-200 flex items-center justify-center text-slate-400 text-xs font-bold">N/A</div>
+        <span className="text-xs text-[#55636B] font-medium">Aucune photo détectée</span>
+        {imagePreview && (
+          <button onClick={() => { setCropMode(true); setCropRect({ x: 10, y: 10, w: 80, h: 80 }); }} className="ml-auto flex items-center gap-1.5 px-3 py-1.5 bg-[#005596]/10 text-[#005596] text-xs font-bold rounded-lg hover:bg-[#005596]/20 transition-colors">
+            <Crop className="w-3.5 h-3.5" /> Recadrer manuellement
+          </button>
+        )}
       </div>
-    </div>
-  ) : (
-    <div className="p-3 bg-slate-50 rounded-xl flex items-center gap-3">
-      <div className="w-12 h-12 rounded-full bg-slate-200 flex items-center justify-center text-slate-400 text-xs font-bold">N/A</div>
-      <span className="text-xs text-[#55636B] font-medium">Aucune photo détectée</span>
-      {imagePreview && (
-        <button onClick={() => { setCropMode(true); setCropRect({ x: 10, y: 10, w: 80, h: 80 }); }} className="ml-auto flex items-center gap-1.5 px-3 py-1.5 bg-[#005596]/10 text-[#005596] text-xs font-bold rounded-lg hover:bg-[#005596]/20 transition-colors">
-          <Crop className="w-3.5 h-3.5" /> Recadrer manuellement
-        </button>
-      )}
-    </div>
-  );
+    );
+  }
 
   return (
     <div className="space-y-6">
       {!imageFile ? (
-        <div
+        <div /* NOSONAR — zone de dépôt accessible (clic + clavier + drag & drop) */
           ref={dropRef}
           onDragOver={e => e.preventDefault()}
           onDrop={handleDrop}

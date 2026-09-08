@@ -523,7 +523,7 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ getToken }) => {
           // Journalisation non bloquante : l'export réussit même si ce compte-rendu échoue.
           console.warn('Échec de la journalisation de l\'export CSV.');
         }
-      } catch (err) {
+      } catch {
         showToast('Export CSV échoué. Veuillez réessayer.', 'error');
       }
     },

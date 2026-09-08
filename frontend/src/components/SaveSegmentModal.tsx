@@ -10,7 +10,7 @@ interface SaveSegmentModalProps {
   pendingFilters: FilterState;
   segmentNameInput: string;
   onSegmentNameInputChange: (value: string) => void;
-  onSubmit: (e: React.FormEvent) => void;
+  onSubmit: (e: React.SubmitEvent<HTMLFormElement>) => void;
 }
 
 export const SaveSegmentModal: React.FC<SaveSegmentModalProps> = ({
@@ -36,8 +36,9 @@ export const SaveSegmentModal: React.FC<SaveSegmentModalProps> = ({
   >
     <form onSubmit={onSubmit} className="space-y-4 text-xs">
       <div>
-        <label className="font-bold text-slate-700 block mb-1">Nom du Segment *</label>
+        <label htmlFor="segment-name" className="font-bold text-slate-700 block mb-1">Nom du Segment *</label>
         <input
+          id="segment-name"
           type="text"
           required
           value={segmentNameInput}

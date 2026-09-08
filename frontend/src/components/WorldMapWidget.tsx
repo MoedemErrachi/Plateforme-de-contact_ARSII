@@ -181,7 +181,7 @@ function createClickHandler(
   setAnchorGeo: React.Dispatch<React.SetStateAction<{ lng: number; lat: number } | null>>
 ): (params: any) => void {
   return (params: any) => {
-    if (!params || params.componentType !== 'series' || !params.name) return;
+    if (params?.componentType !== 'series' || !params?.name) return;
     const entry = byIso2.get(String(params.name));
     if (!entry) return;
 
@@ -218,10 +218,10 @@ function createClickHandler(
 function createGeoRoamHandler(
   chart: any,
   container: HTMLDivElement,
-  defaultViewRef: React.MutableRefObject<ViewState | null>,
-  lastGoodRef: React.MutableRefObject<ViewState | null>,
-  snappedRef: React.MutableRefObject<boolean>,
-  reprojectRef: React.MutableRefObject<() => void>
+  defaultViewRef: React.RefObject<ViewState | null>,
+  lastGoodRef: React.RefObject<ViewState | null>,
+  snappedRef: React.RefObject<boolean>,
+  reprojectRef: React.RefObject<() => void>
 ): () => void {
   const getGeo = (): any =>
     (chart as any)?.getModel?.()?.getSeriesByIndex(0)?.coordinateSystem ?? null;
@@ -750,13 +750,13 @@ export const WorldMapWidget: React.FC<WorldMapWidgetProps> = ({
         Recentrer
       </button>
 
-      <div
+      <div /* NOSONAR */
         ref={containerRef}
         data-map-pan="1"
         draggable={false}
         onDragStart={(e) => e.preventDefault()}
         className="h-[360px] sm:h-[440px] w-full touch-auto"
-        role="img" // NOSONAR
+        role="img"
         aria-label="Carte mondiale des chercheurs par pays d'origine"
       />
 

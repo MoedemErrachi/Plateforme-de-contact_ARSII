@@ -85,7 +85,8 @@ export function getAuthToken(): string | null {
   try {
     const value = localStorage.getItem(TOKEN_STORAGE_KEY) || sessionStorage.getItem(TOKEN_STORAGE_KEY);
     const trimmed = value?.trim();
-    return trimmed ? trimmed : null;
+    if (!trimmed) return null;
+    return trimmed;
   } catch {
     return null;
   }
@@ -194,6 +195,20 @@ function handleHttpError(res: Response, json: any, isAuthAction: boolean): ApiEr
   return new ApiError(kind, message, res.status, json);
 }
 
+/** Lit le corps de réponse : fichier texte brut + JSON éventuel (corps non-JSON toléré). */
+async function parseResponseBody(res: Response): Promise<{ json: any; text: string }> {
+  const text = await res.text();
+  let json: any = null;
+  if (text) {
+    try {
+      json = JSON.parse(text);
+    } catch {
+      json = null; // corps non-JSON (page HTML de crash, corps vide…)
+    }
+  }
+  return { json, text };
+}
+
 export async function apiFetch<T = any>(path: string, options: ApiFetchOptions = {}): Promise<T> {
   const { timeoutMs = DEFAULT_TIMEOUT_MS, suppressGlobalError, ...init } = options;
   const token = getAuthToken();
@@ -241,15 +256,7 @@ export async function apiFetch<T = any>(path: string, options: ApiFetchOptions =
     timed.dispose();
   }
 
-  const text = await res.text();
-  let json: any = null;
-  if (text) {
-    try {
-      json = JSON.parse(text);
-    } catch {
-      json = null; // corps non-JSON (page HTML de crash, corps vide…)
-    }
-  }
+  const { json } = await parseResponseBody(res);
 
   if (!res.ok) {
     const apiErr = handleHttpError(res, json, isAuthAction);

@@ -235,13 +235,11 @@ export const Header: React.FC<HeaderProps> = ({
 
       {/* Mobile Drawer Backdrop */}
       {mobileMenuOpen && (
-        <div
+        <button
+          type="button"
           onClick={() => setMobileMenuOpen(false)}
-          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setMobileMenuOpen(false); }}
-          role="button"
           aria-label="Fermer le menu"
-          tabIndex={-1}
-          className="md:hidden fixed inset-0 top-16 bg-slate-900/50 backdrop-blur-xs z-40 animate-in fade-in duration-200"
+          className="md:hidden fixed inset-0 top-16 bg-slate-900/50 backdrop-blur-xs z-40 animate-in fade-in duration-200 cursor-pointer"
         />
       )}
 

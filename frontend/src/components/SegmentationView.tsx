@@ -163,7 +163,7 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
     setIsSegmentModalOpen(true);
   };
 
-  const handleSaveSegment = (e: React.FormEvent) => {
+  const handleSaveSegment = (e: React.SubmitEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!segName.trim()) return;
 
@@ -201,7 +201,7 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
     setIsTagModalOpen(true);
   };
 
-  const handleSaveTag = (e: React.FormEvent) => {
+  const handleSaveTag = (e: React.SubmitEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!tagNameInput.trim()) return;
 
@@ -421,7 +421,7 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
                                 <Bookmark className="w-3 h-3" /> {CAREER_STAGE_SHORT_LABELS[s]}
                               </span>
                             ))}
-                            {f.tags && f.tags.map(t => (
+                            {f.tags?.map(t => (
                               <span key={t} className="px-2 py-0.5 bg-rose-50 text-rose-700 rounded font-medium flex items-center gap-1">
                                 <TagIcon className="w-3 h-3" /> Tag: {t}
                               </span>
@@ -641,6 +641,7 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
                         return (
                           <label
                             key={contact.id}
+                            htmlFor={`tag-contact-${contact.id}`}
                             className="py-3 flex items-center justify-between hover:bg-slate-50 px-2 rounded-lg cursor-pointer transition-colors"
                           >
                             <div className="flex items-center gap-3">
@@ -654,6 +655,7 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
                             </div>
 
                             <input
+                              id={`tag-contact-${contact.id}`}
                               type="checkbox"
                               checked={hasTag}
                               onChange={() => setTagContactSelection(prev =>
@@ -731,8 +733,9 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
 
             <form onSubmit={handleSaveSegment} className="space-y-4 text-xs">
               <div>
-                <label className="font-bold text-slate-700 block mb-1">Nom du segment *</label>
+                <label htmlFor="seg-name" className="font-bold text-slate-700 block mb-1">Nom du segment *</label>
                 <input
+                  id="seg-name"
                   type="text"
                   required
                   value={segName}
@@ -743,8 +746,9 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
               </div>
 
               <div>
-                <label className="font-bold text-slate-700 block mb-1">Description</label>
+                <label htmlFor="seg-desc" className="font-bold text-slate-700 block mb-1">Description</label>
                 <textarea
+                  id="seg-desc"
                   rows={2}
                   value={segDesc}
                   onChange={(e) => setSegDesc(e.target.value)}
@@ -861,7 +865,7 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
 
                 {/* Tags filter */}
                 <div>
-                  <label className="font-semibold text-slate-700 block mb-1">Tags requis</label>
+                  <div className="font-semibold text-slate-700 block mb-1">Tags requis</div>
                   <div className="flex flex-wrap gap-2">
                     {tags.map(tag => {
                       const active = segFilters.tags.includes(tag.name);
@@ -928,8 +932,9 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
 
             <form onSubmit={handleSaveTag} className="p-4 space-y-3 text-xs">
               <div>
-                <label className="font-bold text-slate-700 block mb-1">Nom du Tag *</label>
+                <label htmlFor="tag-name" className="font-bold text-slate-700 block mb-1">Nom du Tag *</label>
                 <input
+                  id="tag-name"
                   type="text"
                   required
                   value={tagNameInput}
@@ -940,12 +945,12 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
               </div>
 
               <div>
-                <label className="font-bold text-slate-700 block mb-1">Palette de couleur</label>
+                <div className="font-bold text-slate-700 block mb-1">Palette de couleur</div>
                 <div className="grid grid-cols-2 gap-2">
-                  {colorPresets.map((preset, idx) => (
+                  {colorPresets.map(preset => (
                     <button
                       type="button"
-                      key={idx}
+                      key={preset.class}
                       onClick={() => setTagColorInput(preset.class)}
                       className={`p-2 rounded-xl text-left text-xs font-semibold border flex items-center justify-between ${
                         preset.class
@@ -959,8 +964,9 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
               </div>
 
               <div>
-                <label className="font-bold text-slate-700 block mb-1">Description (optionnelle)</label>
+                <label htmlFor="tag-desc" className="font-bold text-slate-700 block mb-1">Description (optionnelle)</label>
                 <input
+                  id="tag-desc"
                   type="text"
                   value={tagDescInput}
                   onChange={(e) => setTagDescInput(e.target.value)}

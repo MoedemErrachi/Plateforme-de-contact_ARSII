@@ -159,6 +159,37 @@ const PublicOnlyRoute: React.FC<{
   return <AuthSplash />;
 };
 
+// --- Auth helpers (extracted to reduce cognitive complexity) ---
+function clearAuthSession(
+  setUser: React.Dispatch<React.SetStateAction<User | null>>,
+  setIsAuthenticated: React.Dispatch<React.SetStateAction<boolean>>,
+  setAuthToken: React.Dispatch<React.SetStateAction<string | null>>
+) {
+  setUser(null);
+  setIsAuthenticated(false);
+  setAuthToken(null);
+}
+
+async function restoreSession(
+  cancelled: boolean,
+  setUser: React.Dispatch<React.SetStateAction<User | null>>,
+  setIsAuthenticated: React.Dispatch<React.SetStateAction<boolean>>,
+  setAuthToken: React.Dispatch<React.SetStateAction<string | null>>,
+  navigate: ReturnType<typeof useNavigate>
+) {
+  const data = await apiFetch('/api/auth/me');
+  if (!cancelled && data?.authenticated && data?.user) {
+    setUser(data.user);
+    setIsAuthenticated(true);
+    setAuthToken(getAuthToken());
+    if (data.user.role === 'admin' && !window.location.pathname.startsWith('/admin')) {
+      navigate('/admin', { replace: true });
+    }
+  } else if (!cancelled) {
+    setAuthToken(null);
+  }
+}
+
 // --- Auth session restore hook ---
 function useAuthSession(deps: {
   setUser: React.Dispatch<React.SetStateAction<User | null>>;
@@ -177,9 +208,7 @@ function useAuthSession(deps: {
 
       if (!stored) {
         if (!cancelled) {
-          setUser(null);
-          setIsAuthenticated(false);
-          setAuthToken(null);
+          clearAuthSession(setUser, setIsAuthenticated, setAuthToken);
           setIsSessionReady(true);
         }
         return;
@@ -187,10 +216,8 @@ function useAuthSession(deps: {
 
       if (isTokenExpired(stored)) {
         if (!cancelled) {
+          clearAuthSession(setUser, setIsAuthenticated, setAuthToken);
           clearStoredAuth();
-          setUser(null);
-          setIsAuthenticated(false);
-          setAuthToken(null);
           setIsSessionReady(true);
           showToast('Votre session a expiré. Veuillez vous reconnecter.', 'error');
         }
@@ -198,32 +225,14 @@ function useAuthSession(deps: {
       }
 
       try {
-        const data = await apiFetch('/api/auth/me');
-        if (!cancelled && data?.authenticated && data?.user) {
-          setUser(data.user);
-          setIsAuthenticated(true);
-          setAuthToken(getAuthToken());
-          if (data.user.role === 'admin' && !window.location.pathname.startsWith('/admin')) {
-            navigate('/admin', { replace: true });
-          }
-        } else if (!cancelled) {
-          setAuthToken(null);
-        }
+        await restoreSession(cancelled, setUser, setIsAuthenticated, setAuthToken, navigate);
       } catch {
         if (!cancelled) {
-          setUser(null);
-          setIsAuthenticated(false);
-          setAuthToken(null);
-          try {
-            localStorage.removeItem('euraxess_token');
-          } catch {
-            // ignore storage failures
-          }
+          clearAuthSession(setUser, setIsAuthenticated, setAuthToken);
+          clearStoredAuth();
         }
       } finally {
-        if (!cancelled) {
-          setIsSessionReady(true);
-        }
+        if (!cancelled) setIsSessionReady(true);
       }
     })();
     return () => { cancelled = true; };
@@ -286,6 +295,41 @@ const AuthenticatedRoutes: React.FC<{
     <Route path="*" element={<HomeRedirect role={user?.role} />} />
   </Routes>
 );
+
+// --- Selection restore helpers (extracted to reduce cognitive complexity) ---
+function resolveSelectionMode(rawMode: string, ids: string[]): SelectionMode {
+  const validModes: string[] = ['none', 'page', 'partial', 'all-filtered'];
+  const mode = validModes.includes(rawMode) ? (rawMode as SelectionMode) : (ids.length ? 'partial' as SelectionMode : 'none');
+  return (mode === 'page' || mode === 'all-filtered') ? (ids.length ? 'partial' : 'none') : mode;
+}
+
+function restoreLegacySelection(parsed: any[]): ContactSelection {
+  const ids = parsed.filter((id: any) => typeof id === 'string');
+  return { mode: ids.length ? 'partial' : 'none', ids, filters: emptyFilterState(), totalCount: ids.length };
+}
+
+function restorePersistedSelection(parsed: Record<string, any>): ContactSelection {
+  const ids = parsed.ids.filter((id: any) => typeof id === 'string');
+  return {
+    mode: resolveSelectionMode(parsed.mode, ids),
+    ids,
+    filters: parsed.filters && typeof parsed.filters === 'object' ? { ...emptyFilterState(), ...parsed.filters } : emptyFilterState(),
+    totalCount: Number(parsed.totalCount) || 0
+  };
+}
+
+function restoreSelectionFromStorage(): ContactSelection {
+  try {
+    const saved = localStorage.getItem('euraxess_contacts_selected_ids');
+    if (!saved) return { mode: 'none', ids: [], filters: emptyFilterState(), totalCount: 0 };
+    const parsed = JSON.parse(saved);
+    if (Array.isArray(parsed)) return restoreLegacySelection(parsed);
+    if (parsed && typeof parsed === 'object' && Array.isArray(parsed.ids)) return restorePersistedSelection(parsed);
+  } catch {
+    // ignore corrupted storage
+  }
+  return { mode: 'none', ids: [], filters: emptyFilterState(), totalCount: 0 };
+}
 
 // --- Import helper (extracted from handleImportContacts) ---
 function collectMissingTagNames(
@@ -435,39 +479,7 @@ export default function App() {
   const [isLoadingData, setIsLoadingData] = useState<boolean>(true);
 
   // Selection (4 modes) in directory for bulk actions & export
-  const [selection, setSelection] = useState<ContactSelection>(() => {
-    try {
-      const saved = localStorage.getItem('euraxess_contacts_selected_ids');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        // Migration de l'ancien format (simple tableau d'ids) → partial
-        if (Array.isArray(parsed)) {
-          const ids = parsed.filter((id: any) => typeof id === 'string');
-          return { mode: ids.length ? 'partial' : 'none', ids, filters: emptyFilterState(), totalCount: ids.length };
-        }
-        if (parsed && typeof parsed === 'object' && Array.isArray(parsed.ids)) {
-          const ids = parsed.ids.filter((id: any) => typeof id === 'string');
-          const validModes = ['none', 'page', 'partial', 'all-filtered'];
-          let mode: SelectionMode;
-          if (validModes.includes(parsed.mode)) mode = parsed.mode;
-          else mode = ids.length ? 'partial' : 'none';
-          // Après un rechargement, page / all-filtered perdent leur validité (filtres non rejoués)
-          if (mode === 'page' || mode === 'all-filtered') {
-            mode = ids.length ? 'partial' : 'none';
-          }
-          return {
-            mode,
-            ids,
-            filters: parsed.filters && typeof parsed.filters === 'object' ? { ...emptyFilterState(), ...parsed.filters } : emptyFilterState(),
-            totalCount: Number(parsed.totalCount) || 0
-          };
-        }
-      }
-    } catch {
-      // ignore corrupted storage
-    }
-    return { mode: 'none', ids: [], filters: emptyFilterState(), totalCount: 0 };
-  });
+  const [selection, setSelection] = useState<ContactSelection>(() => restoreSelectionFromStorage());
 
   // Persist selection across page refreshes (survives reload of /export)
   useEffect(() => {

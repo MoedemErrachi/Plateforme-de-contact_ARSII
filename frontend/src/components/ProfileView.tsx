@@ -221,7 +221,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ user, onUserUpdate, on
             <div className="relative">
               <div className="w-28 h-28 rounded-full overflow-hidden bg-[#D9E6F2] border-4 border-[#005596]/30 flex items-center justify-center">
                 {avatarUrl ? (
-                  <img src={avatarUrl} alt="Photo de profil" className="w-full h-full object-cover" />
+                  <img src={avatarUrl} alt="Avatar de profil" className="w-full h-full object-cover" />
                 ) : (
                   <span className="text-3xl font-black text-[#005596]">{getInitials(name)}</span>
                 )}

@@ -157,21 +157,137 @@ export const AdminView: React.FC = () => {
     </span>
   );
 
-  const privilegeBadge = (privilege?: Privilege | null) => {
-    const p: Privilege = privilege ?? 'FULL_ACCESS';
+  const privilegeBadge = (privilege: Privilege = 'FULL_ACCESS') => {
     const styles: Record<Privilege, string> = {
       READ: 'bg-amber-50 text-amber-700',
       READ_WRITE: 'bg-[#E8F1F8] text-[#005596]',
       FULL_ACCESS: 'bg-emerald-50 text-emerald-700'
     };
     return (
-      <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-extrabold ${styles[p]}`}>
-        {PRIVILEGE_LABELS[p]}
+      <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-extrabold ${styles[privilege]}`}>
+        {PRIVILEGE_LABELS[privilege]}
       </span>
     );
   };
 
   const isFilterActive = searchQuery.trim() !== '' || roleFilter !== 'all' || privilegeFilter !== 'all';
+
+  let listContent: React.ReactNode;
+  if (isLoading) {
+    listContent = (
+      <div className="flex justify-center py-12">
+        <Loader2 className="w-6 h-6 text-[#005596] animate-spin" />
+      </div>
+    );
+  } else if (filteredUsers.length === 0) {
+    listContent = (
+      <div className="bg-white rounded-2xl border border-[#C9D4DE]/40 shadow-sm px-4 py-8 text-center text-sm text-[#8A98A1]">
+        {isFilterActive ? 'Aucun utilisateur ne correspond à la recherche.' : 'Aucun utilisateur trouvé.'}
+      </div>
+    );
+  } else {
+    listContent = (
+      <>
+      {/* Cartes mobiles : table remplacée par des fiches pleine largeur */}
+      <div data-testid="admin-mobile-cards" className="md:hidden space-y-3">
+        {filteredUsers.map(u => (
+          <div key={u.id} className="bg-white rounded-2xl border border-[#C9D4DE]/40 shadow-sm p-4 transition-colors hover:bg-[#E8F1F8]/60">
+            <button
+              type="button"
+              onClick={() => openUserDetails(u)}
+              title="Consulter la fiche utilisateur"
+              className="w-full text-left cursor-pointer"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#005596] to-[#B8167C] text-white flex items-center justify-center text-sm font-black shrink-0">
+                  {u.name.split(' ').map(p => p[0]).slice(0, 2).join('').toUpperCase()}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="font-bold text-[#1C2529] truncate">{u.name}</p>
+                  <p className="text-[#55636B] text-xs break-all">{u.email}</p>
+                </div>
+              </div>
+            </button>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              {roleBadge(u.role)}
+              {privilegeBadge(u.privilege)}
+              <span className="text-[10px] text-[#8A98A1] ml-auto">Dernière connexion : {formatDateTime(u.lastLogin)}</span>
+            </div>
+            <div className="mt-3 pt-3 border-t border-[#C9D4DE]/20 flex items-center justify-end gap-1">
+              <button
+                onClick={() => openUserDetails(u)}
+                className="p-2 rounded-lg hover:bg-slate-100 text-[#55636B] hover:text-[#005596] transition-colors cursor-pointer"
+                title="Consulter"
+              >
+                <Eye className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => setConfirmDeleteUser(u)}
+                disabled={deletingId === u.id}
+                className="p-2 rounded-lg hover:bg-red-50 text-[#55636B] hover:text-red-600 transition-colors cursor-pointer disabled:opacity-50"
+                title="Supprimer"
+              >
+                {deletingId === u.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Tableau desktop (md+) : colonnes complètes, Actions épinglée à droite */}
+      <div className="hidden md:block bg-white rounded-2xl border border-[#C9D4DE]/40 shadow-sm overflow-x-auto">
+        <table className="w-full min-w-[560px] text-xs">
+          <thead>
+            <tr className="bg-[#F4F6F8] border-b border-[#C9D4DE]/40">
+              <th className="text-left px-4 py-3 font-bold text-[#55636B]">Nom</th>
+              <th className="text-left px-4 py-3 font-bold text-[#55636B]">Email</th>
+              <th className="text-left px-4 py-3 font-bold text-[#55636B]">Rôle</th>
+              <th className="text-left px-4 py-3 font-bold text-[#55636B] hidden md:table-cell">Privilège</th>
+              <th className="text-left px-4 py-3 font-bold text-[#55636B] hidden md:table-cell">Dernière connexion</th>
+              <th className="sticky right-0 bg-[#F4F6F8] text-right px-4 py-3 font-bold text-[#55636B] shadow-[-8px_0_8px_-8px_rgba(0,0,0,0.12)]">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {/* Clic sur la ligne = consultation ; les boutons stoppent la propagation */}
+            {filteredUsers.map(u => (
+              <tr
+                key={u.id}
+                onClick={() => openUserDetails(u)}
+                className="border-b border-[#C9D4DE]/20 hover:bg-[#E8F1F8]/60 cursor-pointer transition-colors"
+                title="Consulter la fiche utilisateur"
+              >
+                <td className="px-4 py-3 font-bold text-[#1C2529]">{u.name}</td>
+                <td className="px-4 py-3 text-[#55636B] break-words max-w-[280px]">{u.email}</td>
+                <td className="px-4 py-3">{roleBadge(u.role)}</td>
+                <td className="px-4 py-3 hidden md:table-cell">{privilegeBadge(u.privilege)}</td>
+                <td className="px-4 py-3 text-[#8A98A1] text-[11px] hidden md:table-cell">{formatDateTime(u.lastLogin)}</td>
+                <td className="sticky right-0 bg-white px-4 py-3 shadow-[-8px_0_8px_-8px_rgba(0,0,0,0.12)]" onClick={e => e.stopPropagation()}>
+                  <div className="flex items-center justify-end gap-1">
+                    <button
+                      onClick={() => openUserDetails(u)}
+                      className="p-1.5 rounded-lg hover:bg-slate-100 text-[#55636B] hover:text-[#005596] transition-colors cursor-pointer"
+                      title="Consulter"
+                    >
+                      <Eye className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={() => setConfirmDeleteUser(u)}
+                      disabled={deletingId === u.id}
+                      className="p-1.5 rounded-lg hover:bg-red-50 text-[#55636B] hover:text-red-600 transition-colors cursor-pointer disabled:opacity-50"
+                      title="Supprimer"
+                    >
+                      {deletingId === u.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      </>
+    );
+  }
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-8 space-y-6">
@@ -245,125 +361,18 @@ export const AdminView: React.FC = () => {
         )}
       </div>
 
-      {isLoading ? (
-        <div className="flex justify-center py-12">
-          <Loader2 className="w-6 h-6 text-[#005596] animate-spin" />
-        </div>
-      ) : filteredUsers.length === 0 ? (
-        <div className="bg-white rounded-2xl border border-[#C9D4DE]/40 shadow-sm px-4 py-8 text-center text-sm text-[#8A98A1]">
-          {isFilterActive ? 'Aucun utilisateur ne correspond à la recherche.' : 'Aucun utilisateur trouvé.'}
-        </div>
-      ) : (
-        <>
-        {/* Cartes mobiles : table remplacée par des fiches pleine largeur */}
-        <div data-testid="admin-mobile-cards" className="md:hidden space-y-3">
-          {filteredUsers.map(u => (
-            <div
-              key={u.id}
-              onClick={() => openUserDetails(u)}
-              className="bg-white rounded-2xl border border-[#C9D4DE]/40 shadow-sm p-4 cursor-pointer transition-colors hover:bg-[#E8F1F8]/60"
-              title="Consulter la fiche utilisateur"
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#005596] to-[#B8167C] text-white flex items-center justify-center text-sm font-black shrink-0">
-                  {u.name.split(' ').map(p => p[0]).slice(0, 2).join('').toUpperCase()}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="font-bold text-[#1C2529] truncate">{u.name}</p>
-                  <p className="text-[#55636B] text-xs break-all">{u.email}</p>
-                </div>
-              </div>
-              <div className="mt-3 flex flex-wrap items-center gap-2">
-                {roleBadge(u.role)}
-                {privilegeBadge(u.privilege)}
-                <span className="text-[10px] text-[#8A98A1] ml-auto">Dernière connexion : {formatDateTime(u.lastLogin)}</span>
-              </div>
-              <div className="mt-3 pt-3 border-t border-[#C9D4DE]/20 flex items-center justify-end gap-1" onClick={e => e.stopPropagation()}>
-                <button
-                  onClick={() => openUserDetails(u)}
-                  className="p-2 rounded-lg hover:bg-slate-100 text-[#55636B] hover:text-[#005596] transition-colors cursor-pointer"
-                  title="Consulter"
-                >
-                  <Eye className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={() => setConfirmDeleteUser(u)}
-                  disabled={deletingId === u.id}
-                  className="p-2 rounded-lg hover:bg-red-50 text-[#55636B] hover:text-red-600 transition-colors cursor-pointer disabled:opacity-50"
-                  title="Supprimer"
-                >
-                  {deletingId === u.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-
-        {/* Tableau desktop (md+) : colonnes complètes, Actions épinglée à droite */}
-        <div className="hidden md:block bg-white rounded-2xl border border-[#C9D4DE]/40 shadow-sm overflow-x-auto">
-          <table className="w-full min-w-[560px] text-xs">
-            <thead>
-              <tr className="bg-[#F4F6F8] border-b border-[#C9D4DE]/40">
-                <th className="text-left px-4 py-3 font-bold text-[#55636B]">Nom</th>
-                <th className="text-left px-4 py-3 font-bold text-[#55636B]">Email</th>
-                <th className="text-left px-4 py-3 font-bold text-[#55636B]">Rôle</th>
-                <th className="text-left px-4 py-3 font-bold text-[#55636B] hidden md:table-cell">Privilège</th>
-                <th className="text-left px-4 py-3 font-bold text-[#55636B] hidden md:table-cell">Dernière connexion</th>
-                <th className="sticky right-0 bg-[#F4F6F8] text-right px-4 py-3 font-bold text-[#55636B] shadow-[-8px_0_8px_-8px_rgba(0,0,0,0.12)]">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {/* Clic sur la ligne = consultation ; les boutons stoppent la propagation */}
-              {filteredUsers.map(u => (
-                <tr
-                  key={u.id}
-                  onClick={() => openUserDetails(u)}
-                  className="border-b border-[#C9D4DE]/20 hover:bg-[#E8F1F8]/60 cursor-pointer transition-colors"
-                  title="Consulter la fiche utilisateur"
-                >
-                  <td className="px-4 py-3 font-bold text-[#1C2529]">{u.name}</td>
-                  <td className="px-4 py-3 text-[#55636B] break-words max-w-[280px]">{u.email}</td>
-                  <td className="px-4 py-3">{roleBadge(u.role)}</td>
-                  <td className="px-4 py-3 hidden md:table-cell">{privilegeBadge(u.privilege)}</td>
-                  <td className="px-4 py-3 text-[#8A98A1] text-[11px] hidden md:table-cell">{formatDateTime(u.lastLogin)}</td>
-                  <td className="sticky right-0 bg-white px-4 py-3 shadow-[-8px_0_8px_-8px_rgba(0,0,0,0.12)]" onClick={e => e.stopPropagation()}>
-                    <div className="flex items-center justify-end gap-1">
-                      <button
-                        onClick={() => openUserDetails(u)}
-                        className="p-1.5 rounded-lg hover:bg-slate-100 text-[#55636B] hover:text-[#005596] transition-colors cursor-pointer"
-                        title="Consulter"
-                      >
-                        <Eye className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        onClick={() => setConfirmDeleteUser(u)}
-                        disabled={deletingId === u.id}
-                        className="p-1.5 rounded-lg hover:bg-red-50 text-[#55636B] hover:text-red-600 transition-colors cursor-pointer disabled:opacity-50"
-                        title="Supprimer"
-                      >
-                        {deletingId === u.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        </>
-      )}
+      {listContent}
 
       {/* Create User Modal */}
       {showCreateModal && (
-        <div
-          className="fixed inset-0 z-[10000] bg-black/40 flex items-center justify-center p-4"
-          onClick={e => { if (e.target === e.currentTarget && !isCreating) setShowCreateModal(false); }}
-          onKeyDown={e => { if ((e.key === 'Enter' || e.key === ' ') && !isCreating) setShowCreateModal(false); }}
-          role="button"
-          aria-label="Fermer"
-          tabIndex={-1}
-        >
-          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 space-y-4">
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4">
+          <button
+            type="button"
+            aria-label="Fermer"
+            onClick={() => { if (!isCreating) setShowCreateModal(false); }}
+            className="absolute inset-0 bg-black/40 cursor-pointer"
+          />
+          <div className="relative bg-white rounded-2xl shadow-xl max-w-md w-full p-6 space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-black text-[#1C2529]">Créer un utilisateur</h2>
               <button onClick={() => setShowCreateModal(false)} className="cursor-pointer"><X className="w-4 h-4 text-[#55636B]" /></button>
