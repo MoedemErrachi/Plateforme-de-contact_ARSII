@@ -64,30 +64,37 @@ export const Header: React.FC<HeaderProps> = ({
         { to: '/segments', label: 'Segmentation' }
       ];
 
+  // L'admin n'a qu'une page : le titre est affiché en permanence et le header
+  // ne se cache jamais au scroll (la navigation/l'identifiant restent visibles).
+  const isAdminUser = isAuthenticated && user?.role === 'admin';
+  const headerVisible = isAdminUser ? true : isHeaderVisible;
+
   return (
     <header className={`fixed top-0 left-0 right-0 z-50 h-16 w-full bg-gradient-to-r from-[#005596] via-[#005596] to-[#B8167C] shadow-md text-white transition-transform duration-300 ${
-      isHeaderVisible ? 'translate-y-0' : '-translate-y-full'
+      headerVisible ? 'translate-y-0' : '-translate-y-full'
     }`}>
       <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-10 h-16 flex items-center justify-between">
         
         {/* Left: Brand & Mobile Toggle */}
         <div className="flex items-center gap-3">
-          <button 
-            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            className="md:hidden p-1.5 rounded-lg hover:bg-white/10 transition-colors cursor-pointer"
-            aria-label="Toggle Navigation"
-          >
-            {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
-          </button>
+          {!isAdminUser && (
+            <button
+              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+              className="md:hidden p-1.5 rounded-lg hover:bg-white/10 transition-colors cursor-pointer"
+              aria-label="Toggle Navigation"
+            >
+              {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+            </button>
+          )}
 
           <Link
             to={user?.role === 'admin' ? '/admin' : '/dashboard'}
             className="flex items-center gap-2.5 cursor-pointer group"
           >
             <span className="bg-white rounded-md px-3 py-1 shadow-sm flex items-center">
-              <img 
-                src="/euraxess-africa-logo.png" 
-                alt="EURAXESS Africa" 
+              <img
+                src="/euraxess-africa-logo.png"
+                alt="EURAXESS Africa"
                 className="h-7 sm:h-8 w-auto object-contain group-hover:scale-105 transition-transform"
               />
             </span>
@@ -97,8 +104,13 @@ export const Header: React.FC<HeaderProps> = ({
           </Link>
         </div>
 
-        {/* Center: Desktop Navigation Links */}
-        <nav className="hidden md:flex items-center justify-center gap-8 flex-1">
+        {/* Center: Desktop Navigation Links / Page title for admin */}
+        {isAdminUser ? (
+          <span className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/10 border border-white/15 text-white font-bold text-sm tracking-wide">
+            Administration
+          </span>
+        ) : (
+          <nav className="hidden md:flex items-center justify-center gap-8 flex-1">
           {navLinks.map((link) => (
             <NavLink
               key={link.to}
@@ -113,6 +125,7 @@ export const Header: React.FC<HeaderProps> = ({
             </NavLink>
           ))}
         </nav>
+        )}
 
         {/* Right: Quick Utilities & User Profile */}
         <div className="flex items-center gap-2 sm:gap-4">

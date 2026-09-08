@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import { AdminView } from '../../src/components/AdminView';
 import { ToastProvider } from '../../src/components/Toast';
 
@@ -66,9 +66,9 @@ function renderAdminView() {
 describe('AdminView', () => {
   it('loads and renders users from the API', async () => {
     renderAdminView();
-    expect(await screen.findByText('Alice Dupont')).toBeInTheDocument();
-    expect(screen.getByText('alice@euraxess-africa.org')).toBeInTheDocument();
-    expect(screen.getByText('Bob Martin')).toBeInTheDocument();
+    expect((await screen.findAllByText('Alice Dupont')).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText('alice@euraxess-africa.org')).length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Bob Martin').length).toBeGreaterThan(0);
     expect(screen.getByTitle(/Filtrer par rôle/i)).toBeInTheDocument();
     expect(screen.getByText('2')).toBeInTheDocument();
     expect(screen.getByText('utilisateur(s)')).toBeInTheDocument();
@@ -76,16 +76,45 @@ describe('AdminView', () => {
 
   it('pins the Actions column to the right edge for small screens', async () => {
     renderAdminView();
-    await screen.findByText('Alice Dupont');
-    const header = screen.getByRole('columnheader', { name: 'Actions' });
+    await screen.findAllByText('Alice Dupont');
+    const table = screen.getByRole('table');
+    const header = within(table).getByRole('columnheader', { name: 'Actions' });
     expect(header).toHaveClass('sticky', 'right-0', 'bg-[#F4F6F8]');
-    const actionCells = screen
+    const actionCells = within(table)
       .getAllByTitle('Consulter')
       .map(btn => btn.closest('td'));
     expect(actionCells.length).toBeGreaterThan(0);
     for (const cell of actionCells) {
       expect(cell).toHaveClass('sticky', 'right-0', 'bg-white');
     }
+  });
+
+  it('stacks search, filters and the create button on small screens', async () => {
+    renderAdminView();
+    await screen.findAllByText('Alice Dupont');
+    const roleSelect = screen.getByTitle(/Filtrer par rôle/i);
+    const toolbar = roleSelect.closest('div')?.parentElement;
+    expect(toolbar?.className).toContain('flex-col sm:flex-row sm:flex-wrap sm:items-center');
+    const createButton = screen.getByRole('button', { name: /Créer un utilisateur/i });
+    expect(createButton.className).toContain('w-full sm:w-auto sm:ml-auto');
+    const selectContainer = roleSelect.closest('div');
+    expect(selectContainer?.className).toContain('grid grid-cols-2 gap-2.5 w-full sm:w-auto');
+    expect(roleSelect.className).toContain('w-full min-w-0');
+  });
+
+  it('renders a mobile card layout with the essential fields and actions', async () => {
+    renderAdminView();
+    await screen.findAllByText('Alice Dupont');
+    const cards = screen.getByTestId('admin-mobile-cards');
+    expect(cards).toHaveClass('md:hidden');
+    const desktopTableWrapper = screen.getByRole('table').closest('div');
+    expect(desktopTableWrapper?.className).toContain('hidden md:block');
+    expect(within(cards).getAllByText('Alice Dupont').length).toBeGreaterThan(0);
+    expect(within(cards).getAllByText('alice@euraxess-africa.org').length).toBeGreaterThan(0);
+    expect(within(cards).getByText('admin')).toBeInTheDocument();
+    expect(within(cards).getByText('Bob Martin')).toBeInTheDocument();
+    expect(within(cards).getAllByTitle('Consulter').length).toBeGreaterThan(0);
+    expect(within(cards).getAllByTitle('Supprimer').length).toBeGreaterThan(0);
   });
 
   it('displays an empty message when the API returns no users', async () => {
@@ -97,27 +126,27 @@ describe('AdminView', () => {
 
   it('filters the user list by search query', async () => {
     renderAdminView();
-    await screen.findByText('Alice Dupont');
+    await screen.findAllByText('Alice Dupont');
 
     fireEvent.change(screen.getByPlaceholderText('Rechercher par nom ou e-mail…'), { target: { value: 'bob' } });
 
     expect(screen.queryByText('Alice Dupont')).not.toBeInTheDocument();
-    expect(screen.getByText('Bob Martin')).toBeInTheDocument();
+    expect(screen.getAllByText('Bob Martin').length).toBeGreaterThan(0);
   });
 
   it('filters the user list by role', async () => {
     renderAdminView();
-    await screen.findByText('Alice Dupont');
+    await screen.findAllByText('Alice Dupont');
 
     fireEvent.change(screen.getByTitle(/Filtrer par rôle/i), { target: { value: 'admin' } });
 
-    expect(screen.getByText('Alice Dupont')).toBeInTheDocument();
+    expect(screen.getAllByText('Alice Dupont').length).toBeGreaterThan(0);
     expect(screen.queryByText('Bob Martin')).not.toBeInTheDocument();
   });
 
   it('warns and refuses to create a user whose email already exists', async () => {
     renderAdminView();
-    await screen.findByText('Alice Dupont');
+    await screen.findAllByText('Alice Dupont');
 
     fireEvent.click(screen.getByRole('button', { name: /Créer un utilisateur/i }));
     fireEvent.change(screen.getByLabelText(/Nom complet/i), { target: { value: 'Alice Dupont' } });
@@ -130,7 +159,7 @@ describe('AdminView', () => {
 
   it('creates a user via the confirmation panel and shows the temporary password', async () => {
     renderAdminView();
-    await screen.findByText('Alice Dupont');
+    await screen.findAllByText('Alice Dupont');
 
     fireEvent.click(screen.getByRole('button', { name: /Créer un utilisateur/i }));
     fireEvent.change(screen.getByLabelText(/Nom complet/i), { target: { value: 'Carol Nguyen' } });
@@ -155,7 +184,7 @@ describe('AdminView', () => {
 
   it('opens the user details panel and saves a new privilege', async () => {
     renderAdminView();
-    fireEvent.click(await screen.findByText('Bob Martin'));
+    fireEvent.click((await screen.findAllByText('Bob Martin'))[0]);
 
     expect(await screen.findByText('Fiche utilisateur')).toBeInTheDocument();
 
@@ -172,7 +201,7 @@ describe('AdminView', () => {
 
   it('deletes an existing user after confirmation', async () => {
     renderAdminView();
-    await screen.findByText('Alice Dupont');
+    await screen.findAllByText('Alice Dupont');
 
     const deleteButtons = screen.getAllByTitle('Supprimer');
     fireEvent.click(deleteButtons[0]);

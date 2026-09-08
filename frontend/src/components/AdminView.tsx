@@ -180,9 +180,9 @@ export const AdminView: React.FC = () => {
         <h1 className="text-xl font-black text-[#1C2529]">Administration — Utilisateurs</h1>
       </div>
 
-      {/* Recherche + filtre par rôle + création */}
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="relative flex-1 w-full min-w-0 sm:min-w-[220px]">
+      {/* Recherche + filtre par rôle + création — empilement mobile, ligne desktop */}
+      <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2.5">
+        <div className="relative w-full sm:w-auto sm:flex-1 sm:min-w-[220px]">
           <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
           <input
             type="text"
@@ -204,39 +204,41 @@ export const AdminView: React.FC = () => {
           )}
         </div>
 
-        <select
-          value={roleFilter}
-          onChange={e => setRoleFilter(e.target.value as RoleFilter)}
-          className="py-2.5 pl-3 pr-8 bg-white border border-slate-200 rounded-xl text-xs font-bold text-[#1C2529] focus:ring-2 focus:ring-[#005596] cursor-pointer"
-          title="Filtrer par rôle"
-        >
-          <option value="all">Tous les rôles</option>
-          <option value="admin">Administrateurs</option>
-          <option value="user">Utilisateurs</option>
-        </select>
+        <div className="grid grid-cols-2 gap-2.5 w-full sm:w-auto sm:flex sm:gap-2.5">
+          <select
+            value={roleFilter}
+            onChange={e => setRoleFilter(e.target.value as RoleFilter)}
+            className="w-full min-w-0 py-2.5 pl-3 pr-8 bg-white border border-slate-200 rounded-xl text-xs font-bold text-[#1C2529] focus:ring-2 focus:ring-[#005596] cursor-pointer"
+            title="Filtrer par rôle"
+          >
+            <option value="all">Tous les rôles</option>
+            <option value="admin">Administrateurs</option>
+            <option value="user">Utilisateurs</option>
+          </select>
 
-        <select
-          value={privilegeFilter}
-          onChange={e => setPrivilegeFilter(e.target.value as PrivilegeFilter)}
-          className="py-2.5 pl-3 pr-8 bg-white border border-slate-200 rounded-xl text-xs font-bold text-[#1C2529] focus:ring-2 focus:ring-[#005596] cursor-pointer"
-          title="Filtrer par privilège"
-        >
-          <option value="all">Tous les privilèges</option>
-          {PRIVILEGE_OPTIONS.map(p => (
-            <option key={p} value={p}>{PRIVILEGE_LABELS[p]}</option>
-          ))}
-        </select>
+          <select
+            value={privilegeFilter}
+            onChange={e => setPrivilegeFilter(e.target.value as PrivilegeFilter)}
+            className="w-full min-w-0 py-2.5 pl-3 pr-8 bg-white border border-slate-200 rounded-xl text-xs font-bold text-[#1C2529] focus:ring-2 focus:ring-[#005596] cursor-pointer"
+            title="Filtrer par privilège"
+          >
+            <option value="all">Tous les privilèges</option>
+            {PRIVILEGE_OPTIONS.map(p => (
+              <option key={p} value={p}>{PRIVILEGE_LABELS[p]}</option>
+            ))}
+          </select>
+        </div>
 
         <button
           onClick={() => { setShowCreateModal(true); setCreatedPassword(null); setCreateFormError(''); setCreateForm({ name: '', email: '', role: 'user', privilege: 'FULL_ACCESS' }); }}
-          className="ml-auto flex items-center gap-2 px-4 py-2.5 bg-[#005596] text-white text-xs font-bold rounded-xl hover:bg-[#003d6d] cursor-pointer transition-colors shrink-0"
+          className="w-full sm:w-auto sm:ml-auto flex items-center justify-center gap-2 px-4 py-2.5 bg-[#005596] text-white text-xs font-bold rounded-xl hover:bg-[#003d6d] cursor-pointer transition-colors shrink-0"
         >
           <Plus className="w-4 h-4" /> Créer un utilisateur
         </button>
       </div>
 
-      <div className="flex items-center gap-2 text-sm text-[#55636B]">
-        <Users className="w-4 h-4" />
+      <div className="flex flex-wrap items-center gap-1.5 text-sm text-[#55636B]">
+        <Users className="w-4 h-4 shrink-0" />
         <span className="font-bold">{filteredUsers.length}</span> utilisateur(s)
         {isFilterActive && users.length !== filteredUsers.length && (
           <span className="text-[11px] font-semibold text-[#8A98A1]">sur {users.length} au total</span>
@@ -247,8 +249,58 @@ export const AdminView: React.FC = () => {
         <div className="flex justify-center py-12">
           <Loader2 className="w-6 h-6 text-[#005596] animate-spin" />
         </div>
+      ) : filteredUsers.length === 0 ? (
+        <div className="bg-white rounded-2xl border border-[#C9D4DE]/40 shadow-sm px-4 py-8 text-center text-sm text-[#8A98A1]">
+          {isFilterActive ? 'Aucun utilisateur ne correspond à la recherche.' : 'Aucun utilisateur trouvé.'}
+        </div>
       ) : (
-        <div className="bg-white rounded-2xl border border-[#C9D4DE]/40 shadow-sm overflow-x-auto">
+        <>
+        {/* Cartes mobiles : table remplacée par des fiches pleine largeur */}
+        <div data-testid="admin-mobile-cards" className="md:hidden space-y-3">
+          {filteredUsers.map(u => (
+            <div
+              key={u.id}
+              onClick={() => openUserDetails(u)}
+              className="bg-white rounded-2xl border border-[#C9D4DE]/40 shadow-sm p-4 cursor-pointer transition-colors hover:bg-[#E8F1F8]/60"
+              title="Consulter la fiche utilisateur"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#005596] to-[#B8167C] text-white flex items-center justify-center text-sm font-black shrink-0">
+                  {u.name.split(' ').map(p => p[0]).slice(0, 2).join('').toUpperCase()}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="font-bold text-[#1C2529] truncate">{u.name}</p>
+                  <p className="text-[#55636B] text-xs break-all">{u.email}</p>
+                </div>
+              </div>
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                {roleBadge(u.role)}
+                {privilegeBadge(u.privilege)}
+                <span className="text-[10px] text-[#8A98A1] ml-auto">Dernière connexion : {formatDateTime(u.lastLogin)}</span>
+              </div>
+              <div className="mt-3 pt-3 border-t border-[#C9D4DE]/20 flex items-center justify-end gap-1" onClick={e => e.stopPropagation()}>
+                <button
+                  onClick={() => openUserDetails(u)}
+                  className="p-2 rounded-lg hover:bg-slate-100 text-[#55636B] hover:text-[#005596] transition-colors cursor-pointer"
+                  title="Consulter"
+                >
+                  <Eye className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => setConfirmDeleteUser(u)}
+                  disabled={deletingId === u.id}
+                  className="p-2 rounded-lg hover:bg-red-50 text-[#55636B] hover:text-red-600 transition-colors cursor-pointer disabled:opacity-50"
+                  title="Supprimer"
+                >
+                  {deletingId === u.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Tableau desktop (md+) : colonnes complètes, Actions épinglée à droite */}
+        <div className="hidden md:block bg-white rounded-2xl border border-[#C9D4DE]/40 shadow-sm overflow-x-auto">
           <table className="w-full min-w-[560px] text-xs">
             <thead>
               <tr className="bg-[#F4F6F8] border-b border-[#C9D4DE]/40">
@@ -270,7 +322,7 @@ export const AdminView: React.FC = () => {
                   title="Consulter la fiche utilisateur"
                 >
                   <td className="px-4 py-3 font-bold text-[#1C2529]">{u.name}</td>
-                  <td className="px-4 py-3 text-[#55636B]">{u.email}</td>
+                  <td className="px-4 py-3 text-[#55636B] break-words max-w-[280px]">{u.email}</td>
                   <td className="px-4 py-3">{roleBadge(u.role)}</td>
                   <td className="px-4 py-3 hidden md:table-cell">{privilegeBadge(u.privilege)}</td>
                   <td className="px-4 py-3 text-[#8A98A1] text-[11px] hidden md:table-cell">{formatDateTime(u.lastLogin)}</td>
@@ -295,16 +347,10 @@ export const AdminView: React.FC = () => {
                   </td>
                 </tr>
               ))}
-              {filteredUsers.length === 0 && (
-                <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-sm text-[#8A98A1]">
-                    {isFilterActive ? 'Aucun utilisateur ne correspond à la recherche.' : 'Aucun utilisateur trouvé.'}
-                  </td>
-                </tr>
-              )}
             </tbody>
           </table>
         </div>
+        </>
       )}
 
       {/* Create User Modal */}

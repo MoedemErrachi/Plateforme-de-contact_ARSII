@@ -627,24 +627,33 @@ export default function App() {
   // ──────────────────────────────────────────────
   // AUTH
   // ──────────────────────────────────────────────
-  const handleLoginSuccess = (userData: User) => {
+  const handleLoginSuccess = async (userData: User) => {
     // Horodatage utilisé par PublicOnlyRoute pour ignorer les rendus
     // transitoires sur un lien d'authentification juste après un login.
     lastLoginAtRef.current = Date.now();
     setUser(userData);
-    setIsAuthenticated(true);
     setAuthToken(getAuthToken());
     setIsSessionReady(true);
     // Première connexion : invite de changement du mot de passe temporaire
     // (fermable via « Passer »).
     setShowFirstLoginModal(Boolean(userData.isFirstLogin));
-    // Préchargement du chunk du dashboard pendant le login : le chunk est lourd
-    // (carte mondiale + echarts), et la navigation vers /dashboard traverserait
-    // sinon la frontière Suspense (spinner blanc) le temps du fetch — surtout à
-    // la première connexion où le chunk n'est pas encore en cache navigateur.
-    void import('./components/DashboardView');
+
+    const target = userData.role === 'admin' ? '/admin' : '/dashboard';
+    // Anti-scintillement première connexion : le chunk de la page de destination
+    // (AdminView / DashboardView) est chargé AVANT d'activer la session et de
+    // naviguer. Sans cela, la première connexion traverse la frontière Suspense
+    // le temps du téléchargement du chunk (page paraissant vide) ; en cas
+    // d'échec réseau, la navigation se poursuit quand même (fallback Suspense).
+    try {
+      await (userData.role === 'admin'
+        ? import('./components/AdminView')
+        : import('./components/DashboardView'));
+    } catch {
+      // chunk indisponible : on navigue ; le fallback Suspense s'affiche brièvement.
+    }
+    setIsAuthenticated(true);
     // RBAC : les administrateurs atterrissent dans leur console dédiée.
-    navigate(userData.role === 'admin' ? '/admin' : '/dashboard');
+    navigate(target);
   };
 
   // Déconnexion silencieuse sans navigation : utilisée quand un utilisateur

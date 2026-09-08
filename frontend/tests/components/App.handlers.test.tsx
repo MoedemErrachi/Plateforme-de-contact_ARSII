@@ -1054,6 +1054,35 @@ describe('App - Handler & Effect Coverage', () => {
       expect(mockClearStoredAuth).not.toHaveBeenCalled();
       expect(screen.queryByText('Votre session a expiré. Veuillez vous reconnecter.')).not.toBeInTheDocument();
     });
+
+    it('admin signs in through the form and reaches the admin console without bouncing', async () => {
+      mockGetAuthToken.mockReturnValue(null);
+      mockApiFetch.mockImplementation(async (path: string) => {
+        if (path === '/api/auth/login') return { token: 'admin-token', user: adminUser };
+        if (path.startsWith('/api/contacts')) return { data: { contacts: [] } };
+        if (path === '/api/segments') return { data: { tags: [], segments: [] } };
+        return {};
+      });
+      renderApp(['/login']);
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /se connecter/i })).toBeInTheDocument();
+      });
+      fireEvent.change(screen.getByLabelText(/identifiant/i), { target: { value: 'admin@example.com' } });
+      fireEvent.change(screen.getByLabelText(/mot de passe/i), { target: { value: 'secret' } });
+      fireEvent.click(screen.getByRole('button', { name: /se connecter/i }));
+      await waitFor(() => {
+        expect(screen.getByTestId('mock-admin')).toBeInTheDocument();
+      });
+      // Un 401 tardif (jeton stale) pendant la fenêtre anti-course post-login
+      // ne doit pas déconnecter l'admin qui vient d'atterrir dans la console.
+      act(() => {
+        window.dispatchEvent(new Event('auth:expired'));
+      });
+      await new Promise(r => setTimeout(r, 100));
+      expect(screen.getByTestId('mock-admin')).toBeInTheDocument();
+      expect(mockClearStoredAuth).not.toHaveBeenCalled();
+      expect(screen.queryByText('Votre session a expiré. Veuillez vous reconnecter.')).not.toBeInTheDocument();
+    });
   });
 
   describe('Data loading errors', () => {

@@ -34,11 +34,28 @@ describe('Header', () => {
     expect(screen.getByRole('link', { name: 'Segmentation' })).toHaveAttribute('href', '/segments');
   });
 
-  it('shows the single admin nav link and admin brand target for an admin user', () => {
+  it('shows an always-visible Administration title (no nav dropdown/link) for an admin user', () => {
     renderHeader({ user: { id: '1', name: 'Admin', email: 'a@x.fr', role: 'admin' } as User });
-    expect(screen.getByRole('link', { name: 'Administration' })).toHaveAttribute('href', '/admin');
+    // Le titre remplace le lien/nav : l'admin n'a qu'une seule page.
+    expect(screen.getByText('Administration')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Administration' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Contacts' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Toggle Navigation' })).not.toBeInTheDocument();
     expect(screen.getAllByRole('link').some(l => l.getAttribute('href') === '/admin')).toBe(true);
+  });
+
+  it('never hides the header on scroll for an admin user', () => {
+    const props = renderHeader({ user: { id: '1', name: 'Admin', email: 'a@x.fr', role: 'admin' } as User, isHeaderVisible: false });
+    const header = screen.getByRole('banner');
+    expect(header.className).toContain('translate-y-0');
+    expect(header.className).not.toContain('-translate-y-full');
+  });
+
+  it('hides the header on scroll for a non-admin user when isHeaderVisible is false', () => {
+    renderHeader({ isHeaderVisible: false });
+    const header = screen.getByRole('banner');
+    expect(header.className).not.toContain('translate-y-0');
+    expect(header.className).toContain('-translate-y-full');
   });
 
   it('opens the profile dropdown and shows profile + admin-scoped entries for admin', () => {
