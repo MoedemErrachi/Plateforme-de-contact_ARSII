@@ -33,6 +33,8 @@ vi.mock('../../src/components/ContactsView', () => ({
       <button data-testid="btn-bulk-delete" onClick={() => props.onDeleteContacts(['c1', 'c2'])}>Bulk Delete</button>
       <button data-testid="btn-select-segment" onClick={() => props.onSelectSegment('seg1')}>Select Segment</button>
       <button data-testid="btn-save-segment" onClick={() => props.onSaveCurrentAsSegment('Test Segment', { search: '', countries: [], genders: [], careerStages: [], tags: [] })}>Save Segment</button>
+      <span data-testid="mock-contacts-active-segment">{String(props.activeSegmentId)}</span>
+      <span data-testid="mock-contacts-items">{String(props.itemsPerPage)}</span>
     </div>
   ),
 }));
@@ -72,7 +74,12 @@ vi.mock('../../src/components/NewContactView', () => ({
 }));
 
 vi.mock('../../src/components/ExportView', () => ({
-  ExportView: () => <div data-testid="mock-export">Export</div>,
+  ExportView: ({ selection }: any) => (
+    <div data-testid="mock-export">
+      <span data-testid="export-selection-mode">{String(selection?.mode)}</span>
+      <span data-testid="export-selection-ids">{JSON.stringify(selection?.ids || [])}</span>
+    </div>
+  ),
 }));
 
 vi.mock('../../src/components/SegmentationView', () => ({
@@ -653,9 +660,10 @@ describe('App - Handler & Effect Coverage', () => {
       await waitFor(() => {
         expect(screen.getByTestId('mock-contacts')).toBeInTheDocument();
       });
+      expect(screen.getByTestId('mock-contacts-active-segment').textContent).toBe('all');
       fireEvent.click(screen.getByTestId('btn-select-segment'));
       await waitFor(() => {
-        expect(screen.getByTestId('mock-contacts')).toBeInTheDocument();
+        expect(screen.getByTestId('mock-contacts-active-segment').textContent).toBe('seg1');
       });
     });
 
@@ -1243,7 +1251,7 @@ describe('App - Handler & Effect Coverage', () => {
   });
 
   describe('Selection persistence', () => {
-    it('persists selection to localStorage and restores on mount', async () => {
+    it('restores selection from localStorage and exposes it to the export view', async () => {
       const savedSelection = {
         mode: 'partial', ids: ['c1', 'c2'],
         filters: { search: '', countries: [], genders: [], careerStages: [], tags: [] },
@@ -1252,30 +1260,36 @@ describe('App - Handler & Effect Coverage', () => {
       localStorage.setItem('euraxess_contacts_selected_ids', JSON.stringify(savedSelection));
       mockGetAuthToken.mockReturnValue('valid-token');
       mockAuthForUser(regularUser);
-      renderApp(['/dashboard']);
+      renderApp(['/export']);
       await waitFor(() => {
-        expect(screen.getByTestId('mock-dashboard')).toBeInTheDocument();
+        expect(screen.getByTestId('mock-export')).toBeInTheDocument();
       });
+      expect(screen.getByTestId('export-selection-mode').textContent).toBe('partial');
+      expect(JSON.parse(screen.getByTestId('export-selection-ids').textContent || '')).toEqual(['c1', 'c2']);
     });
 
-    it('restores selection from old array format', async () => {
+    it('restores selection from old array format (migrated to partial)', async () => {
       localStorage.setItem('euraxess_contacts_selected_ids', JSON.stringify(['c1', 'c2']));
       mockGetAuthToken.mockReturnValue('valid-token');
       mockAuthForUser(regularUser);
-      renderApp(['/dashboard']);
+      renderApp(['/export']);
       await waitFor(() => {
-        expect(screen.getByTestId('mock-dashboard')).toBeInTheDocument();
+        expect(screen.getByTestId('mock-export')).toBeInTheDocument();
       });
+      expect(screen.getByTestId('export-selection-mode').textContent).toBe('partial');
+      expect(JSON.parse(screen.getByTestId('export-selection-ids').textContent || '')).toEqual(['c1', 'c2']);
     });
 
-    it('handles corrupted localStorage selection gracefully', async () => {
+    it('handles corrupted localStorage selection gracefully (falls back to none)', async () => {
       localStorage.setItem('euraxess_contacts_selected_ids', '{corrupted json!!!');
       mockGetAuthToken.mockReturnValue('valid-token');
       mockAuthForUser(regularUser);
-      renderApp(['/dashboard']);
+      renderApp(['/export']);
       await waitFor(() => {
-        expect(screen.getByTestId('mock-dashboard')).toBeInTheDocument();
+        expect(screen.getByTestId('mock-export')).toBeInTheDocument();
       });
+      expect(screen.getByTestId('export-selection-mode').textContent).toBe('none');
+      expect(JSON.parse(screen.getByTestId('export-selection-ids').textContent || '')).toEqual([]);
     });
 
     it('clears selection when navigating to /contacts', async () => {
@@ -1300,30 +1314,33 @@ describe('App - Handler & Effect Coverage', () => {
       localStorage.setItem('euraxess_contacts_items_per_page', '50');
       mockGetAuthToken.mockReturnValue('valid-token');
       mockAuthForUser(regularUser);
-      renderApp(['/dashboard']);
+      renderApp(['/contacts']);
       await waitFor(() => {
-        expect(screen.getByTestId('mock-dashboard')).toBeInTheDocument();
+        expect(screen.getByTestId('mock-contacts')).toBeInTheDocument();
       });
+      expect(screen.getByTestId('mock-contacts-items').textContent).toBe('50');
     });
 
     it('defaults to 10 for invalid localStorage value', async () => {
       localStorage.setItem('euraxess_contacts_items_per_page', '999');
       mockGetAuthToken.mockReturnValue('valid-token');
       mockAuthForUser(regularUser);
-      renderApp(['/dashboard']);
+      renderApp(['/contacts']);
       await waitFor(() => {
-        expect(screen.getByTestId('mock-dashboard')).toBeInTheDocument();
+        expect(screen.getByTestId('mock-contacts')).toBeInTheDocument();
       });
+      expect(screen.getByTestId('mock-contacts-items').textContent).toBe('10');
     });
 
     it('defaults to 10 for NaN localStorage value', async () => {
       localStorage.setItem('euraxess_contacts_items_per_page', 'abc');
       mockGetAuthToken.mockReturnValue('valid-token');
       mockAuthForUser(regularUser);
-      renderApp(['/dashboard']);
+      renderApp(['/contacts']);
       await waitFor(() => {
-        expect(screen.getByTestId('mock-dashboard')).toBeInTheDocument();
+        expect(screen.getByTestId('mock-contacts')).toBeInTheDocument();
       });
+      expect(screen.getByTestId('mock-contacts-items').textContent).toBe('10');
     });
   });
 

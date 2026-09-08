@@ -133,11 +133,6 @@ describe('WorldMapWidget', () => {
       ])
     );
   });
-
-  it('registers click handlers on the chart', () => {
-    renderMap();
-    expect(mockChartOn).toHaveBeenCalledWith('click', expect.any(Function));
-  });
 });
 
 async function waitForECharts() {

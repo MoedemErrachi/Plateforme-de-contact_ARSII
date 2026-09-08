@@ -67,5 +67,15 @@ describe('ModalConfirmation', () => {
   it('uses the primary variant styling for non-danger modals', () => {
     renderModal({ variant: 'primary', title: 'Valider ?' });
     expect(screen.getByText('Valider ?')).toBeInTheDocument();
+    const confirm = screen.getByRole('button', { name: 'Confirmer' });
+    expect(confirm.className).toContain('from-[#005596]');
+    expect(confirm.className).not.toContain('from-rose-500');
+  });
+
+  it('uses the danger variant styling for destructive modals', () => {
+    renderModal({ variant: 'danger', title: 'Supprimer ?' });
+    const confirm = screen.getByRole('button', { name: 'Confirmer' });
+    expect(confirm.className).toContain('from-rose-500');
+    expect(confirm.className).not.toContain('from-[#005596]');
   });
 });

@@ -58,9 +58,13 @@ describe('Composite skeletons', () => {
     expect(screen.getByText('Chargement...')).toBeInTheDocument();
   });
 
-  it('renders the segmentation skeleton', () => {
+  it('renders the segmentation skeleton with six segment placeholder cards', () => {
     const { container } = render(<SegmentationSkeleton />);
-    expect(container.textContent).toContain('');
+    expect(container.querySelectorAll('.animate-pulse').length).toBeGreaterThan(0);
+    const cards = Array.from(container.querySelectorAll('div')).filter(
+      el => el.className.includes('border-[#C9D4DE]/40')
+    );
+    expect(cards).toHaveLength(6);
   });
 
   it('renders the OCR result skeleton with eight field placeholders', () => {

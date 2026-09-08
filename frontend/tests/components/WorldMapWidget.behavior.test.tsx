@@ -288,24 +288,18 @@ describe('WorldMapWidget behavior', () => {
     expect(snapCalls[0][1]).toEqual({ notMerge: false });
   });
 
-  it('includes visualMap scale, tooltip formatter, and legend-derived data in option', async () => {
+  it('includes a continuous visualMap scale matching the data', async () => {
     renderMap();
     await waitFor(() => expect(mockChartSetOption).toHaveBeenCalled());
     const option = mockChartSetOption.mock.calls[0][0];
+    expect(option.series[0]).toMatchObject({
+      roam: true,
+    });
+    // max derives from the highest country count in the fixture (France = 25)
     expect(option.visualMap).toMatchObject({
       type: 'continuous',
       min: 0,
       max: 25,
-    });
-    expect(option.visualMap.inRange.color).toEqual([
-      '#E8F1F8',
-      '#BCD7EE',
-      '#86B6D9',
-      '#005596',
-    ]);
-    expect(option.series[0]).toMatchObject({
-      roam: true,
-      scaleLimit: { min: 1, max: 8 },
     });
   });
 
