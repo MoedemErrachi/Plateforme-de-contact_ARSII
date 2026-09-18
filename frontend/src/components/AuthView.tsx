@@ -112,7 +112,7 @@ export const AuthView: React.FC<AuthViewProps> = ({ onLoginSuccess }) => {
           <div className="mb-6 relative">
             <span className="block w-24 h-24 rounded-full bg-white shadow-md p-1.5 border border-[#C9D4DE]/40">
               <img
-                src="/euraxess-africa-logo.png"
+                src="/assets/euraxess-africa-logo.png"
                 alt="EURAXESS Africa"
                 className="w-full h-full object-contain"
               />

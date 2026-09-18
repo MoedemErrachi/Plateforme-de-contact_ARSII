@@ -93,7 +93,7 @@ export const Header: React.FC<HeaderProps> = ({
           >
             <span className="bg-white rounded-md px-3 py-1 shadow-sm flex items-center">
               <img
-                src="/euraxess-africa-logo.png"
+                src="/assets/euraxess-africa-logo.png"
                 alt="EURAXESS Africa"
                 className="h-7 sm:h-8 w-auto object-contain group-hover:scale-105 transition-transform"
               />
