@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 const vercelConfigPath = join(__dirname, '..', '..', 'vercel.json');
 const rawConfig = readFileSync(vercelConfigPath, 'utf-8');
 const vercelConfig = JSON.parse(rawConfig) as {
-  routes?: Array<{ src?: string; dest?: string; env?: string[] }>;
+  routes?: Array<{ src?: string; dest?: string; env?: string[]; check?: boolean }>;
 };
 
 const FORBIDDEN_PATTERNS = [/onrender\.com/i, /vercel\.app/i, /arsii-(frontend|backend|chatbot)[.-]/i];
@@ -34,5 +34,6 @@ describe('vercel.json', () => {
     expect(vercelConfig.routes).toBeDefined();
     const fallback = vercelConfig.routes!.find((r) => r.src === '/((?!assets/).*)');
     expect(fallback?.dest).toBe('/index.html');
+    expect(fallback?.check).toBe(true);
   });
 });

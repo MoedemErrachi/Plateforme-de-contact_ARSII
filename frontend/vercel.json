@@ -23,7 +23,8 @@
     },
     {
       "src": "/((?!assets/).*)",
-      "dest": "/index.html"
+      "dest": "/index.html",
+      "check": true
     }
   ]
 }

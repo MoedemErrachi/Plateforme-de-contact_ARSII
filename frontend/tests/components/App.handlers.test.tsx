@@ -11,6 +11,8 @@ vi.mock('../../src/services/api', () => ({
   clearStoredAuth: vi.fn(),
   isServiceUnreachable: vi.fn(),
   setGlobalApiErrorHandler: vi.fn(),
+  subscribeBackendConnectivity: vi.fn(),
+  isBackendOnline: vi.fn(),
 }));
 
 vi.mock('../../src/utils/jwt', () => ({
@@ -128,6 +130,8 @@ import {
   clearStoredAuth,
   isServiceUnreachable,
   setGlobalApiErrorHandler,
+  subscribeBackendConnectivity,
+  isBackendOnline,
 } from '../../src/services/api';
 import { isTokenExpired } from '../../src/utils/jwt';
 
@@ -136,6 +140,8 @@ const mockGetAuthToken = vi.mocked(getAuthToken);
 const mockClearStoredAuth = vi.mocked(clearStoredAuth);
 const mockIsTokenExpired = vi.mocked(isTokenExpired);
 const mockIsServiceUnreachable = vi.mocked(isServiceUnreachable);
+const mockSubscribeBackendConnectivity = vi.mocked(subscribeBackendConnectivity);
+const mockIsBackendOnline = vi.mocked(isBackendOnline);
 
 const regularUser: User = {
   id: 'u1',
@@ -222,6 +228,11 @@ beforeEach(() => {
   });
   mockIsTokenExpired.mockReturnValue(false);
   mockIsServiceUnreachable.mockReturnValue(false);
+  mockSubscribeBackendConnectivity.mockImplementation((listener) => {
+    listener(true);
+    return () => {};
+  });
+  mockIsBackendOnline.mockReturnValue(true);
   mockApiFetch.mockImplementation(async (path: string) => {
     if (path.startsWith('/api/contacts'))
       return { data: { contacts: [] } };

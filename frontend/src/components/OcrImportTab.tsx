@@ -212,6 +212,10 @@ export const OcrImportTab: React.FC<OcrImportTabProps> = ({ onSaveContact }) => 
 
   const [isSaving, setIsSaving] = useState(false);
   const [saveResult, setSaveResult] = useState<'success' | null>(null);
+  // Erreur d'extraction persistante : contrairement au toast global (éphémère),
+  // elle reste affichée tant que l'utilisateur ne relance pas une extraction ou
+  // ne réinitialise pas le formulaire.
+  const [extractError, setExtractError] = useState<string | null>(null);
   const [cropMode, setCropMode] = useState(false);
   const [cropRect, setCropRect] = useState({ x: 10, y: 10, w: 80, h: 80 });
   const [croppedPreview, setCroppedPreview] = useState<string | null>(null);
@@ -235,6 +239,7 @@ export const OcrImportTab: React.FC<OcrImportTabProps> = ({ onSaveContact }) => 
     setEditable({ firstName: '', lastName: '', email: '', phone: '', affiliation: '', function: '', city: '', countryOfOrigin: '' });
     setConfidence({});
     setSaveResult(null);
+    setExtractError(null);
   };
 
   const handleFileSelect = (file: File) => {
@@ -246,6 +251,7 @@ export const OcrImportTab: React.FC<OcrImportTabProps> = ({ onSaveContact }) => 
     setImagePreview(URL.createObjectURL(file));
     setExtracted(null);
     setSaveResult(null);
+    setExtractError(null);
   };
 
   const handleDrop = (e: React.DragEvent) => {
@@ -259,6 +265,7 @@ export const OcrImportTab: React.FC<OcrImportTabProps> = ({ onSaveContact }) => 
     setIsExtracting(true);
     setExtracted(null);
     setSaveResult(null);
+    setExtractError(null);
 
     try {
       const data = await pickProvider(imageFile);
@@ -270,8 +277,13 @@ export const OcrImportTab: React.FC<OcrImportTabProps> = ({ onSaveContact }) => 
     } catch (err: any) {
       // apiFetch garantit un message utilisateur en français, quel que soit le
       // mode d'échec (réseau, timeout, 5xx). Les erreurs réseau émettent déjà
-      // un toast global ; on notifie uniquement les erreurs métier locales.
-      if (isServiceUnreachable(err)) return;
+      // un toast global ; on affiche en plus un message persistant dans la vue
+      // pour que l'échec ne passe pas inaperçu (le toast disparaît au bout de
+      // quelques secondes).
+      if (isServiceUnreachable(err)) {
+        setExtractError(err?.message || 'Service injoignable.');
+        return;
+      }
       showToast(err?.message || 'Échec de l\'extraction OCR.', 'error');
     } finally {
       setIsExtracting(false);
@@ -520,6 +532,19 @@ export const OcrImportTab: React.FC<OcrImportTabProps> = ({ onSaveContact }) => 
               </div>
             </div>
           </div>
+
+          {extractError && (
+            <div
+              role="alert"
+              className="flex items-start gap-2 px-3 py-2.5 bg-[#7A1E0F]/[0.06] border border-[#7A1E0F]/[0.25] rounded-xl text-xs font-semibold text-[#7A1E0F]"
+            >
+              <X className="w-4 h-4 mt-0.5 shrink-0" aria-hidden="true" />
+              <div className="space-y-1">
+                <p>{extractError}</p>
+                <p className="text-[11px] font-medium opacity-90">Les données n'ont pas été extraites. Revenez au tableau de bord pour vérifier votre connexion, puis réessayez.</p>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

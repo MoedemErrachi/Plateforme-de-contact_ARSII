@@ -13,6 +13,8 @@ vi.mock('../../src/services/api', () => ({
   clearStoredAuth: vi.fn(),
   isServiceUnreachable: vi.fn(),
   setGlobalApiErrorHandler: vi.fn(),
+  subscribeBackendConnectivity: vi.fn(),
+  isBackendOnline: vi.fn(),
 }));
 
 vi.mock('../../src/utils/jwt', () => ({
@@ -64,6 +66,8 @@ import {
   clearStoredAuth,
   isServiceUnreachable,
   setGlobalApiErrorHandler,
+  subscribeBackendConnectivity,
+  isBackendOnline,
 } from '../../src/services/api';
 import { isTokenExpired } from '../../src/utils/jwt';
 
@@ -72,6 +76,8 @@ const mockGetAuthToken = vi.mocked(getAuthToken);
 const mockClearStoredAuth = vi.mocked(clearStoredAuth);
 const mockIsTokenExpired = vi.mocked(isTokenExpired);
 const mockIsServiceUnreachable = vi.mocked(isServiceUnreachable);
+const mockSubscribeBackendConnectivity = vi.mocked(subscribeBackendConnectivity);
+const mockIsBackendOnline = vi.mocked(isBackendOnline);
 
 // ─── Test data ────────────────────────────────────────────
 
@@ -153,6 +159,11 @@ beforeEach(() => {
   });
   mockIsTokenExpired.mockReturnValue(false);
   mockIsServiceUnreachable.mockReturnValue(false);
+  mockSubscribeBackendConnectivity.mockImplementation((listener) => {
+    listener(true);
+    return () => {};
+  });
+  mockIsBackendOnline.mockReturnValue(true);
   mockApiFetch.mockImplementation(async (path: string) => {
     if (path.startsWith('/api/contacts'))
       return { data: { contacts: [] } };
@@ -395,6 +406,47 @@ describe('App', () => {
       expect(
         screen.getByRole('button', { name: /se connecter/i }),
       ).toBeInTheDocument();
+    });
+  });
+
+  it('shows the offline banner when the backend becomes unreachable and retries via health probe', async () => {
+    mockGetAuthToken.mockReturnValue('valid-token');
+    mockAuthForUser(regularUser);
+
+    renderApp(['/dashboard']);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('mock-dashboard')).toBeInTheDocument();
+    });
+    expect(
+      screen.queryByRole('alert'),
+    ).not.toBeInTheDocument();
+
+    const listener = mockSubscribeBackendConnectivity.mock.calls.at(-1)?.[0] as (online: boolean) => void;
+
+    await act(async () => {
+      listener(false);
+    });
+    expect(
+      screen.getByRole('alert'),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/service injoignable/i)).toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole('button', { name: /réessayer/i }),
+    );
+    await waitFor(() => {
+      expect(mockApiFetch).toHaveBeenCalledWith(
+        '/api/health',
+        expect.objectContaining({ suppressGlobalError: true }),
+      );
+    });
+
+    await act(async () => {
+      listener(true);
+    });
+    await waitFor(() => {
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     });
   });
 });

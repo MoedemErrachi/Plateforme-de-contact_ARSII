@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react';
 import { Routes, Route, Navigate, Outlet, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { Contact, Tag, Segment, FilterState, User, ContactSelection, SelectionMode } from './types';
-import { apiFetch, getAuthToken, clearStoredAuth, isServiceUnreachable, setGlobalApiErrorHandler } from './services/api';
+import { apiFetch, getAuthToken, clearStoredAuth, isServiceUnreachable, setGlobalApiErrorHandler, subscribeBackendConnectivity } from './services/api';
 import { csrfHeaders } from './utils/csrf';
 import { isTokenExpired } from './utils/jwt';
 import { mapContactFromApi } from './utils/mapContact';
@@ -482,6 +482,23 @@ export default function App() {
     setGlobalApiErrorHandler((err) => showToast(err.message, 'error'));
     return () => setGlobalApiErrorHandler(null);
   }, [showToast]);
+
+  // Connectivité backend : bannière persistante tant que le service est
+  // injoignable (indépendante des toasts — affichée même si un appel a
+  // supprimé son erreur globale avec { suppressGlobalError }).
+  const [backendOffline, setBackendOffline] = useState(false);
+
+  useEffect(() => {
+    return subscribeBackendConnectivity((online) => setBackendOffline(!online));
+  }, []);
+
+  const retryBackend = useCallback(async () => {
+    try {
+      await apiFetch('/api/health', { suppressGlobalError: true, timeoutMs: 8000 });
+    } catch {
+      // Le bus de connectivité basculera online dès qu'une sonde réussit.
+    }
+  }, []);
 
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [isLoadingData, setIsLoadingData] = useState<boolean>(true);
@@ -1085,6 +1102,26 @@ export default function App() {
 
   return (
     <div className="min-h-screen flex flex-col bg-[#F4F6F8] text-[#1C2529] font-sans selection:bg-[#005596] selection:text-white w-full max-w-full overflow-x-hidden">
+      {backendOffline && (
+        <div
+          role="alert"
+          className="z-50 w-full bg-[#7A1E0F]/[0.06] border-b border-[#7A1E0F]/[0.2] backdrop-blur-sm"
+        >
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 py-2.5 flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
+            <p className="text-xs font-semibold text-[#7A1E0F] flex items-center gap-2">
+              <span className="inline-block w-2 h-2 rounded-full bg-[#B8167C] animate-pulse" aria-hidden="true" />
+              Service injoignable — le serveur ne répond pas. Vos données peuvent être temporairement indisponibles.
+            </p>
+            <button
+              type="button"
+              onClick={retryBackend}
+              className="text-xs font-bold text-white bg-[#7A1E0F] hover:bg-[#5f170c] px-3 py-1.5 rounded-lg transition-colors cursor-pointer"
+            >
+              Réessayer
+            </button>
+          </div>
+        </div>
+      )}
       <Header
         isAuthenticated={isAuthenticated}
         user={user}

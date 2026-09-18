@@ -2,7 +2,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   apiFetch, ApiError, toApiError, isServiceUnreachable,
   setGlobalApiErrorHandler, getAuthToken, clearStoredAuth,
-  notifyAuthExpired, DEFAULT_TIMEOUT_MS
+  notifyAuthExpired, DEFAULT_TIMEOUT_MS,
+  isBackendOnline, subscribeBackendConnectivity
 } from '../../src/services/api';
 
 function makeJwt(exp: number): string {
@@ -281,5 +282,61 @@ describe('apiFetch', () => {
     vi.advanceTimersByTime(50);
     await expect(p).rejects.toMatchObject({ kind: 'timeout' });
     vi.useRealTimers();
+  });
+});
+
+describe('connectivité backend', () => {
+  it('bascule hors ligne sur une réponse injoignable (même toast supprimé) puis revient online sur 2xx', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ ok: true }));
+    await apiFetch('/api/contacts');
+    expect(isBackendOnline()).toBe(true);
+
+    const listener = vi.fn();
+    const unsubscribe = subscribeBackendConnectivity(listener);
+    expect(listener).toHaveBeenCalledWith(true);
+
+    fetchMock.mockResolvedValue(jsonResponse({}, 503));
+    await expect(apiFetch('/api/contacts', { suppressGlobalError: true })).rejects.toBeInstanceOf(ApiError);
+    expect(isBackendOnline()).toBe(false);
+    expect(listener).toHaveBeenLastCalledWith(false);
+
+    fetchMock.mockResolvedValue(jsonResponse({ ok: true }));
+    await apiFetch('/api/contacts');
+    expect(isBackendOnline()).toBe(true);
+    expect(listener).toHaveBeenLastCalledWith(true);
+    unsubscribe();
+  });
+
+  it('bascule hors ligne sur une erreur réseau', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ ok: true }));
+    await apiFetch('/api/contacts');
+    fetchMock.mockRejectedValue(new TypeError('Failed to fetch'));
+    await expect(apiFetch('/api/contacts')).rejects.toMatchObject({ kind: 'network' });
+    expect(isBackendOnline()).toBe(false);
+  });
+
+  it('ne bascule pas pour une erreur client (404)', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ ok: true }));
+    await apiFetch('/api/contacts');
+    fetchMock.mockResolvedValue(jsonResponse({}, 404));
+    await expect(apiFetch('/api/contacts')).rejects.toBeInstanceOf(ApiError);
+    expect(isBackendOnline()).toBe(true);
+  });
+
+  it('le désabonnement stoppe les notifications', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({}, 503));
+    await expect(apiFetch('/api/contacts')).rejects.toBeInstanceOf(ApiError);
+    expect(isBackendOnline()).toBe(false);
+
+    const listener = vi.fn();
+    const unsubscribe = subscribeBackendConnectivity(listener);
+    expect(listener).toHaveBeenCalledWith(false);
+    listener.mockClear();
+
+    unsubscribe();
+    fetchMock.mockResolvedValue(jsonResponse({ ok: true }));
+    await apiFetch('/api/contacts');
+    expect(isBackendOnline()).toBe(true);
+    expect(listener).not.toHaveBeenCalled();
   });
 });

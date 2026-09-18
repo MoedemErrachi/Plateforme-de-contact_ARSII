@@ -72,7 +72,44 @@ export function setGlobalApiErrorHandler(handler: GlobalApiErrorHandler | null):
   globalErrorHandler = handler;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Connectivité backend : bus d'événements indépendant du toast global.
+// Tout échec réseau/timeout/5xx bascule le service en « hors ligne » (même si
+// le toast est supprimé par { suppressGlobalError }), tandis qu'une réponse
+// 2xx le rétablit. App.tsx s'abonne pour afficher une bannière persistante.
+// ─────────────────────────────────────────────────────────────────────────────
+type ConnectivityListener = (online: boolean) => void;
+let backendOnline = true;
+const connectivityListeners = new Set<ConnectivityListener>();
+
+export function isBackendOnline(): boolean {
+  return backendOnline;
+}
+
+export function subscribeBackendConnectivity(listener: ConnectivityListener): () => void {
+  connectivityListeners.add(listener);
+  listener(backendOnline);
+  return () => {
+    connectivityListeners.delete(listener);
+  };
+}
+
+function setBackendOnline(online: boolean): void {
+  if (backendOnline === online) return;
+  backendOnline = online;
+  connectivityListeners.forEach(listener => {
+    try {
+      listener(online);
+    } catch {
+      // Un abonné ne doit jamais interrompre la notification des autres.
+    }
+  });
+}
+
 function notifyGlobalIfUnreachable(err: ApiError, suppress?: boolean): void {
+  if (isServiceUnreachable(err)) {
+    setBackendOnline(false);
+  }
   if (suppress || !isServiceUnreachable(err)) return;
   try {
     globalErrorHandler?.(err);
@@ -264,5 +301,6 @@ export async function apiFetch<T = any>(path: string, options: ApiFetchOptions =
     throw apiErr;
   }
 
+  setBackendOnline(true);
   return json as T;
 }

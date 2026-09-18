@@ -304,10 +304,10 @@ describe('OcrImportTab', () => {
     expect(screen.getByText(/Extraire les données/)).toBeInTheDocument();
   });
 
-  it('does not show a toast when the OCR service is unreachable', async () => {
+  it('shows a persistent inline error (no toast) when the OCR service is unreachable', async () => {
     mockedApiFetch.mockRejectedValueOnce({
       kind: 'network',
-      message: 'net',
+      message: 'Impossible de contacter le serveur.',
     });
     const { container } = renderOcr();
     uploadImageFile(container, IMAGE_FILE);
@@ -315,10 +315,37 @@ describe('OcrImportTab', () => {
 
     await waitFor(() => {
       expect(
-        screen.getByText(/Extraire les données/),
+        screen.getByRole('alert'),
       ).toBeInTheDocument();
     });
-    expect(screen.queryByText(/net/)).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/Impossible de contacter le serveur\./),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/Les données n'ont pas été extraites\./),
+    ).toBeInTheDocument();
+    // La vue reste utilisable pour relancer une extraction.
+    expect(screen.getByText(/Extraire les données/)).toBeInTheDocument();
+  });
+
+  it('clears the inline error when a retry succeeds', async () => {
+    mockedApiFetch
+      .mockRejectedValueOnce({ kind: 'network', message: 'Injoignable.' })
+      .mockResolvedValueOnce(OCR_SUCCESS);
+    const { container } = renderOcr();
+    uploadImageFile(container, IMAGE_FILE);
+    fireEvent.click(screen.getByText(/Extraire les données/));
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText(/Extraire les données/));
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue('Marie')).toBeInTheDocument();
+    });
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
   it('does not call onSaveContact when no identifiable fields remain', async () => {
