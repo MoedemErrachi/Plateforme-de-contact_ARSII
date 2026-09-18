@@ -9,14 +9,16 @@ services:
     healthCheckPath: /health
     envVars:
       # ── Backend connection ──
+      # sync: false — set in the Render dashboard (e.g. https://<backend>.onrender.com).
       - key: MAIN_API_BASE_URL
-        value: https://arsii-backend.onrender.com
+        sync: false
       # ── Security ──
       - key: JWT_SECRET
         sync: false # must match backend JWT_SECRET exactly
       # ── Frontend CORS ──
+      # sync: false — set in the Render dashboard (e.g. https://<frontend>.vercel.app).
       - key: FRONTEND_ORIGINS
-        value: https://arsii-frontend.vercel.app
+        sync: false
       # ── LLM Providers ──
       - key: MISTRAL_API_KEY
         sync: false
@@ -39,5 +41,7 @@ services:
         value: "10"
       - key: CHATBOT_RATE_LIMIT
         value: 20/minute
+      - key: OCR_RATE_LIMIT
+        value: 10/minute # OCR endpoint (optional — has an in-code default)
       - key: MAX_TOOL_ROUNDS
         value: "3"

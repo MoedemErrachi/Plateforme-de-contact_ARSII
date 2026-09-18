@@ -27,10 +27,12 @@ services:
       - key: CSRF_SECRET
         generateValue: true
       # ── Frontend URL (password-reset links + CORS) ──
+      # sync: false — set in the Render dashboard (e.g. https://<frontend>.vercel.app).
+      # Required in production: the backend refuses to start without them.
       - key: FRONTEND_URL
-        value: https://arsii-frontend.vercel.app
+        sync: false
       - key: CORS_ORIGINS
-        value: https://arsii-frontend.vercel.app
+        sync: false
       # ── SMTP ──
       - key: GMAIL_USER
         sync: false
