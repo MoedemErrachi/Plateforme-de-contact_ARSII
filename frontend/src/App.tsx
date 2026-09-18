@@ -1110,7 +1110,7 @@ export default function App() {
           <div className="max-w-7xl mx-auto px-4 sm:px-6 py-2.5 flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
             <p className="text-xs font-semibold text-[#7A1E0F] flex items-center gap-2">
               <span className="inline-block w-2 h-2 rounded-full bg-[#B8167C] animate-pulse" aria-hidden="true" />
-              Service injoignable — le serveur ne répond pas. Vos données peuvent être temporairement indisponibles.
+              {'Service injoignable — le serveur ne répond pas. Vos données peuvent être temporairement indisponibles.'}
             </p>
             <button
               type="button"
