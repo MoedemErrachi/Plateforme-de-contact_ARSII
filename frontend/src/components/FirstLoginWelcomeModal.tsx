@@ -134,7 +134,6 @@ export const FirstLoginWelcomeModal: React.FC<FirstLoginWelcomeModalProps> = ({ 
                 onChange={e => setNewPassword(e.target.value)}
                 placeholder="••••••••"
                 minLength={8}
-                autoFocus
                 className="w-full pl-10 pr-11 py-3 bg-[#E8F1F8]/60 focus:bg-white border border-[#C9D4DE] focus:border-[#005596] rounded-xl font-bold placeholder-[#8A98A1]/60 focus:outline-none focus:ring-2 focus:ring-[#005596]/20 transition-all"
               />
               <button

@@ -45,7 +45,6 @@ export const SaveSegmentModal: React.FC<SaveSegmentModalProps> = ({
           onChange={(e) => onSegmentNameInputChange(e.target.value)}
           placeholder="ex: Experts Santé Afrique 2024"
           className="w-full p-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#005596] font-semibold text-[#1C2529]"
-          autoFocus
         />
       </div>
 

@@ -543,6 +543,10 @@ export default function App() {
   // montre aucun toast (la déconnexion est attendue et gérée par PublicOnlyRoute).
   const suppressAuthExpiredToast = useRef(false);
 
+  // Minuteur de fin du chargement initial : nettoyé au démontage pour éviter
+  // tout setState après unmount (ou après teardown jsdom dans les tests).
+  const loadingDoneTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   // Compteur de rafraîchissement : incrémenté après chaque mutation de contact
   // (création, import, suppression simple ou en lot) pour que ContactsView
   // recharge sa liste depuis la base — source de vérité unique.
@@ -569,7 +573,7 @@ export default function App() {
       console.error('Error loading contacts:', err);
       showToast('Erreur lors du chargement des contacts.', 'error');
     } finally {
-      setTimeout(() => setIsLoadingData(false), 300);
+      loadingDoneTimer.current = setTimeout(() => setIsLoadingData(false), 300);
     }
   }, []);
 
@@ -609,6 +613,12 @@ export default function App() {
     if (!isAuthenticated) return;
     loadContacts();
     loadTagsAndSegments();
+    return () => {
+      if (loadingDoneTimer.current) {
+        clearTimeout(loadingDoneTimer.current);
+        loadingDoneTimer.current = null;
+      }
+    };
   }, [isAuthenticated, loadContacts, loadTagsAndSegments]);
 
   // Restore active session on mount (real DB-backed user)
