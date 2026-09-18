@@ -72,7 +72,44 @@ export function setGlobalApiErrorHandler(handler: GlobalApiErrorHandler | null):
   globalErrorHandler = handler;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Connectivité backend : bus d'événements indépendant du toast global.
+// Tout échec réseau/timeout/5xx bascule le service en « hors ligne » (même si
+// le toast est supprimé par { suppressGlobalError }), tandis qu'une réponse
+// 2xx le rétablit. App.tsx s'abonne pour afficher une bannière persistante.
+// ─────────────────────────────────────────────────────────────────────────────
+type ConnectivityListener = (online: boolean) => void;
+let backendOnline = true;
+const connectivityListeners = new Set<ConnectivityListener>();
+
+export function isBackendOnline(): boolean {
+  return backendOnline;
+}
+
+export function subscribeBackendConnectivity(listener: ConnectivityListener): () => void {
+  connectivityListeners.add(listener);
+  listener(backendOnline);
+  return () => {
+    connectivityListeners.delete(listener);
+  };
+}
+
+function setBackendOnline(online: boolean): void {
+  if (backendOnline === online) return;
+  backendOnline = online;
+  connectivityListeners.forEach(listener => {
+    try {
+      listener(online);
+    } catch {
+      // Un abonné ne doit jamais interrompre la notification des autres.
+    }
+  });
+}
+
 function notifyGlobalIfUnreachable(err: ApiError, suppress?: boolean): void {
+  if (isServiceUnreachable(err)) {
+    setBackendOnline(false);
+  }
   if (suppress || !isServiceUnreachable(err)) return;
   try {
     globalErrorHandler?.(err);
@@ -84,7 +121,9 @@ function notifyGlobalIfUnreachable(err: ApiError, suppress?: boolean): void {
 export function getAuthToken(): string | null {
   try {
     const value = localStorage.getItem(TOKEN_STORAGE_KEY) || sessionStorage.getItem(TOKEN_STORAGE_KEY);
-    return value && value.trim() ? value.trim() : null;
+    const trimmed = value?.trim();
+    if (!trimmed) return null;
+    return trimmed;
   } catch {
     return null;
   }
@@ -113,7 +152,7 @@ export function notifyAuthExpired(reason: 'expired-local' | 'unauthorized' = 'un
   window.dispatchEvent(new CustomEvent('auth:expired', { detail: { reason } }));
 }
 
-const STATE_CHANGING_METHODS = ['POST', 'PUT', 'DELETE', 'PATCH'];
+const STATE_CHANGING_METHODS = new Set(['POST', 'PUT', 'DELETE', 'PATCH']);
 
 /**
  * Endpoints d'authentification : un 401 y est un résultat métier attendu
@@ -135,6 +174,76 @@ function firstServerMessage(json: any): string {
   if (typeof json?.detail === 'string' && json.detail) return json.detail;
   if (typeof json?.errorMessage === 'string' && json.errorMessage) return json.errorMessage;
   return '';
+}
+
+/**
+ * Chaîne un AbortController interne (timeout) avec un signal externe éventuel.
+ * L'abort externe (pagination, filtres) reste prioritaire sur le timeout.
+ */
+function createBoundAbortController(
+  timeoutMs: number,
+  externalSignal: AbortSignal | null,
+): {
+  controller: AbortController;
+  isTimedOut: () => boolean;
+  dispose: () => void;
+} {
+  const controller = new AbortController();
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, Math.max(timeoutMs, 1));
+  const forwardExternalAbort = () => controller.abort();
+  if (externalSignal?.aborted) controller.abort();
+  else externalSignal?.addEventListener('abort', forwardExternalAbort);
+
+  return {
+    controller,
+    isTimedOut: () => timedOut,
+    dispose: () => {
+      clearTimeout(timer);
+      externalSignal?.removeEventListener('abort', forwardExternalAbort);
+    },
+  };
+}
+
+/** Construit l'ApiError adaptée à une réponse HTTP non-2xx (avec effets 401). */
+function handleHttpError(res: Response, json: any, isAuthAction: boolean): ApiError {
+  const serverMessage = firstServerMessage(json);
+  let kind: ApiErrorKind = 'client';
+  let message = serverMessage;
+
+  if (res.status >= 500) {
+    kind = 'server';
+    message = serverMessage || FRIENDLY_MESSAGES.server;
+  } else if (res.status === 401) {
+    kind = 'auth';
+    if (!isAuthAction) {
+      // Session rejetée par le serveur → purge locale + notification globale.
+      clearStoredAuth();
+      notifyAuthExpired('unauthorized');
+    }
+    message = serverMessage || 'Session expirée ou non autorisée.';
+  } else if (res.status === 429 && !message) {
+    message = 'Trop de requêtes. Veuillez patienter quelques instants avant de réessayer.';
+  }
+
+  return new ApiError(kind, message, res.status, json);
+}
+
+/** Lit le corps de réponse : fichier texte brut + JSON éventuel (corps non-JSON toléré). */
+async function parseResponseBody(res: Response): Promise<{ json: any; text: string }> {
+  const text = await res.text();
+  let json: any = null;
+  if (text) {
+    try {
+      json = JSON.parse(text);
+    } catch {
+      json = null; // corps non-JSON (page HTML de crash, corps vide…)
+    }
+  }
+  return { json, text };
 }
 
 export async function apiFetch<T = any>(path: string, options: ApiFetchOptions = {}): Promise<T> {
@@ -159,77 +268,39 @@ export async function apiFetch<T = any>(path: string, options: ApiFetchOptions =
   if (token) {
     headers.set('Authorization', `Bearer ${token}`);
   }
-  if (!init.method || STATE_CHANGING_METHODS.includes(init.method.toUpperCase())) {
+  if (!init.method || STATE_CHANGING_METHODS.has(init.method.toUpperCase())) {
     Object.entries(csrfHeaders()).forEach(([k, v]) => {
       if (!headers.has(k)) headers.set(k, v);
     });
   }
 
-  // Timeout chaîné : un abort externe (pagination, filtres) reste prioritaire
-  // et est re-levé tel quel pour que les appelants puissent l'ignorer.
-  const controller = new AbortController();
-  let timedOut = false;
-  const timer = setTimeout(() => {
-    timedOut = true;
-    controller.abort();
-  }, Math.max(timeoutMs, 1));
-  const externalSignal = init.signal ?? null;
-  const forwardExternalAbort = () => controller.abort();
-  if (externalSignal?.aborted) controller.abort();
-  else externalSignal?.addEventListener('abort', forwardExternalAbort);
+  const timed = createBoundAbortController(timeoutMs, init.signal ?? null);
 
   let res: Response;
   try {
     res = await fetch(path, {
       ...init,
-      signal: controller.signal,
+      signal: timed.controller.signal,
       headers,
       credentials: 'include'
     });
   } catch (err) {
-    if (externalSignal?.aborted) throw err; // abandon demandé par l'appelant
-    const apiErr = toApiError(timedOut ? new DOMException('Aborted', 'AbortError') : err);
+    if (timed.controller.signal.aborted && !timed.isTimedOut()) throw err; // abandon demandé par l'appelant
+    const apiErr = toApiError(timed.isTimedOut() ? new DOMException('Aborted', 'AbortError') : err);
     notifyGlobalIfUnreachable(apiErr, suppressGlobalError);
     throw apiErr;
   } finally {
-    clearTimeout(timer);
-    externalSignal?.removeEventListener('abort', forwardExternalAbort);
+    timed.dispose();
   }
 
-  const text = await res.text();
-  let json: any = null;
-  if (text) {
-    try {
-      json = JSON.parse(text);
-    } catch {
-      json = null; // corps non-JSON (page HTML de crash, corps vide…)
-    }
-  }
+  const { json } = await parseResponseBody(res);
 
   if (!res.ok) {
-    const serverMessage = firstServerMessage(json);
-    let kind: ApiErrorKind = 'client';
-    let message = serverMessage;
-
-    if (res.status >= 500) {
-      kind = 'server';
-      message = serverMessage || FRIENDLY_MESSAGES.server;
-    } else if (res.status === 401) {
-      kind = 'auth';
-      if (!isAuthAction) {
-        // Session rejetée par le serveur → purge locale + notification globale.
-        clearStoredAuth();
-        notifyAuthExpired('unauthorized');
-      }
-      message = serverMessage || 'Session expirée ou non autorisée.';
-    } else if (res.status === 429 && !message) {
-      message = 'Trop de requêtes. Veuillez patienter quelques instants avant de réessayer.';
-    }
-
-    const apiErr = new ApiError(kind, message, res.status, json);
+    const apiErr = handleHttpError(res, json, isAuthAction);
     notifyGlobalIfUnreachable(apiErr, suppressGlobalError);
     throw apiErr;
   }
 
+  setBackendOnline(true);
   return json as T;
 }

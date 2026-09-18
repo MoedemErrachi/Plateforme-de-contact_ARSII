@@ -8,7 +8,7 @@ try:
     from mistralai.client import Mistral
     from mistralai.client.errors import SDKError as MistralHTTPError
     from mistralai.client.errors import NoResponseError as MistralConnectionError
-except ImportError:
+except ImportError:  # pragma: no cover
     from mistralai import Mistral
 
     try:
@@ -24,6 +24,7 @@ from app.config import MISTRAL_API_KEY
 from app.ocr.extraction import EXTRACTION_PROMPT, parse_extraction_response
 from app.ocr.models import ExtractedContactInfo
 from app.ocr.providers.base import (
+    VISION_TIMEOUT_SECONDS,
     VisionProvider,
     VisionRateLimitError,
     VisionTimeoutError,
@@ -45,7 +46,7 @@ class MistralVisionProvider(VisionProvider):
         if self.model != DEFAULT_MODEL:
             logger.info("OCR: Using custom Mistral vision model: %s (default: %s)", self.model, DEFAULT_MODEL)
 
-    async def extract_contact_info(self, image_bytes: bytes, timeout: int = 20) -> ExtractedContactInfo:
+    async def extract_contact_info(self, image_bytes: bytes) -> ExtractedContactInfo:
         b64 = base64.b64encode(image_bytes).decode("utf-8")
         messages = [
             {
@@ -57,14 +58,12 @@ class MistralVisionProvider(VisionProvider):
             }
         ]
         try:
-            response = await asyncio.wait_for(
-                self._client.chat.complete_async(
+            async with asyncio.timeout(VISION_TIMEOUT_SECONDS):
+                response = await self._client.chat.complete_async(
                     model=self.model,
                     messages=messages,
                     temperature=0,
-                ),
-                timeout=timeout,
-            )
+                )
         except MistralHTTPError as exc:
             raw = getattr(exc, "raw_response", None)
             status = getattr(raw, "status_code", None) or getattr(exc, "status_code", None)

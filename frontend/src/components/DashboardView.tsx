@@ -84,12 +84,54 @@ const TAG_FALLBACK_COLORS = ['#005596', '#B8167C', '#FFC20C', '#35B8B2', '#8A98A
 // Voile de chargement par composant (même motif que ContactsView) : le contenu
 // du widget reste visible mais estompé — jamais de voile sur toute la page.
 const WidgetLoadingVeil: React.FC<{ label?: string }> = ({ label }) => (
-  <div
+  <output
     className="absolute inset-0 z-20 bg-white/50 backdrop-blur-sm animate-pulse"
-    role="status"
     aria-label={label || 'Rechargement du module'}
   />
 );
+
+function mergeWidgetConfigsWithDefaults(parsed: WidgetConfig[]): WidgetConfig[] {
+  const savedMap = new Map(parsed.map((w, idx) => [w.id, { ...w, order: typeof w.order === 'number' ? w.order : idx }]));
+  const merged = DEFAULT_WIDGETS.map(def => savedMap.get(def.id) || { ...def });
+  const mergedIds = new Set(merged.map(w => w.id));
+  savedMap.forEach((w, id) => {
+    if (!mergedIds.has(id)) merged.push(w);
+  });
+  const sorted = [...merged];
+  sorted.sort((a, b) => a.order - b.order);
+  return sorted;
+}
+
+function migrateWorldMapPosition(widgets: WidgetConfig[]): WidgetConfig[] {
+  if (localStorage.getItem(LAYOUT_VERSION_KEY) === LAYOUT_VERSION) return widgets;
+  const statsIdx = widgets.findIndex(w => w.id === 'stats');
+  const mapIdx = widgets.findIndex(w => w.id === 'worldMap');
+  if (statsIdx === -1 || mapIdx === -1 || mapIdx === statsIdx + 1) return widgets;
+  const [mapWidget] = widgets.splice(mapIdx, 1);
+  widgets.splice(statsIdx + 1, 0, mapWidget);
+  const result = widgets.map((w, i) => ({ ...w, order: i }));
+  try {
+    localStorage.setItem(LAYOUT_VERSION_KEY, LAYOUT_VERSION);
+  } catch {
+    // ignore
+  }
+  return result;
+}
+
+function loadWidgetLayout(): WidgetConfig[] {
+  try {
+    const saved = localStorage.getItem('euraxess_dashboard_widgets');
+    if (saved) {
+      const parsed: WidgetConfig[] = JSON.parse(saved);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return migrateWorldMapPosition(mergeWidgetConfigsWithDefaults(parsed));
+      }
+    }
+  } catch {
+    // ignore
+  }
+  return DEFAULT_WIDGETS;
+}
 
 export const DashboardView: React.FC<DashboardViewProps> = ({
   contacts,
@@ -105,46 +147,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   // C'est le même motif que ContactsView (voile interne au conteneur).
 
   // Widget Layout State with persistence
-  const [widgets, setWidgets] = useState<WidgetConfig[]>(() => {
-    try {
-      const saved = localStorage.getItem('euraxess_dashboard_widgets');
-      if (saved) {
-        const parsed: WidgetConfig[] = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          // Merge with defaults: keep order/visibility, drop stale ids, restore missing defaults
-          const savedMap = new Map(parsed.map((w, idx) => [w.id, { ...w, order: typeof w.order === 'number' ? w.order : idx }]));
-          const merged = DEFAULT_WIDGETS.map(def => savedMap.get(def.id) || { ...def });
-          const mergedIds = new Set(merged.map(w => w.id));
-          savedMap.forEach((w, id) => {
-            if (!mergedIds.has(id)) merged.push(w);
-          });
-
-          let final = merged.sort((a, b) => a.order - b.order);
-
-          // Migration unique : la carte mondiale passe en 2e position (juste après les KPIs).
-          if (localStorage.getItem(LAYOUT_VERSION_KEY) !== LAYOUT_VERSION) {
-            const statsIdx = final.findIndex(w => w.id === 'stats');
-            const mapIdx = final.findIndex(w => w.id === 'worldMap');
-            if (statsIdx !== -1 && mapIdx !== -1 && mapIdx !== statsIdx + 1) {
-              const [mapWidget] = final.splice(mapIdx, 1);
-              final.splice(statsIdx + 1, 0, mapWidget);
-            }
-            final = final.map((w, i) => ({ ...w, order: i }));
-            try {
-              localStorage.setItem(LAYOUT_VERSION_KEY, LAYOUT_VERSION);
-            } catch {
-              // ignore
-            }
-          }
-
-          return final;
-        }
-      }
-    } catch (e) {
-      // ignore
-    }
-    return DEFAULT_WIDGETS;
-  });
+  const [widgets, setWidgets] = useState<WidgetConfig[]>(loadWidgetLayout);
 
   const [isCustomizeModalOpen, setIsCustomizeModalOpen] = useState(false);
 
@@ -382,9 +385,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     return Object.entries(counts)
       .map(([name, count]) => {
         const lower = name.toLowerCase();
-        if (paletteIndex[lower] === undefined) {
-          paletteIndex[lower] = tagColorMap[lower] || TAG_FALLBACK_COLORS[Object.keys(paletteIndex).length % TAG_FALLBACK_COLORS.length];
-        }
+        paletteIndex[lower] ??= tagColorMap[lower] || TAG_FALLBACK_COLORS[Object.keys(paletteIndex).length % TAG_FALLBACK_COLORS.length];
         return { name, count, color: paletteIndex[lower] };
       })
       .sort((a, b) => b.count - a.count)

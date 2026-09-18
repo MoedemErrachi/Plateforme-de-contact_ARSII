@@ -21,8 +21,8 @@ import { isServiceUnreachable } from '../services/api';
 import { validateImageFile, uploadImage, readFileAsDataUrl } from '../utils/upload';
 
 interface NewContactViewProps {
-  onAddContact: (contact: Contact) => void;
-  onUpdateContact?: (updated: Contact) => void;
+  onAddContact: (contact: Contact) => Promise<void>;
+  onUpdateContact?: (updated: Contact) => Promise<void>;
   existingContacts?: Contact[];
   tags?: Tag[];
 }
@@ -36,6 +36,7 @@ const INVALID_INPUT_CLASS = '!border-red-400 !ring-red-400/20 focus:!border-red-
 const COUNTRY_OPTIONS = COUNTRIES.map(c => c.label);
 
 interface SearchableSelectProps {
+  id: string;
   value: string;
   onChange: (value: string) => void;
   options: string[];
@@ -43,7 +44,7 @@ interface SearchableSelectProps {
   invalid?: boolean;
 }
 
-function SearchableSelect({ value, onChange, options, placeholder, invalid = false }: SearchableSelectProps) {
+function SearchableSelect({ id, value, onChange, options, placeholder, invalid = false }: Readonly<SearchableSelectProps>) {
   const [query, setQuery] = useState(value);
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -70,6 +71,7 @@ function SearchableSelect({ value, onChange, options, placeholder, invalid = fal
   return (
     <div ref={containerRef} className="relative">
       <input
+        id={id}
         type="text"
         value={query}
         onChange={(e) => {
@@ -109,6 +111,226 @@ function SearchableSelect({ value, onChange, options, placeholder, invalid = fal
   );
 }
 
+interface AvatarFieldProps {
+  avatarUrl: string | null;
+  displayInitial: string;
+  isUploading: boolean;
+  onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+}
+
+const AvatarField: React.FC<AvatarFieldProps> = ({ avatarUrl, displayInitial, isUploading, onChange }) => {
+  const inputRef = useRef<HTMLInputElement>(null);
+  return (
+    <div className="md:col-span-2 flex items-center gap-4">
+      <div className="w-16 h-16 rounded-full overflow-hidden bg-[#D9E6F2] border-2 border-[#005596]/40 flex items-center justify-center shrink-0">
+        {avatarUrl ? (
+          <img src={avatarUrl} alt="Avatar de profil" className="w-full h-full object-cover" />
+        ) : (
+          <span className="text-lg font-black text-[#005596]">{displayInitial || 'NC'}</span>
+        )}
+      </div>
+      <div className="flex flex-col items-start gap-1">
+        <button
+          type="button"
+          onClick={() => inputRef.current?.click()}
+          disabled={isUploading}
+          className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-[#E8F1F8] hover:bg-[#BCD7EE] text-[#005596] font-bold transition-colors cursor-pointer disabled:opacity-75"
+        >
+          {isUploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Camera className="w-4 h-4" />}
+          {avatarUrl ? 'Changer la photo' : 'Ajouter une photo'}
+        </button>
+        <span className="text-[10px] text-slate-400">PNG, JPEG, WebP — 5 Mo max.</span>
+        <input
+          ref={inputRef}
+          type="file"
+          accept="image/png,image/jpeg,image/webp"
+          className="hidden"
+          onChange={onChange}
+        />
+      </div>
+    </div>
+  );
+};
+
+interface TagPickerProps {
+  tags: Tag[];
+  selectedTagNames: string[];
+  onToggle: (name: string) => void;
+}
+
+const TagPicker: React.FC<TagPickerProps> = ({ tags, selectedTagNames, onToggle }) => {
+  if (tags.length === 0) {
+    return <p className="text-xs text-slate-400 italic">Aucun tag disponible. Créez des tags dans l'onglet Segmentation.</p>;
+  }
+  return (
+    <div className="flex flex-wrap gap-2">
+      {tags.map(t => {
+        const active = selectedTagNames.includes(t.name);
+        return (
+          <button
+            key={t.id}
+            type="button"
+            onClick={() => onToggle(t.name)}
+            className={`px-3 py-1.5 rounded-full text-[11px] font-bold border transition-all cursor-pointer ${
+              active
+                ? 'bg-[#005596] text-white border-[#005596] shadow'
+                : `${t.color || 'bg-slate-100 text-slate-700 border-slate-200'} hover:opacity-90`
+            }`}
+          >
+            {t.name}
+          </button>
+        );
+      })}
+    </div>
+  );
+};
+
+interface CompletionSidebarProps {
+  completionScore: number;
+  firstName: string;
+  lastName: string;
+  email: string;
+  affiliation: string;
+  researchCareerStage: ResearchCareerStage;
+}
+
+const CompletionSidebar: React.FC<CompletionSidebarProps> = ({
+  completionScore,
+  firstName,
+  lastName,
+  email,
+  affiliation,
+  researchCareerStage
+}) => (
+  <div className="bg-white/90 backdrop-blur-md rounded-2xl p-6 border border-[#C9D4DE]/50 shadow-[0_6px_18px_rgba(0,0,0,0.06)] sticky top-20 text-xs space-y-6">
+    <h3 className="text-base font-bold text-[#1C2529]">Statut du Contact</h3>
+
+    <div className="space-y-2">
+      <div className="flex items-center justify-between font-bold">
+        <span className="text-[#55636B]">Score de Complétude</span>
+        <span className="text-[#005596]">{completionScore}%</span>
+      </div>
+      <div className="w-full bg-[#D9E6F2] rounded-full h-2">
+        <div
+          className="bg-[#005596] h-2 rounded-full transition-all duration-300"
+          style={{ width: `${completionScore}%` }}
+        />
+      </div>
+
+      <ul className="space-y-2 pt-2 text-[#55636B]">
+        <li className="flex items-center gap-2">
+          <CheckCircle2 className={`w-4 h-4 ${firstName && email ? 'text-[#005596]' : 'text-slate-300'}`} />
+          Identité & contact de base
+        </li>
+        <li className="flex items-center gap-2">
+          <CheckCircle2 className={`w-4 h-4 ${affiliation ? 'text-[#005596]' : 'text-slate-300'}`} />
+          Affiliation R&I précisée
+        </li>
+      </ul>
+    </div>
+
+    {/* Live Profile Preview */}
+    <div className="pt-4 border-t border-[#C9D4DE]">
+      <p className="text-[11px] font-bold text-[#55636B] uppercase tracking-wider mb-3">
+        Aperçu du Profil
+      </p>
+
+      <div className="flex flex-col items-center text-center p-4 bg-[#E8F1F8]/40 rounded-xl border border-[#005596]/20">
+        <div className="w-16 h-16 rounded-full bg-[#005596] text-white font-bold flex items-center justify-center text-lg mb-2">
+          {firstName ? firstName[0].toUpperCase() : 'NC'}
+        </div>
+        <p className="font-extrabold text-sm text-[#1C2529]">
+          {firstName || lastName ? formatFullName(firstName, lastName) : 'Nouveau Contact'}
+        </p>
+        <p className="text-xs text-[#55636B] mt-0.5">
+          {affiliation || 'Organisation non définie'}
+        </p>
+        {researchCareerStage && (
+          <span className="mt-2 bg-[#BCD7EE] text-[#005596] px-2.5 py-0.5 rounded-full text-[10px] font-bold">
+            {CAREER_STAGE_LABELS[researchCareerStage]}
+          </span>
+        )}
+      </div>
+    </div>
+
+    {/* Helper Card */}
+    <div className="bg-[#005596] text-white rounded-xl p-4 space-y-2">
+      <div className="flex items-center gap-2">
+        <Lightbulb className="w-5 h-5 text-[#FFC20C]" />
+        <span className="font-bold text-xs">Innovation Logic</span>
+      </div>
+      <p className="text-[11px] text-white/90 leading-relaxed">
+        L'intégration d'experts transversaux favorise les synergies entre les hubs de recherche européens et africains. Assurez-vous d'identifier les stades de carrière et affilier les experts à leurs institutions de recherche.
+      </p>
+    </div>
+  </div>
+);
+
+type FieldKey = 'firstName' | 'lastName' | 'email';
+
+const isValidEmailFormat = (email: string): boolean => {
+  const value = email.trim();
+  if (!value || value.length > 254 || /\s/.test(value)) return false;
+  let at = -1;
+  for (let i = 0; i < value.length; i += 1) {
+    if (value[i] === '@') {
+      if (at !== -1) return false;
+      at = i;
+    }
+  }
+  if (at <= 0 || at === value.length - 1) return false;
+  const afterAt = value.slice(at + 1);
+  const dot = afterAt.lastIndexOf('.');
+  return dot > 0 && dot < afterAt.length - 1;
+};
+
+const validateFormFields = (fields: Record<FieldKey, string>): Record<string, string> => {
+  const next: Record<string, string> = {};
+  if (!fields.firstName.trim()) next.firstName = 'Prénom requis';
+  if (!fields.lastName.trim()) next.lastName = 'Nom requis';
+  if (!fields.email.trim()) next.email = 'Adresse e-mail requise';
+  else if (!isValidEmailFormat(fields.email.trim())) next.email = 'Adresse e-mail invalide';
+  return next;
+};
+
+const buildContactPayload = (input: {
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone: string;
+  gender: Gender;
+  countryOfOrigin: string;
+  city: string;
+  affiliation: string;
+  fonction: string;
+  experience: string;
+  facultyDepartment: string;
+  researchCareerStage: ResearchCareerStage;
+  selectedTagNames: string[];
+  avatarUrl: string | null;
+}) => ({
+  firstName: input.firstName.trim(),
+  lastName: input.lastName.trim(),
+  email: input.email.trim(),
+  phone: input.phone.trim(),
+  gender: input.gender || 'NOT_SPECIFIED',
+  countryOfOrigin: input.countryOfOrigin.trim() || '',
+  city: input.city.trim(),
+  affiliation: input.affiliation.trim(),
+  function: input.fonction.trim() || undefined,
+  experience: input.experience.trim() || undefined,
+  facultyDepartment: input.facultyDepartment.trim() || undefined,
+  researchCareerStage: input.researchCareerStage,
+  tags: input.selectedTagNames,
+  avatarUrl: input.avatarUrl || undefined
+});
+
+const handleContactSaveSuccess = (navigate: ReturnType<typeof useNavigate>, setIsSaving: (v: boolean) => void, setIsConfirmOpen: (v: boolean) => void) => {
+  navigate('/contacts');
+  setIsSaving(false);
+  setIsConfirmOpen(false);
+};
+
 export const NewContactView: React.FC<NewContactViewProps> = ({
   onAddContact,
   onUpdateContact,
@@ -137,7 +359,6 @@ export const NewContactView: React.FC<NewContactViewProps> = ({
   const [selectedTagNames, setSelectedTagNames] = useState<string[]>(contactToEdit?.tags || []);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(contactToEdit?.avatarUrl || null);
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
-  const avatarInputRef = useRef<HTMLInputElement>(null);
 
   // Validation state
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -178,14 +399,12 @@ export const NewContactView: React.FC<NewContactViewProps> = ({
 
   // Duplicate check: exclude the contact currently being edited
   const currentCleanEmail = email.toLowerCase().trim();
+  const FALLBACK_SEED_EMAILS = ['a.diallo@research-network.org', 'e.schneider@eu-agri.tech', 'moussa.diop@research-net.org'];
+  const isNewAddressUsedElsewhere = contactToEdit ? contactToEdit.email.toLowerCase().trim() === currentCleanEmail : false;
   const showDuplicateWarning = currentCleanEmail !== '' && (
-    existingContacts && existingContacts.length > 0
+    existingContacts.length > 0
       ? existingContacts.some(c => c.id !== contactToEdit?.id && c.email.toLowerCase().trim() === currentCleanEmail)
-      : (
-          ['a.diallo@research-network.org', 'e.schneider@eu-agri.tech', 'moussa.diop@research-net.org']
-            .includes(currentCleanEmail) &&
-          (!contactToEdit || contactToEdit.email.toLowerCase().trim() !== currentCleanEmail)
-        )
+      : FALLBACK_SEED_EMAILS.includes(currentCleanEmail) && !isNewAddressUsedElsewhere
   );
 
   // Calculate live completion score
@@ -233,12 +452,7 @@ export const NewContactView: React.FC<NewContactViewProps> = ({
   };
 
   const validateForm = (): boolean => {
-    const next: Record<string, string> = {};
-    if (!firstName.trim()) next.firstName = 'Prénom requis';
-    if (!lastName.trim()) next.lastName = 'Nom requis';
-    if (!email.trim()) next.email = 'Adresse e-mail requise';
-    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) next.email = 'Adresse e-mail invalide';
-
+    const next = validateFormFields({ firstName, lastName, email });
     setErrors(next);
     if (Object.keys(next).length > 0) {
       showToast('Veuillez remplir tous les champs obligatoires avant d\'enregistrer.', 'error');
@@ -256,46 +470,17 @@ export const NewContactView: React.FC<NewContactViewProps> = ({
     try {
       const fullName = formatFullName(firstName, lastName);
       const initials = `${firstName[0] || ''}${lastName[0] || ''}`.toUpperCase() || 'NC';
-
-      const basePayload = {
-        firstName: firstName.trim(),
-        lastName: lastName.trim(),
-        email: email.trim(),
-        phone: phone.trim(),
-        gender: gender || 'NOT_SPECIFIED',
-        countryOfOrigin: countryOfOrigin.trim() || '',
-        city: city.trim(),
-        affiliation: affiliation.trim(),
-        function: fonction.trim() || undefined,
-        experience: experience.trim() || undefined,
-        facultyDepartment: facultyDepartment.trim() || undefined,
-        researchCareerStage,
-        tags: selectedTagNames,
-        avatarUrl: avatarUrl || undefined
-      };
+      const payload = buildContactPayload({ firstName, lastName, email, phone, gender, countryOfOrigin, city, affiliation, fonction, experience, facultyDepartment, researchCareerStage, selectedTagNames, avatarUrl });
 
       if (contactToEdit && onUpdateContact) {
-        const updatedContact: Contact = {
-          ...contactToEdit,
-          ...basePayload,
-          name: fullName,
-          initials
-        };
-
-        await onUpdateContact(updatedContact);
-        navigate('/contacts');
+        await onUpdateContact({ ...contactToEdit, ...payload, name: fullName, initials });
       } else {
-        const newContact: Contact = {
-          id: '',
-          ...basePayload,
-          name: fullName,
-          initials
-        };
-
-        await onAddContact(newContact);
-        navigate('/contacts');
+        await onAddContact({ id: '', ...payload, name: fullName, initials });
       }
-    } finally {
+      handleContactSaveSuccess(navigate, setIsSaving, setIsConfirmOpen);
+    } catch {
+      // Le handler parent (App) affiche déjà le toast d'erreur ; on reste
+      // sur la page sans naviguer. On referme simplement la modale.
       setIsSaving(false);
       setIsConfirmOpen(false);
     }
@@ -308,7 +493,7 @@ export const NewContactView: React.FC<NewContactViewProps> = ({
     setIsConfirmOpen(true);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = (e) => {
     e.preventDefault();
     requestSave();
   };
@@ -386,7 +571,7 @@ export const NewContactView: React.FC<NewContactViewProps> = ({
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
                 <div>
-                  <label className="block font-bold text-[#55636B] mb-1">Nom *</label>
+                  <label htmlFor="field-lastName" className="block font-bold text-[#55636B] mb-1">Nom *</label>
                   <input
                     id="field-lastName"
                     type="text"
@@ -403,7 +588,7 @@ export const NewContactView: React.FC<NewContactViewProps> = ({
                 </div>
 
                 <div>
-                  <label className="block font-bold text-[#55636B] mb-1">Prénom *</label>
+                  <label htmlFor="field-firstName" className="block font-bold text-[#55636B] mb-1">Prénom *</label>
                   <input
                     id="field-firstName"
                     type="text"
@@ -420,7 +605,7 @@ export const NewContactView: React.FC<NewContactViewProps> = ({
                 </div>
 
                 <div>
-                  <label className="block font-bold text-[#55636B] mb-1">Email Professionnel *</label>
+                  <label htmlFor="field-email" className="block font-bold text-[#55636B] mb-1">Email Professionnel *</label>
                   <input
                     id="field-email"
                     type="email"
@@ -437,8 +622,9 @@ export const NewContactView: React.FC<NewContactViewProps> = ({
                 </div>
 
                 <div>
-                  <label className="block font-bold text-[#55636B] mb-1">Téléphone</label>
+                  <label htmlFor="field-phone" className="block font-bold text-[#55636B] mb-1">Téléphone</label>
                   <input
+                    id="field-phone"
                     type="tel"
                     value={phone}
                     onChange={(e) => setPhone(e.target.value)}
@@ -448,8 +634,9 @@ export const NewContactView: React.FC<NewContactViewProps> = ({
                 </div>
 
                 <div>
-                  <label className="block font-bold text-[#55636B] mb-1">Genre</label>
+                  <label htmlFor="field-gender" className="block font-bold text-[#55636B] mb-1">Genre</label>
                   <select
+                    id="field-gender"
                     value={gender}
                     onChange={(e) => setGender(e.target.value as Gender)}
                     className={`${INPUT_CLASS} bg-white`}
@@ -461,8 +648,9 @@ export const NewContactView: React.FC<NewContactViewProps> = ({
                 </div>
 
                 <div>
-                  <label className="block font-bold text-[#55636B] mb-1">Stade de carrière</label>
+                  <label htmlFor="field-career-stage" className="block font-bold text-[#55636B] mb-1">Stade de carrière</label>
                   <select
+                    id="field-career-stage"
                     value={researchCareerStage}
                     onChange={(e) => setResearchCareerStage(e.target.value as ResearchCareerStage)}
                     className={`${INPUT_CLASS} bg-white`}
@@ -474,34 +662,12 @@ export const NewContactView: React.FC<NewContactViewProps> = ({
                 </div>
 
                 {/* Avatar Upload */}
-                <div className="md:col-span-2 flex items-center gap-4">
-                  <div className="w-16 h-16 rounded-full overflow-hidden bg-[#D9E6F2] border-2 border-[#005596]/40 flex items-center justify-center shrink-0">
-                    {avatarUrl ? (
-                      <img src={avatarUrl} alt="Photo de profil" className="w-full h-full object-cover" />
-                    ) : (
-                      <span className="text-lg font-black text-[#005596]">{(firstName || lastName)[0]?.toUpperCase() || 'NC'}</span>
-                    )}
-                  </div>
-                  <div className="flex flex-col items-start gap-1">
-                    <button
-                      type="button"
-                      onClick={() => avatarInputRef.current?.click()}
-                      disabled={isUploadingAvatar}
-                      className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-[#E8F1F8] hover:bg-[#BCD7EE] text-[#005596] font-bold transition-colors cursor-pointer disabled:opacity-75"
-                    >
-                      {isUploadingAvatar ? <Loader2 className="w-4 h-4 animate-spin" /> : <Camera className="w-4 h-4" />}
-                      {avatarUrl ? 'Changer la photo' : 'Ajouter une photo'}
-                    </button>
-                    <span className="text-[10px] text-slate-400">PNG, JPEG, WebP — 5 Mo max.</span>
-                    <input
-                      ref={avatarInputRef}
-                      type="file"
-                      accept="image/png,image/jpeg,image/webp"
-                      className="hidden"
-                      onChange={handleAvatarChange}
-                    />
-                  </div>
-                </div>
+                <AvatarField
+                  avatarUrl={avatarUrl}
+                  displayInitial={(firstName || lastName)[0]?.toUpperCase() || 'NC'}
+                  isUploading={isUploadingAvatar}
+                  onChange={handleAvatarChange}
+                />
               </div>
             </section>
 
@@ -513,8 +679,9 @@ export const NewContactView: React.FC<NewContactViewProps> = ({
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
                 <div>
-                  <label className="block font-bold text-[#55636B] mb-1">Pays d'origine</label>
+                  <label htmlFor="field-country" className="block font-bold text-[#55636B] mb-1">Pays d'origine</label>
                   <SearchableSelect
+                    id="field-country"
                     value={countryOfOrigin}
                     onChange={handleCountryChange}
                     options={COUNTRY_OPTIONS}
@@ -523,8 +690,9 @@ export const NewContactView: React.FC<NewContactViewProps> = ({
                 </div>
 
                 <div>
-                  <label className="block font-bold text-[#55636B] mb-1">Ville</label>
+                  <label htmlFor="field-city" className="block font-bold text-[#55636B] mb-1">Ville</label>
                   <input
+                    id="field-city"
                     type="text"
                     value={city}
                     onChange={(e) => setCity(e.target.value)}
@@ -548,8 +716,9 @@ export const NewContactView: React.FC<NewContactViewProps> = ({
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
                 <div className="md:col-span-2">
-                  <label className="block font-bold text-[#55636B] mb-1">Affiliation (Organisation)</label>
+                  <label htmlFor="field-affiliation" className="block font-bold text-[#55636B] mb-1">Affiliation (Organisation)</label>
                   <input
+                    id="field-affiliation"
                     type="text"
                     value={affiliation}
                     onChange={(e) => setAffiliation(e.target.value)}
@@ -559,8 +728,9 @@ export const NewContactView: React.FC<NewContactViewProps> = ({
                 </div>
 
                 <div>
-                  <label className="block font-bold text-[#55636B] mb-1">Fonction</label>
+                  <label htmlFor="field-fonction" className="block font-bold text-[#55636B] mb-1">Fonction</label>
                   <input
+                    id="field-fonction"
                     type="text"
                     value={fonction}
                     onChange={(e) => setFonction(e.target.value)}
@@ -570,8 +740,9 @@ export const NewContactView: React.FC<NewContactViewProps> = ({
                 </div>
 
                 <div>
-                  <label className="block font-bold text-[#55636B] mb-1">Expérience</label>
+                  <label htmlFor="field-experience" className="block font-bold text-[#55636B] mb-1">Expérience</label>
                   <input
+                    id="field-experience"
                     type="text"
                     value={experience}
                     onChange={(e) => setExperience(e.target.value)}
@@ -581,8 +752,9 @@ export const NewContactView: React.FC<NewContactViewProps> = ({
                 </div>
 
                 <div className="md:col-span-2">
-                  <label className="block font-bold text-[#55636B] mb-1">Faculté / Département</label>
+                  <label htmlFor="field-faculty" className="block font-bold text-[#55636B] mb-1">Faculté / Département</label>
                   <input
+                    id="field-faculty"
                     type="text"
                     value={facultyDepartment}
                     onChange={(e) => setFacultyDepartment(e.target.value)}
@@ -599,31 +771,7 @@ export const NewContactView: React.FC<NewContactViewProps> = ({
                 <TagIcon className="w-4 h-4 text-[#005596]" /> Étiquettes / Tags
               </h2>
 
-              {tags.length === 0 ? (
-                <p className="text-xs text-slate-400 italic">
-                  Aucun tag disponible. Créez des tags dans l'onglet Segmentation.
-                </p>
-              ) : (
-                <div className="flex flex-wrap gap-2">
-                  {tags.map(t => {
-                    const active = selectedTagNames.includes(t.name);
-                    return (
-                      <button
-                        key={t.id}
-                        type="button"
-                        onClick={() => toggleTag(t.name)}
-                        className={`px-3 py-1.5 rounded-full text-[11px] font-bold border transition-all cursor-pointer ${
-                          active
-                            ? 'bg-[#005596] text-white border-[#005596] shadow'
-                            : `${t.color || 'bg-slate-100 text-slate-700 border-slate-200'} hover:opacity-90`
-                        }`}
-                      >
-                        {t.name}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
+              <TagPicker tags={tags} selectedTagNames={selectedTagNames} onToggle={toggleTag} />
             </section>
 
           </div>
@@ -631,72 +779,14 @@ export const NewContactView: React.FC<NewContactViewProps> = ({
 
         {/* Right Column: Completion Score & Live Preview Sidebar */}
         <div className="col-span-12 lg:col-span-4 flex flex-col gap-6">
-
-          {/* Completion Status Box */}
-          <div className="bg-white/90 backdrop-blur-md rounded-2xl p-6 border border-[#C9D4DE]/50 shadow-[0_6px_18px_rgba(0,0,0,0.06)] sticky top-20 text-xs space-y-6">
-            <h3 className="text-base font-bold text-[#1C2529]">Statut du Contact</h3>
-
-            <div className="space-y-2">
-              <div className="flex items-center justify-between font-bold">
-                <span className="text-[#55636B]">Score de Complétude</span>
-                <span className="text-[#005596]">{completionScore}%</span>
-              </div>
-              <div className="w-full bg-[#D9E6F2] rounded-full h-2">
-                <div
-                  className="bg-[#005596] h-2 rounded-full transition-all duration-300"
-                  style={{ width: `${completionScore}%` }}
-                />
-              </div>
-
-              <ul className="space-y-2 pt-2 text-[#55636B]">
-                <li className="flex items-center gap-2">
-                  <CheckCircle2 className={`w-4 h-4 ${firstName && email ? 'text-[#005596]' : 'text-slate-300'}`} />
-                  Identité & contact de base
-                </li>
-                <li className="flex items-center gap-2">
-                  <CheckCircle2 className={`w-4 h-4 ${affiliation ? 'text-[#005596]' : 'text-slate-300'}`} />
-                  Affiliation R&I précisée
-                </li>
-              </ul>
-            </div>
-
-            {/* Live Profile Preview */}
-            <div className="pt-4 border-t border-[#C9D4DE]">
-              <p className="text-[11px] font-bold text-[#55636B] uppercase tracking-wider mb-3">
-                Aperçu du Profil
-              </p>
-
-              <div className="flex flex-col items-center text-center p-4 bg-[#E8F1F8]/40 rounded-xl border border-[#005596]/20">
-                <div className="w-16 h-16 rounded-full bg-[#005596] text-white font-bold flex items-center justify-center text-lg mb-2">
-                  {firstName ? firstName[0].toUpperCase() : 'NC'}
-                </div>
-                <p className="font-extrabold text-sm text-[#1C2529]">
-                  {firstName || lastName ? formatFullName(firstName, lastName) : 'Nouveau Contact'}
-                </p>
-                <p className="text-xs text-[#55636B] mt-0.5">
-                  {affiliation || 'Organisation non définie'}
-                </p>
-                {researchCareerStage && (
-                  <span className="mt-2 bg-[#BCD7EE] text-[#005596] px-2.5 py-0.5 rounded-full text-[10px] font-bold">
-                    {CAREER_STAGE_LABELS[researchCareerStage]}
-                  </span>
-                )}
-              </div>
-            </div>
-
-            {/* Helper Card */}
-            <div className="bg-[#005596] text-white rounded-xl p-4 space-y-2">
-              <div className="flex items-center gap-2">
-                <Lightbulb className="w-5 h-5 text-[#FFC20C]" />
-                <span className="font-bold text-xs">Innovation Logic</span>
-              </div>
-              <p className="text-[11px] text-white/90 leading-relaxed">
-                L'intégration d'experts transversaux favorise les synergies entre les hubs de recherche européens et africains. Assurez-vous d'identifier les stades de carrière et affilier les experts à leurs institutions de recherche.
-              </p>
-            </div>
-
-          </div>
-
+          <CompletionSidebar
+            completionScore={completionScore}
+            firstName={firstName}
+            lastName={lastName}
+            email={email}
+            affiliation={affiliation}
+            researchCareerStage={researchCareerStage}
+          />
         </div>
 
       </form>

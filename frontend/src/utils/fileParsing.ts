@@ -23,28 +23,37 @@ export const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
+/** Extract the URL from a hyperlink cell, stripping a mailto: prefix. */
+function extractHyperlink(cell: any): string | null {
+  const link = cell?.hyperlink;
+  if (typeof link !== 'string') return null;
+  return link.startsWith('mailto:') ? link.slice(7).trim() : link;
+}
+
+/** Join rich-text fragments (both { text: { richText } } and direct richText). */
+function extractRichText(cell: any): string | null {
+  const rt = cell?.richText;
+  if (Array.isArray(rt)) return rt.map((frag: any) => frag?.text || '').join('');
+  return null;
+}
+
 /** Extract a plain string from any ExcelJS / SheetJS cell value. */
 function cellToString(cell: any): string {
   if (cell === null || cell === undefined) return '';
   if (cell instanceof Date) return cell.toLocaleDateString('fr-FR');
-  if (typeof cell === 'object' && !(cell instanceof Date)) {
+  if (typeof cell === 'object') {
     // Hyperlink (mailto:)
-    if ('hyperlink' in cell && typeof cell.hyperlink === 'string') {
-      const link = cell.hyperlink as string;
-      return link.startsWith('mailto:') ? link.slice(7).trim() : link;
-    }
+    const link = extractHyperlink(cell);
+    if (link !== null) return link;
     // Rich text { text: { richText: [...] } }
-    if ('text' in cell && cell.text !== null && cell.text !== undefined) {
-      if (typeof cell.text === 'string') return cell.text;
-      if (typeof cell.text === 'object' && 'richText' in cell.text && Array.isArray(cell.text.richText)) {
-        return cell.text.richText.map((rt: any) => rt.text || '').join('');
-      }
+    const text = cell?.text;
+    if (typeof text === 'string') return text;
+    if (text && typeof text === 'object' && Array.isArray(text.richText)) {
+      return text.richText.map((frag: any) => frag?.text || '').join('');
     }
-    // Direct richText array
-    if ('richText' in cell && Array.isArray(cell.richText)) {
-      return cell.richText.map((rt: any) => rt.text || '').join('');
-    }
-    // Formula result
+    // Direct richText array / formula result
+    const rich = extractRichText(cell);
+    if (rich !== null) return rich;
     if ('result' in cell) return cell.result ?? '';
   }
   return String(cell);
@@ -53,6 +62,18 @@ function cellToString(cell: any): string {
 /** Check whether a row is entirely empty. */
 function isEmptyRow(rowArr: any[]): boolean {
   return !rowArr || rowArr.every(cell => cell === null || cell === undefined || String(cell).trim() === '');
+}
+
+/** Score a single cell as header material (positive = more likely a header). */
+function cellHeaderScore(cell: any): number {
+  const s = cellToString(cell);
+  if (!s) return -2; // empty cell penalised
+  let score = 3; // non-empty string cell
+  // Date-like values should NOT be in a header
+  if (/^\d{1,4}[./-]\d{1,4}[./-]\d{1,4}/.test(s)) score -= 2;
+  // Purely numeric values are data, not headers
+  if (/^\d+(\.\d+)?$/.test(s)) score -= 1;
+  return score;
 }
 
 /**
@@ -69,18 +90,8 @@ function detectHeaderRow(rows: any[][]): number {
     if (!row || row.length === 0) continue;
 
     let score = 0;
-    for (const cell of row) {
-      const s = cellToString(cell);
-      if (!s) {
-        score -= 2; // empty cell penalised
-        continue;
-      }
-      score += 3; // non-empty string cell
-      // Bonus for date-like values (should NOT be in header)
-      if (/^\d{1,4}[/\-]\d{1,4}[/\-]\d{1,4}/.test(s)) score -= 2;
-      // Bonus for purely numeric values (data, not header)
-      if (/^\d+(\.\d+)?$/.test(s)) score -= 1;
-    }
+    for (const cell of row) score += cellHeaderScore(cell);
+
     if (score > bestScore) {
       bestScore = score;
       bestIdx = r;
@@ -164,6 +175,23 @@ async function parseCSV(file: File): Promise<{ matrix: any[][] }> {
 
 // ── JSON ─────────────────────────────────────────────────────────────
 
+/** Locate the most plausible array of records inside a parsed JSON document. */
+function findJsonRecords(parsed: any): Record<string, any>[] | null {
+  if (Array.isArray(parsed) && parsed.length > 0 && typeof parsed[0] === 'object') {
+    return parsed as Record<string, any>[];
+  }
+  if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+    // Search for first property that is an array of objects
+    for (const key of Object.keys(parsed)) {
+      const val = parsed[key];
+      if (Array.isArray(val) && val.length > 0 && typeof val[0] === 'object') {
+        return val as Record<string, any>[];
+      }
+    }
+  }
+  return null;
+}
+
 function parseJSON(text: string): { matrix: any[][] } {
   let parsed: any;
   try {
@@ -172,21 +200,7 @@ function parseJSON(text: string): { matrix: any[][] } {
     throw new Error('JSON malformé. Veuillez vérifier la syntaxe du fichier.');
   }
 
-  // Find the most likely array of records
-  let records: Record<string, any>[] | null = null;
-
-  if (Array.isArray(parsed) && parsed.length > 0 && typeof parsed[0] === 'object') {
-    records = parsed as Record<string, any>[];
-  } else if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-    // Search for first property that is an array of objects
-    for (const key of Object.keys(parsed)) {
-      const val = parsed[key];
-      if (Array.isArray(val) && val.length > 0 && typeof val[0] === 'object') {
-        records = val as Record<string, any>[];
-        break;
-      }
-    }
-  }
+  const records = findJsonRecords(parsed);
 
   if (!records || records.length === 0) {
     throw new Error('Structure JSON non reconnue. Attendu: un tableau d\'objets ou { "contacts": [...] }.');
@@ -224,7 +238,7 @@ export async function parseFile(file: File): Promise<ParsedFileData> {
   let matrix: any[][] = [];
   let sheetCount = 1;
   let sheetName = '';
-  let format: ParsedFileData['format'] = 'csv';
+  let format: ParsedFileData['format'];
 
   if (nameLower.endsWith('.xlsx')) {
     format = 'xlsx';
@@ -275,7 +289,6 @@ export async function parseFile(file: File): Promise<ParsedFileData> {
   const dedupedHeaders = deduplicateHeaders(validHeaders);
 
   // Build raw row objects (skip empty rows, normalise row lengths)
-  const maxCols = dedupedHeaders.length;
   const dataRows: RawRowData[] = [];
 
   for (let r = headerRowIndex + 1; r < matrix.length; r++) {

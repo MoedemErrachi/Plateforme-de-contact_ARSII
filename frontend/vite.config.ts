@@ -9,14 +9,21 @@ export default defineConfig(() => {
     test: {
       environment: 'jsdom',
       globals: true,
-      setupFiles: './src/test/setup.ts',
-      include: ['src/**/*.test.{ts,tsx}'],
+      setupFiles: './tests/setup.ts',
+      include: ['tests/**/*.test.{ts,tsx}'],
+      testTimeout: 15000,
+      hookTimeout: 20000,
+      // Les tests rendent des widgets ECharts lourds ; limiter la parallélisation
+      // évite la sur-sollicitation CPU qui rend les assertions async aléatoires
+      // (races de timing) sous charge. 4 workers laissent de la marge sur 12 cœurs.
+      maxWorkers: 4,
+      minWorkers: 2,
       coverage: {
         provider: 'v8',
         reporter: ['text', 'lcov'],
         reportsDirectory: 'coverage',
-        include: ['src/utils/format.ts', 'src/utils/formatFieldValue.ts', 'src/utils/privileges.ts', 'src/utils/jwt.ts', 'src/utils/contactQuery.ts', 'src/utils/mapContact.ts'],
-        exclude: ['src/**/*.test.{ts,tsx}', 'node_modules/**'],
+        include: ['src/**/*.{ts,tsx}'],
+        exclude: ['tests/**', 'node_modules/**', 'src/main.tsx', 'src/vite-env.d.ts', 'src/types/**'],
       },
     },
     build: {

@@ -49,12 +49,12 @@ export async function downloadFromEndpoint(path: string, fileName: string): Prom
     anchor.href = url;
 
     const disposition = res.headers.get('Content-Disposition');
-    const match = disposition?.match(/filename="?([^";\s]+)"?/);
+    const match = disposition ? /filename="?([^";\s]+)"?/.exec(disposition) : null;
     anchor.download = match ? decodeURIComponent(match[1]) : fileName;
 
     document.body.appendChild(anchor);
     anchor.click();
-    document.body.removeChild(anchor);
+    anchor.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
 
     const countHeader = res.headers.get('X-Export-Count');

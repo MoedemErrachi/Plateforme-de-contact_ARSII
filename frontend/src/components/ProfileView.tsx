@@ -93,7 +93,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ user, onUserUpdate, on
     }
   };
 
-  const handleSave = async (e: React.FormEvent) => {
+  const handleSave = async (e) => {
     e.preventDefault();
     if (!name.trim()) {
       showToast('Le nom complet est requis.', 'error');
@@ -143,7 +143,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ user, onUserUpdate, on
   };
 
   // Étape 1 : validations locales puis ouverture de la confirmation.
-  const handleChangePassword = (e: React.FormEvent) => {
+  const handleChangePassword = (e) => {
     e.preventDefault();
     if (!currentPassword || !newPassword || !confirmNewPassword) {
       showToast('Tous les champs sont requis.', 'error');
@@ -221,7 +221,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ user, onUserUpdate, on
             <div className="relative">
               <div className="w-28 h-28 rounded-full overflow-hidden bg-[#D9E6F2] border-4 border-[#005596]/30 flex items-center justify-center">
                 {avatarUrl ? (
-                  <img src={avatarUrl} alt="Photo de profil" className="w-full h-full object-cover" />
+                  <img src={avatarUrl} alt="Avatar de profil" className="w-full h-full object-cover" />
                 ) : (
                   <span className="text-3xl font-black text-[#005596]">{getInitials(name)}</span>
                 )}
@@ -301,12 +301,13 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ user, onUserUpdate, on
             </div>
 
             <div className="flex flex-col gap-1.5">
-              <label className="text-[11px] font-extrabold text-[#55636B] uppercase tracking-wider">
+              <label htmlFor="profile-role" className="text-[11px] font-extrabold text-[#55636B] uppercase tracking-wider">
                 Rôle
               </label>
               <div className="relative">
                 <BadgeCheck className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-[#8A98A1]" />
                 <input
+                  id="profile-role"
                   type="text"
                   readOnly
                   value={roleLabel}
@@ -394,7 +395,6 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ user, onUserUpdate, on
                 onChange={(e) => setCurrentPassword(e.target.value)}
                 placeholder="••••••••"
                 required
-                autoFocus
                 className="w-full pl-10 pr-11 py-3 bg-[#E8F1F8]/60 focus:bg-white border border-[#C9D4DE] focus:border-[#005596] rounded-xl text-xs font-bold text-[#1C2529] placeholder-[#8A98A1]/60 focus:outline-none focus:ring-2 focus:ring-[#005596]/20 transition-all"
               />
               <button

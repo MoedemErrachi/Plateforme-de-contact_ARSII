@@ -49,14 +49,14 @@ export const Modal: React.FC<ModalProps> = ({
 
   if (variant === 'drawer') {
     return createPortal(
-      <div
-        className="fixed inset-0 z-50 flex justify-end bg-slate-900/40 backdrop-blur-sm overflow-hidden"
-        onClick={onClose}
-      >
-        <div
-          className="relative w-full max-w-lg h-full flex flex-col bg-white shadow-2xl overflow-y-auto animate-slide-in-right"
-          onClick={(e) => e.stopPropagation()}
-        >
+      <div className="fixed inset-0 z-50 flex justify-end overflow-hidden">
+        <button
+          type="button"
+          aria-label="Fermer"
+          onClick={onClose}
+          className="absolute inset-0 w-full h-full cursor-pointer bg-slate-900/40 backdrop-blur-sm focus:outline-none"
+        />
+        <div className="relative w-full max-w-lg h-full flex flex-col bg-white shadow-2xl overflow-y-auto animate-slide-in-right">
           {children}
         </div>
       </div>,
@@ -65,13 +65,15 @@ export const Modal: React.FC<ModalProps> = ({
   }
 
   return createPortal(
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4 overflow-hidden"
-      onClick={onClose}
-    >
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-hidden">
+      <button
+        type="button"
+        aria-label="Fermer"
+        onClick={onClose}
+        className="absolute inset-0 w-full h-full cursor-pointer bg-slate-900/40 backdrop-blur-sm focus:outline-none"
+      />
       <div
         className={`relative w-full ${maxWidth} max-h-[90vh] flex flex-col bg-white rounded-xl shadow-2xl overflow-y-auto animate-scale-up`}
-        onClick={(e) => e.stopPropagation()}
       >
         {title !== undefined && (
           <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-6 pt-5 pb-4 shrink-0">

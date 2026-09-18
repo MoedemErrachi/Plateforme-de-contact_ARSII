@@ -1,4 +1,5 @@
 import { Router, Request, Response, NextFunction } from 'express';
+import crypto from 'node:crypto';
 import { getSegments, createSegment, updateSegment, deleteSegment, setTagContacts } from '../controllers/segmentController';
 import { prisma } from '../config/prisma';
 import { requirePrivilege } from '../middleware/authorizeRole';
@@ -331,7 +332,7 @@ const TAG_COLORS = [
 ];
 
 function randomTagColor(): string {
-  return TAG_COLORS[Math.floor(Math.random() * TAG_COLORS.length)];
+  return TAG_COLORS[crypto.randomInt(0, TAG_COLORS.length)];
 }
 
 // Segment routes

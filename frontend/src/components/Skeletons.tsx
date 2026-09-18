@@ -8,7 +8,12 @@ export const LoadingSpinner: React.FC<{ size?: 'sm' | 'md' | 'lg'; text?: string
   size = 'md', 
   text = 'Chargement en cours...' 
 }) => {
-  const dimension = size === 'sm' ? 'w-5 h-5 border-2' : size === 'lg' ? 'w-12 h-12 border-4' : 'w-8 h-8 border-3';
+  const DIMENSION_BY_SIZE: Record<'sm' | 'md' | 'lg', string> = {
+    sm: 'w-5 h-5 border-2',
+    md: 'w-8 h-8 border-3',
+    lg: 'w-12 h-12 border-4'
+  };
+  const dimension = DIMENSION_BY_SIZE[size];
   return (
     <div className="flex flex-col items-center justify-center p-8 space-y-3">
       <div className={`${dimension} border-[#005596] border-t-transparent rounded-full animate-spin`} />

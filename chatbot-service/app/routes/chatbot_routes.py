@@ -3,8 +3,8 @@ from __future__ import annotations
 import logging
 import os
 import re
-import traceback
 import unicodedata
+from typing import Annotated
 
 import jwt as pyjwt
 from fastapi import APIRouter, Header, HTTPException, Request, status
@@ -36,6 +36,82 @@ HELP_MARKERS = (
 )
 
 
+def _require_bearer_token(authorization: str | None) -> str:
+    if not authorization:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing Authorization header",
+        )
+    if not authorization.lower().startswith("bearer "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid Authorization header. Expected 'Bearer <token>'",
+        )
+    token = authorization[7:].strip()
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Empty Bearer token",
+        )
+    jwt_secret = os.getenv("JWT_SECRET")
+    if not jwt_secret:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Service temporairement indisponible.",
+        )
+    try:
+        pyjwt.decode(token, jwt_secret, algorithms=["HS256"])
+    except pyjwt.ExpiredSignatureError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token expired",
+        )
+    except pyjwt.InvalidTokenError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token",
+        )
+    return token
+
+
+async def _run_tool_rounds(messages: list[dict], token: str) -> str | None:
+    final_content: str | None = None
+    for _ in range(MAX_TOOL_ROUNDS):
+        result = await get_llm_router().chat(messages, TOOL_DEFINITIONS)
+        if not result.has_tool_calls:
+            final_content = result.content
+            break
+        messages.append(build_assistant_message(result))
+        for tool_call in result.tool_calls:
+            tool_output = await tool_runner.execute(tool_call.name, tool_call.arguments, token)
+            messages.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": tool_call.id,
+                    "name": tool_call.name,
+                    "content": tool_output,
+                }
+            )
+    return final_content
+
+
+async def _final_response(final_content: str | None, messages: list[dict]) -> ChatResponse:
+    if final_content is None:
+        final_content = "Je n'ai pas pu terminer ma réponse. Merci de reformuler votre demande."
+
+    # Phase 2 — formattage structuré natif (toujours exécuté, sans tools).
+    # En cas d'échec (transport ou autre), dégradation sur le contenu de phase 1.
+    try:
+        phase2_content = await get_llm_router().chat_final(build_final_text_messages(messages))
+        return validate_final_response(phase2_content)
+    except ServiceUnavailableError:
+        logger.warning("chat_final indisponible, dégradation sur le contenu de phase 1")
+        return validate_final_response(final_content)
+    except Exception as exc:
+        logger.warning("chat_final en erreur, dégradation sur le contenu de phase 1: %s", exc)
+        return validate_final_response(final_content)
+
+
 def normalize_text(text: str) -> str:
     ascii_text = unicodedata.normalize("NFD", text).encode("ascii", "ignore").decode("ascii")
     return re.sub(r"\s+", " ", ascii_text.lower()).strip()
@@ -61,50 +137,15 @@ def help_response() -> ChatResponse:
     return ChatResponse(message=message, actions=[])
 
 
-@router.post("/message", response_model=ChatResponse, response_model_exclude_none=True)
+@router.post("/message", response_model_exclude_none=True)
 @limiter.limit(CHATBOT_RATE_LIMIT)
 async def chatbot_message(
     request: Request,
     payload: ChatRequest,
-    authorization: str = Header(None),
+    authorization: Annotated[str | None, Header()] = None,
 ) -> ChatResponse:
     try:
-        if not authorization:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Missing Authorization header",
-            )
-        if not authorization.lower().startswith("bearer "):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid Authorization header. Expected 'Bearer <token>'",
-            )
-        token = authorization[7:].strip()
-        if not token:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Empty Bearer token",
-            )
-
-        jwt_secret = os.getenv("JWT_SECRET")
-        if not jwt_secret:
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Service temporairement indisponible.",
-            )
-        try:
-            pyjwt.decode(token, jwt_secret, algorithms=["HS256"])
-        except pyjwt.ExpiredSignatureError:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Token expired",
-            )
-        except pyjwt.InvalidTokenError:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid token",
-            )
-
+        token = _require_bearer_token(authorization)
         session_id = str(payload.session_id)
 
         if should_short_circuit(payload.message):
@@ -116,47 +157,15 @@ async def chatbot_message(
         messages.extend(session_store.get_messages(session_id))
         messages.append({"role": "user", "content": payload.message})
 
-        final_content: str | None = None
-        for _ in range(MAX_TOOL_ROUNDS):
-            result = await get_llm_router().chat(messages, TOOL_DEFINITIONS, timeout=15)
-            if not result.has_tool_calls:
-                final_content = result.content
-                break
-            messages.append(build_assistant_message(result))
-            for tool_call in result.tool_calls:
-                tool_output = await tool_runner.execute(tool_call.name, tool_call.arguments, token)
-                messages.append(
-                    {
-                        "role": "tool",
-                        "tool_call_id": tool_call.id,
-                        "name": tool_call.name,
-                        "content": tool_output,
-                    }
-                )
-
-        if final_content is None:
-            final_content = "Je n'ai pas pu terminer ma réponse. Merci de reformuler votre demande."
-
-        # Phase 2 — formattage structuré natif (toujours exécuté, sans tools).
-        # En cas d'échec (transport ou autre), dégradation sur le contenu de phase 1.
-        try:
-            phase2_content = await get_llm_router().chat_final(build_final_text_messages(messages), timeout=15)
-            response = validate_final_response(phase2_content)
-        except ServiceUnavailableError:
-            logger.warning("chat_final indisponible, dégradation sur le contenu de phase 1")
-            response = validate_final_response(final_content)
-        except Exception as exc:
-            logger.warning("chat_final en erreur, dégradation sur le contenu de phase 1: %s", exc)
-            response = validate_final_response(final_content)
+        final_content = await _run_tool_rounds(messages, token)
+        response = await _final_response(final_content, messages)
 
         session_store.push(session_id, payload.message, response.message)
         return response
     except (HTTPException, ServiceUnavailableError):
         raise
     except Exception as exc:
-        logger.error(
-            f"Unhandled error in chatbot route: {str(exc)}\n{traceback.format_exc()}"
-        )
+        logger.exception("Unhandled error in chatbot route: %s", exc)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Une erreur interne est survenue lors du traitement.",

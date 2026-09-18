@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
+import type { Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Bot, Download, Loader2, MessageSquare, RotateCcw, Search, Send, UserRound, X } from 'lucide-react';
 import { FilterState, Gender, ResearchCareerStage } from '../../types';
@@ -72,15 +73,14 @@ interface ChatWidgetProps {
   getToken?: () => string | null;
 }
 
+let fallbackSessionCounter = 0;
+
 function generateSessionId(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return crypto.randomUUID();
   }
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
-    const r = (Math.random() * 16) | 0;
-    const v = c === 'x' ? r : (r & 0x3) | 0x8;
-    return v.toString(16);
-  });
+  fallbackSessionCounter += 1;
+  return `session-${Date.now()}-${fallbackSessionCounter}`;
 }
 
 function getOrCreateSessionId(): string {
@@ -117,8 +117,9 @@ function resolveAuthToken(): { token: string; source: string | null } {
       for (const key of TOKEN_KEYS) {
         try {
           const value = storage.getItem(key);
-          if (value && value.trim()) {
-            return { token: value.trim(), source: `${label}.${key}` };
+          const trimmed = value?.trim();
+          if (trimmed) {
+            return { token: trimmed, source: `${label}.${key}` };
           }
         } catch {
           // ignore storage failures
@@ -140,12 +141,9 @@ function normalizeAction(raw: unknown): ChatAction | null {
     candidate.filters && typeof candidate.filters === 'object'
       ? (candidate.filters as ContactFilters)
       : null;
-  const contactId =
-    typeof candidate.contactId === 'string'
-      ? candidate.contactId
-      : typeof candidate.contact_id === 'string'
-        ? (candidate.contact_id as string)
-        : null;
+  let contactId: string | null = null;
+  if (typeof candidate.contactId === 'string') contactId = candidate.contactId;
+  else if (typeof candidate.contact_id === 'string') contactId = candidate.contact_id;
   if (type === 'view_filtered_list' || type === 'export_csv') {
     return { type, filters };
   }
@@ -169,63 +167,65 @@ function toFilterState(filters?: ContactFilters | null): FilterState {
   };
 }
 
+const markdownComponents: Components = {
+  p: ({ children }) => <p className="my-1.5 leading-relaxed">{children}</p>,
+  ul: ({ children }) => <ul className="list-disc pl-5 my-1.5 space-y-0.5">{children}</ul>,
+  ol: ({ children }) => <ol className="list-decimal pl-5 my-1.5 space-y-0.5">{children}</ol>,
+  li: ({ children }) => <li className="leading-relaxed">{children}</li>,
+  strong: ({ children }) => <strong className="font-bold">{children}</strong>,
+  em: ({ children }) => <em>{children}</em>,
+  h1: ({ children }) => <h1 className="text-base font-bold mt-2 mb-1">{children}</h1>,
+  h2: ({ children }) => <h2 className="text-sm font-bold mt-2 mb-1">{children}</h2>,
+  h3: ({ children }) => <h3 className="text-sm font-bold mt-1.5 mb-1">{children}</h3>,
+  h4: ({ children }) => <h4 className="text-xs font-bold mt-1.5 mb-0.5">{children}</h4>,
+  a: ({ children, href }) => {
+    const navigate = useNavigate();
+    if (href?.startsWith('/contacts/')) {
+      return (
+        <a
+          href={href}
+          onClick={e => {
+            e.preventDefault();
+            navigate(href);
+          }}
+          className="text-[#005596] underline cursor-pointer"
+        >
+          {children}
+        </a>
+      );
+    }
+    return (
+      <a href={href} target="_blank" rel="noreferrer" className="text-[#005596] underline">
+        {children}
+      </a>
+    );
+  },
+  code: ({ children }) => (
+    <code className="bg-slate-100 rounded px-1 py-0.5 text-xs font-mono break-all">{children}</code>
+  ),
+  table: ({ children }) => (
+    <div className="overflow-x-auto my-2">
+      <table className="w-full text-xs border-collapse">{children}</table>
+    </div>
+  ),
+  thead: ({ children }) => <thead>{children}</thead>,
+  tbody: ({ children }) => <tbody>{children}</tbody>,
+  tr: ({ children }) => <tr className="border-b border-slate-200">{children}</tr>,
+  th: ({ children }) => (
+    <th className="border border-slate-200 bg-slate-50 px-2 py-1 text-left font-semibold">{children}</th>
+  ),
+  td: ({ children }) => <td className="border border-slate-200 px-2 py-1">{children}</td>,
+  blockquote: ({ children }) => (
+    <blockquote className="border-l-2 border-slate-300 pl-3 my-1.5 italic text-slate-600">{children}</blockquote>
+  ),
+  hr: () => <hr className="my-2 border-slate-200" />
+};
+
 const Markdown: React.FC<{ content: string }> = ({ content }) => {
-  const navigate = useNavigate();
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
-      components={{
-        p: ({ children }) => <p className="my-1.5 leading-relaxed">{children}</p>,
-        ul: ({ children }) => <ul className="list-disc pl-5 my-1.5 space-y-0.5">{children}</ul>,
-        ol: ({ children }) => <ol className="list-decimal pl-5 my-1.5 space-y-0.5">{children}</ol>,
-        li: ({ children }) => <li className="leading-relaxed">{children}</li>,
-        strong: ({ children }) => <strong className="font-bold">{children}</strong>,
-        em: ({ children }) => <em>{children}</em>,
-        h1: ({ children }) => <h1 className="text-base font-bold mt-2 mb-1">{children}</h1>,
-        h2: ({ children }) => <h2 className="text-sm font-bold mt-2 mb-1">{children}</h2>,
-        h3: ({ children }) => <h3 className="text-sm font-bold mt-1.5 mb-1">{children}</h3>,
-        h4: ({ children }) => <h4 className="text-xs font-bold mt-1.5 mb-0.5">{children}</h4>,
-        a: ({ children, href }) => {
-          if (href && href.startsWith('/contacts/')) {
-            return (
-              <a
-                href={href}
-                onClick={e => {
-                  e.preventDefault();
-                  navigate(href);
-                }}
-                className="text-[#005596] underline cursor-pointer"
-              >
-                {children}
-              </a>
-            );
-          }
-          return (
-            <a href={href} target="_blank" rel="noreferrer" className="text-[#005596] underline">
-              {children}
-            </a>
-          );
-        },
-        code: ({ children }) => (
-          <code className="bg-slate-100 rounded px-1 py-0.5 text-xs font-mono break-all">{children}</code>
-        ),
-        table: ({ children }) => (
-          <div className="overflow-x-auto my-2">
-            <table className="w-full text-xs border-collapse">{children}</table>
-          </div>
-        ),
-        thead: ({ children }) => <thead>{children}</thead>,
-        tbody: ({ children }) => <tbody>{children}</tbody>,
-        tr: ({ children }) => <tr className="border-b border-slate-200">{children}</tr>,
-        th: ({ children }) => (
-          <th className="border border-slate-200 bg-slate-50 px-2 py-1 text-left font-semibold">{children}</th>
-        ),
-        td: ({ children }) => <td className="border border-slate-200 px-2 py-1">{children}</td>,
-        blockquote: ({ children }) => (
-          <blockquote className="border-l-2 border-slate-300 pl-3 my-1.5 italic text-slate-600">{children}</blockquote>
-        ),
-        hr: () => <hr className="my-2 border-slate-200" />
-      }}
+      components={markdownComponents}
     >
       {content}
     </ReactMarkdown>
@@ -247,13 +247,21 @@ interface ActionButtonsProps {
   onProfile: (contactId?: string | null) => void;
 }
 
+function actionKey(action: ChatAction): string {
+  if (action.type === 'view_filtered_list' || action.type === 'export_csv') {
+    const f = action.filters;
+    return `${action.type}:${f?.countryOfOrigin ?? ''}:${f?.affiliation ?? ''}:${f?.facultyDepartment ?? ''}`;
+  }
+  return `${action.type}:${action.contactId ?? ''}`;
+}
+
 const ActionButtons: React.FC<ActionButtonsProps> = ({ actions, onViewList, onExport, onProfile }) => (
   <div className="mt-2 flex flex-col gap-1.5">
-    {actions.map((action, index) => {
+    {actions.map(action => {
       if (action.type === 'view_filtered_list') {
         return (
           <button
-            key={index}
+            key={actionKey(action)}
             onClick={() => onViewList(action.filters)}
             className="flex items-center gap-2 text-xs font-semibold text-[#005596] bg-[#005596]/5 hover:bg-[#005596]/10 border border-[#005596]/20 rounded-lg px-3 py-2 transition-colors cursor-pointer text-left"
           >
@@ -265,7 +273,7 @@ const ActionButtons: React.FC<ActionButtonsProps> = ({ actions, onViewList, onEx
       if (action.type === 'export_csv') {
         return (
           <button
-            key={index}
+            key={actionKey(action)}
             onClick={() => onExport(action.filters)}
             className="flex items-center gap-2 text-xs font-semibold text-emerald-700 bg-emerald-600/5 hover:bg-emerald-600/10 border border-emerald-600/20 rounded-lg px-3 py-2 transition-colors cursor-pointer text-left"
           >
@@ -276,7 +284,7 @@ const ActionButtons: React.FC<ActionButtonsProps> = ({ actions, onViewList, onEx
       }
       return (
         <button
-          key={index}
+          key={actionKey(action)}
           onClick={() => onProfile(action.contactId)}
           className="flex items-center gap-2 text-xs font-semibold text-[#B8167C] bg-[#B8167C]/5 hover:bg-[#B8167C]/10 border border-[#B8167C]/20 rounded-lg px-3 py-2 transition-colors cursor-pointer text-left"
         >
@@ -287,6 +295,45 @@ const ActionButtons: React.FC<ActionButtonsProps> = ({ actions, onViewList, onEx
     })}
   </div>
 );
+
+function resolveMessageToken(getToken?: () => string | null): string | null {
+  const tokenInfo = getToken ? { token: getToken() ?? '', source: 'getToken prop' } : resolveAuthToken();
+  return tokenInfo.token || null;
+}
+
+function appendOptimisticUserMessage(
+  setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>,
+  text: string
+) {
+  setMessages(prev => [...prev, { id: generateSessionId(), role: 'user', content: text }]);
+}
+
+function parseChatErrorResponse(err: unknown): string {
+  const apiErr = toApiError(err);
+  if (apiErr.kind === 'server' || apiErr.kind === 'network' || apiErr.kind === 'timeout') {
+    return 'Le service d\'assistance est actuellement injoignable. Veuillez réessayer dans un instant.';
+  }
+  return apiErr.message;
+}
+
+function processChatResponse(
+  data: Record<string, unknown>,
+  setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>,
+  setServiceStatus: (s: 'online' | 'offline') => void,
+  setHasUnread: (v: boolean) => void,
+  isOpen: boolean
+) {
+  const rawActions = Array.isArray(data?.actions)
+    ? (data.actions as unknown[])
+        .map(normalizeAction)
+        .filter((action): action is ChatAction => action !== null)
+    : [];
+  const reply =
+    typeof data?.message === 'string' && data.message.trim() ? data.message : 'Je n\'ai pas pu formuler de réponse.';
+  setMessages(prev => [...prev, { id: generateSessionId(), role: 'assistant', content: reply, actions: rawActions }]);
+  setServiceStatus('online');
+  if (!isOpen) setHasUnread(true);
+}
 
 export const ChatWidget: React.FC<ChatWidgetProps> = ({ getToken }) => {
   const navigate = useNavigate();
@@ -389,16 +436,12 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ getToken }) => {
       const text = (rawMessage ?? input).trim();
       if (!text || isPending) return;
       setInput('');
-      const tokenInfo = getToken ? { token: getToken() ?? '', source: 'getToken prop' } : resolveAuthToken();
-      const token = tokenInfo.token || null;
+      const token = resolveMessageToken(getToken);
       if (!token) {
         showToast("Vous devez être connecté pour utiliser l'assistant IA.", 'error');
         return;
       }
-      setMessages(prev => [
-        ...prev,
-        { id: generateSessionId(), role: 'user', content: text }
-      ]);
+      appendOptimisticUserMessage(setMessages, text);
       setIsPending(true);
       const endpoint = `${CHATBOT_API_PREFIX}/api/chatbot/message`;
       const controller = new AbortController();
@@ -427,39 +470,20 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ getToken }) => {
           if (res.status === 429) {
             throw new Error('Trop de requêtes. Veuillez patienter quelques secondes avant de réessayer.');
           }
-          const detail =
-            typeof data?.detail === 'string'
-              ? data.detail
-              : typeof data?.error === 'string'
-                ? data.error
-                : `Erreur serveur (HTTP ${res.status})`;
+          let detail: string;
+          if (typeof data?.detail === 'string') detail = data.detail;
+          else if (typeof data?.error === 'string') detail = data.error;
+          else detail = `Erreur serveur (HTTP ${res.status})`;
           throw new Error(detail);
         }
-        const rawActions = Array.isArray(data?.actions)
-          ? (data.actions as unknown[])
-              .map(normalizeAction)
-              .filter((action): action is ChatAction => action !== null)
-          : [];
-        const reply =
-          typeof data?.message === 'string' && data.message.trim() ? data.message : 'Je n\'ai pas pu formuler de réponse.';
-        setMessages(prev => [
-          ...prev,
-          { id: generateSessionId(), role: 'assistant', content: reply, actions: rawActions }
-        ]);
-        setServiceStatus('online');
-        if (!isOpen) setHasUnread(true);
+        processChatResponse(data!, setMessages, setServiceStatus, setHasUnread, isOpen);
       } catch (err) {
-        // Normalisation centralisée : plus aucun « Failed to fetch » brut.
-        const apiErr = toApiError(err);
-        const content = apiErr.kind === 'server' || apiErr.kind === 'network' || apiErr.kind === 'timeout'
-          ? 'Le service d\'assistance est actuellement injoignable. Veuillez réessayer dans un instant.'
-          : apiErr.message;
+        const content = parseChatErrorResponse(err);
         showToast(content, 'error');
-        if (isServiceUnreachable(apiErr)) {
+        if (isServiceUnreachable(toApiError(err))) {
           setServiceStatus('offline');
         }
       } finally {
-        // Nettoyage unique : abort() sur un contrôleur déjà stabilisé est un no-op.
         clearTimeout(timeout);
         controller.abort();
         setIsPending(false);
@@ -496,9 +520,10 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ getToken }) => {
             })
           });
         } catch {
-          // journalisation non bloquante
+          // Journalisation non bloquante : l'export réussit même si ce compte-rendu échoue.
+          console.warn('Échec de la journalisation de l\'export CSV.');
         }
-      } catch (err) {
+      } catch {
         showToast('Export CSV échoué. Veuillez réessayer.', 'error');
       }
     },
@@ -552,12 +577,12 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ getToken }) => {
             {serviceStatus === 'offline' ? (
               <p className="flex items-center gap-1.5 text-[11px] text-white/85 leading-tight">
                 <span className="w-1.5 h-1.5 rounded-full bg-rose-400" />
-                Hors ligne · Service momentanément indisponible
+                <span>Hors ligne · Service momentanément indisponible</span>
               </p>
             ) : (
               <p className="flex items-center gap-1.5 text-[11px] text-white/85 leading-tight">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                En ligne · Assistant intelligent du CRM
+                <span>En ligne · Assistant intelligent du CRM</span>
               </p>
             )}
           </div>

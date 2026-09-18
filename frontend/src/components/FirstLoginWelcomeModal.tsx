@@ -33,7 +33,7 @@ export const FirstLoginWelcomeModal: React.FC<FirstLoginWelcomeModalProps> = ({ 
     setLocalError('');
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setLocalError('');
 
@@ -122,18 +122,18 @@ export const FirstLoginWelcomeModal: React.FC<FirstLoginWelcomeModalProps> = ({ 
 
         <form onSubmit={handleSubmit} className="space-y-3">
           <div>
-            <label className="font-extrabold text-[#55636B] uppercase tracking-wider text-[10px] block mb-1.5">
+            <label htmlFor="first-login-new-password" className="font-extrabold text-[#55636B] uppercase tracking-wider text-[10px] block mb-1.5">
               Nouveau mot de passe
             </label>
             <div className="relative">
               <Lock className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-[#8A98A1]" />
               <input
+                id="first-login-new-password"
                 type={showPassword ? 'text' : 'password'}
                 value={newPassword}
                 onChange={e => setNewPassword(e.target.value)}
                 placeholder="••••••••"
                 minLength={8}
-                autoFocus
                 className="w-full pl-10 pr-11 py-3 bg-[#E8F1F8]/60 focus:bg-white border border-[#C9D4DE] focus:border-[#005596] rounded-xl font-bold placeholder-[#8A98A1]/60 focus:outline-none focus:ring-2 focus:ring-[#005596]/20 transition-all"
               />
               <button
@@ -147,12 +147,13 @@ export const FirstLoginWelcomeModal: React.FC<FirstLoginWelcomeModalProps> = ({ 
           </div>
 
           <div>
-            <label className="font-extrabold text-[#55636B] uppercase tracking-wider text-[10px] block mb-1.5">
+            <label htmlFor="first-login-confirm-password" className="font-extrabold text-[#55636B] uppercase tracking-wider text-[10px] block mb-1.5">
               Confirmer le mot de passe
             </label>
             <div className="relative">
               <Lock className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-[#8A98A1]" />
               <input
+                id="first-login-confirm-password"
                 type={showPassword ? 'text' : 'password'}
                 value={confirmPassword}
                 onChange={e => setConfirmPassword(e.target.value)}

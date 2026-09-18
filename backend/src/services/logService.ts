@@ -1,6 +1,12 @@
 import { prisma } from '../config/prisma';
 import { LogType, LogFormat } from '@prisma/client';
 
+function resolveLogFormat(format: 'CSV' | 'XLSX' | 'JSON'): LogFormat {
+  if (format === 'CSV') return LogFormat.CSV;
+  if (format === 'XLSX') return LogFormat.XLSX;
+  return LogFormat.JSON;
+}
+
 export class LogService {
   public async getLogs(type?: 'IMPORT' | 'EXPORT') {
     const where = type ? { type: type === 'IMPORT' ? LogType.IMPORT : LogType.EXPORT } : {};
@@ -21,10 +27,7 @@ export class LogService {
     userId?: string;
   }) {
     const logType = data.type === 'IMPORT' ? LogType.IMPORT : LogType.EXPORT;
-    const logFormat =
-      data.format === 'CSV' ? LogFormat.CSV
-      : data.format === 'XLSX' ? LogFormat.XLSX
-      : LogFormat.JSON;
+    const logFormat = resolveLogFormat(data.format);
 
     return await prisma.importExportLog.create({
       data: {

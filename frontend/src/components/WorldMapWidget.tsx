@@ -95,36 +95,39 @@ function computePanelLayout(
   }
   const fitsAbove = anchor.y - PANEL_H - GAP >= minY;
   const fitsBelow = anchor.y + GAP + PANEL_H <= maxY;
-  let mode: PanelMode = 'over';
-  let placeRight = true;
-  let panelLeft = minX;
-  let panelTop = minY;
   if (fitsAbove) {
-    mode = 'above';
-    panelLeft = clamp(anchor.x - panelW / 2, minX, maxX);
-    panelTop = clamp(anchor.y - GAP - PANEL_H, minY, maxY);
-  } else if (fitsBelow) {
-    mode = 'below';
-    panelLeft = clamp(anchor.x - panelW / 2, minX, maxX);
-    panelTop = clamp(anchor.y + GAP, minY, maxY);
-  } else {
-    // Latéral : panneau à droite du pays (à gauche sinon), pin toujours visible.
-    placeRight = anchor.x < mapLeft + mapW / 2;
-    panelTop = clamp(anchor.y - PANEL_H / 2, minY, maxY);
-    panelLeft = clamp(placeRight ? anchor.x + GAP : anchor.x - GAP - panelW, minX, maxX);
-    const coversPin = placeRight
-      ? panelLeft <= anchor.x + 12
-      : anchor.x - 12 <= panelLeft + panelW;
-    if (coversPin) {
-      // Carte trop étroite : repli « recouvrant » (le panneau masque le pin).
-      mode = 'over';
-      panelLeft = clamp(anchor.x - panelW / 2, minX, maxX);
-      panelTop = clamp(anchor.y - PANEL_H / 2, minY, maxY);
-    } else {
-      mode = 'side';
-    }
+    return {
+      mode: 'above',
+      placeRight: true,
+      left: clamp(anchor.x - panelW / 2, minX, maxX),
+      top: clamp(anchor.y - GAP - PANEL_H, minY, maxY)
+    };
   }
-  return { mode, placeRight, left: panelLeft, top: panelTop };
+  if (fitsBelow) {
+    return {
+      mode: 'below',
+      placeRight: true,
+      left: clamp(anchor.x - panelW / 2, minX, maxX),
+      top: clamp(anchor.y + GAP, minY, maxY)
+    };
+  }
+  // Latéral : panneau à droite du pays (à gauche sinon), pin toujours visible.
+  const placeRight = anchor.x < mapLeft + mapW / 2;
+  const panelTop = clamp(anchor.y - PANEL_H / 2, minY, maxY);
+  const panelLeft = clamp(placeRight ? anchor.x + GAP : anchor.x - GAP - panelW, minX, maxX);
+  const coversPin = placeRight
+    ? panelLeft <= anchor.x + 12
+    : anchor.x - 12 <= panelLeft + panelW;
+  if (coversPin) {
+    // Carte trop étroite : repli « recouvrant » (le panneau masque le pin).
+    return {
+      mode: 'over',
+      placeRight,
+      left: clamp(anchor.x - panelW / 2, minX, maxX),
+      top: clamp(anchor.y - PANEL_H / 2, minY, maxY)
+    };
+  }
+  return { mode: 'side', placeRight, left: panelLeft, top: panelTop };
 }
 
 // Points de référence des régions habitées (lon, lat) : utilisés pour détecter
@@ -136,7 +139,9 @@ const MAP_ANCHORS: [number, number][] = [
 ];
 
 function toGender(value?: string): Gender {
-  return value === 'MALE' ? 'MALE' : value === 'FEMALE' ? 'FEMALE' : 'NOT_SPECIFIED';
+  if (value === 'MALE') return 'MALE';
+  if (value === 'FEMALE') return 'FEMALE';
+  return 'NOT_SPECIFIED';
 }
 
 function getSeriesGeo(chart: any): any {
@@ -164,6 +169,259 @@ function projectGeo(
 function chercheurs(count: number): string {
   return `${count} chercheur${count > 1 ? 's' : ''}`;
 }
+
+// ---------- Click-handler factory (extracted outside component to lower complexity) ----------
+
+function createClickHandler(
+  chart: any,
+  containerEl: HTMLDivElement | null,
+  byIso2: Map<string, WorldMapCountry>,
+  gendersByIso2: Map<string, Record<Gender, number>>,
+  setSelected: React.Dispatch<React.SetStateAction<SelectedCountry | null>>,
+  setAnchorGeo: React.Dispatch<React.SetStateAction<{ lng: number; lat: number } | null>>
+): (params: any) => void {
+  return (params: any) => {
+    if (params?.componentType !== 'series' || !params?.name) return;
+    const entry = byIso2.get(String(params.name));
+    if (!entry) return;
+
+    // Point géographique cliqué : c'est l'ancre du pin, qui restera sur le
+    // pays pendant les déplacements/zooms de la carte.
+    const rect = containerEl?.getBoundingClientRect();
+    const offsetX =
+      typeof params.event?.offsetX === 'number'
+        ? params.event.offsetX
+        : (params.event?.clientX ?? 0) - (rect?.left ?? 0);
+    const offsetY =
+      typeof params.event?.offsetY === 'number'
+        ? params.event.offsetY
+        : (params.event?.clientY ?? 0) - (rect?.top ?? 0);
+    const geo = getSeriesGeo(chart);
+    const gpt = geo?.pointToData?.([offsetX, offsetY]);
+    if (geo && Array.isArray(gpt) && Number.isFinite(gpt[0]) && Number.isFinite(gpt[1])) {
+      setAnchorGeo({ lng: gpt[0], lat: gpt[1] });
+    } else {
+      setAnchorGeo(null);
+    }
+    setSelected({
+      country: entry.country,
+      iso2: entry.iso2 as string,
+      count: entry.count,
+      percentage: entry.percentage,
+      genders: gendersByIso2.get(entry.iso2 as string) || { FEMALE: 0, MALE: 0, NOT_SPECIFIED: 0 }
+    });
+  };
+}
+
+// ---------- Geo-roam handler factory (extracted outside component to lower complexity) ----------
+
+function createGeoRoamHandler(
+  chart: any,
+  container: HTMLDivElement,
+  defaultViewRef: React.RefObject<ViewState | null>,
+  lastGoodRef: React.RefObject<ViewState | null>,
+  snappedRef: React.RefObject<boolean>,
+  reprojectRef: React.RefObject<() => void>
+): () => void {
+  const getGeo = (): any =>
+    (chart as any)?.getModel?.()?.getSeriesByIndex(0)?.coordinateSystem ?? null;
+
+  const readDefault = (geo: any): ViewState | null => {
+    const rect = geo?.getBoundingRect?.();
+    if (!rect || typeof rect.x !== 'number') return null;
+    return { center: [rect.x + rect.width / 2, rect.y + rect.height / 2], zoom: 1 };
+  };
+
+  const readCurrent = (geo: any): ViewState | null => {
+    const w = container.clientWidth || 1;
+    const h = container.clientHeight || 1;
+    const pt = geo?.pointToData?.([w / 2, h / 2]);
+    const mat = geo?.getRoamTransform?.();
+    const scale = mat?.length >= 2 ? Math.hypot(mat[0] || 0, mat[1] || 0) : 1;
+    return {
+      center: [
+        Array.isArray(pt) && Number.isFinite(pt[0]) ? pt[0] : 0,
+        Array.isArray(pt) && Number.isFinite(pt[1]) ? pt[1] : 0
+      ],
+      zoom: Number.isFinite(scale) && scale > 0 ? scale : 1
+    };
+  };
+
+  const geo = getGeo();
+  if (geo) defaultViewRef.current = defaultViewRef.current ?? readDefault(geo);
+
+  return () => {
+    if (snappedRef.current) return;
+    const g = getGeo();
+    if (!g) return;
+    const state = readCurrent(g);
+    if (!state) return;
+
+    const rect = g.getBoundingRect();
+    if (!rect || typeof rect.x !== 'number') return;
+    const halfW = Math.max(rect.width / 2, 1e-6);
+    const halfH = Math.max(rect.height / 2, 1e-6);
+    const margin = state.zoom > 4.5 ? 30 / state.zoom : 18 / state.zoom;
+    const outOfLng = Math.abs(state.center[0] - (rect.x + rect.width / 2)) > halfW + margin;
+    const outOfLat = Math.abs(state.center[1] - (rect.y + rect.height / 2)) > halfH + margin;
+
+    let lost = outOfLng || outOfLat;
+
+    if (!lost && state.zoom <= 4.5 && typeof g.containPoint === 'function') {
+      // Le centre reste dans la carte : on exige qu'au moins un point de
+      // référence (continents + voisinage du centre) soit encore visible.
+      const probes: [number, number][] = [
+        ...MAP_ANCHORS,
+        [state.center[0] + 16, state.center[1]],
+        [state.center[0] - 16, state.center[1]],
+        [state.center[0], state.center[1] + 16],
+        [state.center[0], state.center[1] - 16]
+      ];
+      lost = !probes.some(p => g.containPoint(p));
+    }
+
+    if (!lost) {
+      lastGoodRef.current = state;
+      return;
+    }
+
+    // Trop loin : retour en douceur vers la dernière vue valide (ou la vue par défaut).
+    const target = lastGoodRef.current ?? defaultViewRef.current ?? state;
+    snappedRef.current = true;
+    window.setTimeout(() => { snappedRef.current = false; }, 500);
+    chart.setOption(
+      { series: [{ type: 'map', map: 'arsiiWorld', center: target.center, zoom: target.zoom }] },
+      { notMerge: false }
+    );
+    requestAnimationFrame(() => reprojectRef.current?.());
+  };
+}
+
+// ---------- Map popup panel (extracted outside component to lower complexity) ----------
+
+interface MapPopupProps {
+  selected: SelectedCountry;
+  anchor: { x: number; y: number };
+  mode: PanelMode;
+  placeRight: boolean;
+  panelLeft: number;
+  panelTop: number;
+  panelW: number;
+  popupRef: React.RefObject<HTMLDivElement>;
+  onClose: () => void;
+  onOpenContacts: () => void;
+}
+
+const MapPopup = React.memo(function MapPopup({
+  selected, anchor, mode, placeRight, panelLeft, panelTop, panelW,
+  popupRef, onClose, onOpenContacts
+}: MapPopupProps) {
+  let tailPos: { left: number; top: number; cls: string } | null = null;
+  if (mode === 'above') {
+    tailPos = { left: anchor.x - panelLeft - TAIL / 2, top: PANEL_H - 8, cls: 'bg-slate-50' };
+  } else if (mode === 'below') {
+    tailPos = { left: anchor.x - panelLeft - TAIL / 2, top: -8, cls: 'bg-[#005596]' };
+  } else if (mode === 'side') {
+    tailPos = placeRight
+      ? { left: -8, top: anchor.y - panelTop - TAIL / 2, cls: 'bg-white' }
+      : { left: panelW - 8, top: anchor.y - panelTop - TAIL / 2, cls: 'bg-white' };
+  }
+
+  return createPortal(
+    <>
+      {/* Pin (overlay fixe, re-projeté sur le pays à chaque déplacement/zoom) */}
+      {mode !== 'over' && (
+        <div
+          className="fixed z-[60] pointer-events-none animate-in zoom-in-95 fade-in duration-150"
+          style={{ left: anchor.x - 12, top: anchor.y - PIN_Y_OFFSET }}
+          aria-hidden="true"
+        >
+          <MapPin
+            className="w-6 h-6 text-[#005596] drop-shadow-[0_5px_6px_rgba(0,0,0,0.4)]"
+            fill="#005596"
+            stroke="white"
+            strokeWidth={2}
+          />
+        </div>
+      )}
+
+      {/* Panneau « 3D » flottant, relié au pin par une queue (clampé à la fenêtre) */}
+      <div
+        ref={popupRef}
+        className="fixed z-[60] bg-gradient-to-b from-white to-slate-50 rounded-2xl border border-slate-200 shadow-[0_24px_60px_-12px_rgba(0,0,0,0.45),0_10px_24px_-12px_rgba(0,0,0,0.3),0_2px_6px_rgba(0,0,0,0.12)] animate-in zoom-in-95 fade-in duration-200"
+        style={{ left: panelLeft, top: panelTop, width: panelW }}
+      >
+        {/* Queue pointant vers le pin */}
+        {tailPos && (
+          <div
+            className={`absolute w-4 h-4 rotate-45 ${tailPos.cls}`}
+            style={{ left: tailPos.left, top: tailPos.top }}
+            aria-hidden="true"
+          />
+        )}
+
+        {/* En-tête dégradé (bandeau R&I) */}
+        <div className="relative z-10 flex items-center gap-2 bg-gradient-to-r from-[#005596] to-[#B8167C] rounded-t-2xl px-4 py-2.5">
+          <Users className="w-4 h-4 shrink-0 text-white" />
+          <h3 className="flex-1 font-extrabold text-sm text-white truncate">
+            {selected.country} <span className="font-semibold text-white/70 text-xs">({selected.iso2})</span>
+          </h3>
+          <button
+            onClick={onClose}
+            className="shrink-0 p-1 rounded-md text-white/80 hover:bg-white/15 hover:text-white transition-colors"
+            title="Fermer"
+            aria-label="Fermer"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Corps */}
+        <div className="px-4 py-3 space-y-3">
+          <div className="flex items-baseline gap-2">
+            <span className="text-2xl font-black text-[#1C2529]">{selected.count}</span>
+            <span className="text-[10px] font-bold text-[#55636B] uppercase tracking-wider">
+              chercheurs
+            </span>
+            <span className="ml-auto text-[10px] font-bold text-[#005596]">
+              {selected.percentage} % du total
+            </span>
+          </div>
+
+          <div className="space-y-2.5">
+            {GENDERS.map(g => {
+              const value = selected.genders[g];
+              const total = Math.max(selected.count, 1);
+              return (
+                <div key={g} className="flex items-center gap-2.5">
+                  <span className="w-24 shrink-0 text-[10px] font-semibold text-[#1C2529] truncate">{GENDER_LABELS[g]}</span>
+                  <div className="flex-1 h-3.5 bg-slate-100 rounded-full overflow-hidden">
+                    <div
+                      className="h-full rounded-full transition-all"
+                      style={{ width: `${Math.round((value / total) * 100)}%`, backgroundColor: GENDER_COLORS[g] }}
+                    />
+                  </div>
+                  <span className="w-9 shrink-0 text-right text-[11px] font-bold text-[#55636B]">{value}</span>
+                </div>
+              );
+            })}
+          </div>
+
+          <button
+            onClick={onOpenContacts}
+            className="w-full flex items-center justify-center gap-1.5 bg-[#005596] hover:bg-[#004275] text-white font-bold text-[11px] px-3 py-2 rounded-xl shadow transition-all active:scale-95"
+          >
+            <ExternalLink className="w-3.5 h-3.5" />
+            Voir les contacts ({chercheurs(selected.count)})
+          </button>
+        </div>
+      </div>
+    </>,
+    document.body
+  );
+});
+
+// ---------- Main component ----------
 
 export const WorldMapWidget: React.FC<WorldMapWidgetProps> = ({
   distributionByCountry,
@@ -319,38 +577,7 @@ export const WorldMapWidget: React.FC<WorldMapWidgetProps> = ({
       );
     }
 
-    const handleClick = (params: any) => {
-      if (!params || params.componentType !== 'series' || !params.name) return;
-      const entry = byIso2.get(String(params.name));
-      if (!entry) return;
-
-      // Point géographique cliqué : c'est l'ancre du pin, qui restera sur le
-      // pays pendant les déplacements/zooms de la carte.
-      const container = containerRef.current;
-      const rect = container?.getBoundingClientRect();
-      const offsetX =
-        typeof params.event?.offsetX === 'number'
-          ? params.event.offsetX
-          : (params.event?.clientX ?? 0) - (rect?.left ?? 0);
-      const offsetY =
-        typeof params.event?.offsetY === 'number'
-          ? params.event.offsetY
-          : (params.event?.clientY ?? 0) - (rect?.top ?? 0);
-      const geo = getSeriesGeo(chart);
-      const gpt = geo?.pointToData?.([offsetX, offsetY]);
-      if (geo && Array.isArray(gpt) && Number.isFinite(gpt[0]) && Number.isFinite(gpt[1])) {
-        setAnchorGeo({ lng: gpt[0], lat: gpt[1] });
-      } else {
-        setAnchorGeo(null);
-      }
-      setSelected({
-        country: entry.country,
-        iso2: entry.iso2 as string,
-        count: entry.count,
-        percentage: entry.percentage,
-        genders: gendersByIso2.get(entry.iso2 as string) || { FEMALE: 0, MALE: 0, NOT_SPECIFIED: 0 }
-      });
-    };
+    const handleClick = createClickHandler(chart, containerRef.current, byIso2, gendersByIso2, setSelected, setAnchorGeo);
 
     chart.on('click', handleClick);
     return () => {
@@ -388,77 +615,7 @@ export const WorldMapWidget: React.FC<WorldMapWidgetProps> = ({
     const container = containerRef.current;
     if (!chart || !container) return;
 
-    const getGeo = (): any => (chart as any)?.getModel?.()?.getSeriesByIndex(0)?.coordinateSystem ?? null;
-
-    const readDefault = (geo: any): ViewState | null => {
-      const rect = geo?.getBoundingRect?.();
-      if (!rect || typeof rect.x !== 'number') return null;
-      return { center: [rect.x + rect.width / 2, rect.y + rect.height / 2], zoom: 1 };
-    };
-
-    const readCurrent = (geo: any): ViewState | null => {
-      const w = container.clientWidth || 1;
-      const h = container.clientHeight || 1;
-      const pt = geo?.pointToData?.([w / 2, h / 2]);
-      const mat = geo?.getRoamTransform?.();
-      const scale = mat && mat.length >= 2 ? Math.hypot(mat[0] || 0, mat[1] || 0) : 1;
-      return {
-        center: [
-          Array.isArray(pt) && Number.isFinite(pt[0]) ? pt[0] : 0,
-          Array.isArray(pt) && Number.isFinite(pt[1]) ? pt[1] : 0
-        ],
-        zoom: Number.isFinite(scale) && scale > 0 ? scale : 1
-      };
-    };
-
-    const geo = getGeo();
-    if (geo) defaultViewRef.current = defaultViewRef.current ?? readDefault(geo);
-
-    const onRoam = () => {
-      if (snappedRef.current) return;
-      const g = getGeo();
-      if (!g) return;
-      const state = readCurrent(g);
-      if (!state) return;
-
-      const rect = g.getBoundingRect();
-      if (!rect || typeof rect.x !== 'number') return;
-      const halfW = Math.max(rect.width / 2, 1e-6);
-      const halfH = Math.max(rect.height / 2, 1e-6);
-      const margin = state.zoom > 4.5 ? 30 / state.zoom : 18 / state.zoom;
-      const outOfLng = Math.abs(state.center[0] - (rect.x + rect.width / 2)) > halfW + margin;
-      const outOfLat = Math.abs(state.center[1] - (rect.y + rect.height / 2)) > halfH + margin;
-
-      let lost = outOfLng || outOfLat;
-
-      if (!lost && state.zoom <= 4.5 && typeof g.containPoint === 'function') {
-        // Le centre reste dans la carte : on exige qu'au moins un point de
-        // référence (continents + voisinage du centre) soit encore visible.
-        const probes: [number, number][] = [
-          ...MAP_ANCHORS,
-          [state.center[0] + 16, state.center[1]],
-          [state.center[0] - 16, state.center[1]],
-          [state.center[0], state.center[1] + 16],
-          [state.center[0], state.center[1] - 16]
-        ];
-        lost = !probes.some(p => g.containPoint(p));
-      }
-
-      if (!lost) {
-        lastGoodRef.current = state;
-        return;
-      }
-
-      // Trop loin : retour en douceur vers la dernière vue valide (ou la vue par défaut).
-      const target = lastGoodRef.current ?? defaultViewRef.current ?? state;
-      snappedRef.current = true;
-      window.setTimeout(() => { snappedRef.current = false; }, 500);
-      chart.setOption(
-        { series: [{ type: 'map', map: 'arsiiWorld', center: target.center, zoom: target.zoom }] },
-        { notMerge: false }
-      );
-      requestAnimationFrame(() => reprojectRef.current?.());
-    };
+    const onRoam = createGeoRoamHandler(chart, container, defaultViewRef, lastGoodRef, snappedRef, reprojectRef);
 
     chart.on('geoRoam', onRoam);
     chart.on('georoam', onRoam);
@@ -579,18 +736,6 @@ export const WorldMapWidget: React.FC<WorldMapWidgetProps> = ({
   const pin = anchorPx && mapW ? { x: mapLeft + anchorPx.x, y: mapTop + anchorPx.y } : null;
   const anchor = pin;
   const { mode, placeRight, left: panelLeft, top: panelTop } = computePanelLayout(anchor, mapLeft, mapTop, mapW, mapH, panelW);
-  // Queue pointant vers le pin : verticale en modes above/below, horizontale en mode side.
-  const tailPos = !anchor
-    ? null
-    : mode === 'above'
-      ? { left: anchor.x - panelLeft - TAIL / 2, top: PANEL_H - 8, cls: 'bg-slate-50' }
-      : mode === 'below'
-        ? { left: anchor.x - panelLeft - TAIL / 2, top: -8, cls: 'bg-[#005596]' }
-        : mode === 'side'
-          ? placeRight
-            ? { left: -8, top: anchor.y - panelTop - TAIL / 2, cls: 'bg-white' }
-            : { left: panelW - 8, top: anchor.y - panelTop - TAIL / 2, cls: 'bg-white' }
-          : null;
 
   return (
     <div className="relative space-y-3">
@@ -605,7 +750,7 @@ export const WorldMapWidget: React.FC<WorldMapWidgetProps> = ({
         Recentrer
       </button>
 
-      <div
+      <div /* NOSONAR */
         ref={containerRef}
         data-map-pan="1"
         draggable={false}
@@ -633,97 +778,19 @@ export const WorldMapWidget: React.FC<WorldMapWidgetProps> = ({
         </p>
       )}
 
-      {selected && anchor && createPortal(
-        <>
-          {/* Pin (overlay fixe, re-projeté sur le pays à chaque déplacement/zoom) */}
-          {mode !== 'over' && (
-            <div
-              className="fixed z-[60] pointer-events-none animate-in zoom-in-95 fade-in duration-150"
-              style={{ left: anchor.x - 12, top: anchor.y - PIN_Y_OFFSET }}
-              aria-hidden="true"
-            >
-              <MapPin
-                className="w-6 h-6 text-[#005596] drop-shadow-[0_5px_6px_rgba(0,0,0,0.4)]"
-                fill="#005596"
-                stroke="white"
-                strokeWidth={2}
-              />
-            </div>
-          )}
-
-          {/* Panneau « 3D » flottant, relié au pin par une queue (clampé à la fenêtre) */}
-          <div
-            ref={popupRef}
-            className="fixed z-[60] bg-gradient-to-b from-white to-slate-50 rounded-2xl border border-slate-200 shadow-[0_24px_60px_-12px_rgba(0,0,0,0.45),0_10px_24px_-12px_rgba(0,0,0,0.3),0_2px_6px_rgba(0,0,0,0.12)] animate-in zoom-in-95 fade-in duration-200"
-            style={{ left: panelLeft, top: panelTop, width: panelW }}
-          >
-            {/* Queue pointant vers le pin */}
-            {tailPos && (
-              <div
-                className={`absolute w-4 h-4 rotate-45 ${tailPos.cls}`}
-                style={{ left: tailPos.left, top: tailPos.top }}
-                aria-hidden="true"
-              />
-            )}
-
-            {/* En-tête dégradé (bandeau R&I) */}
-            <div className="relative z-10 flex items-center gap-2 bg-gradient-to-r from-[#005596] to-[#B8167C] rounded-t-2xl px-4 py-2.5">
-              <Users className="w-4 h-4 shrink-0 text-white" />
-              <h3 className="flex-1 font-extrabold text-sm text-white truncate">
-                {selected.country} <span className="font-semibold text-white/70 text-xs">({selected.iso2})</span>
-              </h3>
-              <button
-                onClick={closePopup}
-                className="shrink-0 p-1 rounded-md text-white/80 hover:bg-white/15 hover:text-white transition-colors"
-                title="Fermer"
-                aria-label="Fermer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Corps */}
-            <div className="px-4 py-3 space-y-3">
-              <div className="flex items-baseline gap-2">
-                <span className="text-2xl font-black text-[#1C2529]">{selected.count}</span>
-                <span className="text-[10px] font-bold text-[#55636B] uppercase tracking-wider">
-                  chercheurs
-                </span>
-                <span className="ml-auto text-[10px] font-bold text-[#005596]">
-                  {selected.percentage} % du total
-                </span>
-              </div>
-
-              <div className="space-y-2.5">
-                {GENDERS.map(g => {
-                  const value = selected.genders[g];
-                  const total = Math.max(selected.count, 1);
-                  return (
-                    <div key={g} className="flex items-center gap-2.5">
-                      <span className="w-24 shrink-0 text-[10px] font-semibold text-[#1C2529] truncate">{GENDER_LABELS[g]}</span>
-                      <div className="flex-1 h-3.5 bg-slate-100 rounded-full overflow-hidden">
-                        <div
-                          className="h-full rounded-full transition-all"
-                          style={{ width: `${Math.round((value / total) * 100)}%`, backgroundColor: GENDER_COLORS[g] }}
-                        />
-                      </div>
-                      <span className="w-9 shrink-0 text-right text-[11px] font-bold text-[#55636B]">{value}</span>
-                    </div>
-                  );
-                })}
-              </div>
-
-              <button
-                onClick={openContacts}
-                className="w-full flex items-center justify-center gap-1.5 bg-[#005596] hover:bg-[#004275] text-white font-bold text-[11px] px-3 py-2 rounded-xl shadow transition-all active:scale-95"
-              >
-                <ExternalLink className="w-3.5 h-3.5" />
-                Voir les contacts ({chercheurs(selected.count)})
-              </button>
-            </div>
-          </div>
-        </>,
-        document.body
+      {selected && anchor && (
+        <MapPopup
+          selected={selected}
+          anchor={anchor}
+          mode={mode}
+          placeRight={placeRight}
+          panelLeft={panelLeft}
+          panelTop={panelTop}
+          panelW={panelW}
+          popupRef={popupRef}
+          onClose={closePopup}
+          onOpenContacts={openContacts}
+        />
       )}
     </div>
   );

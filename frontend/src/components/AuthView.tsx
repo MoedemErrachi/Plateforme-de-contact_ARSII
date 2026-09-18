@@ -35,7 +35,7 @@ export const AuthView: React.FC<AuthViewProps> = ({ onLoginSuccess }) => {
     }
   }, [searchParams]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
 
     if (!email.trim() || !password.trim()) {
@@ -112,7 +112,7 @@ export const AuthView: React.FC<AuthViewProps> = ({ onLoginSuccess }) => {
           <div className="mb-6 relative">
             <span className="block w-24 h-24 rounded-full bg-white shadow-md p-1.5 border border-[#C9D4DE]/40">
               <img
-                src="/euraxess-africa-logo.png"
+                src="/assets/euraxess-africa-logo.png"
                 alt="EURAXESS Africa"
                 className="w-full h-full object-contain"
               />
@@ -283,8 +283,9 @@ export const AuthView: React.FC<AuthViewProps> = ({ onLoginSuccess }) => {
                   Saisissez l'adresse e-mail associée à votre compte EURAXESS Africa. Un lien sécurisé vous sera transmis immédiatement.
                 </p>
                 <div>
-                  <label className="font-bold text-slate-700 block mb-1">E-mail professionnel EURAXESS Africa *</label>
+                  <label htmlFor="auth-reset-email" className="font-bold text-slate-700 block mb-1">E-mail professionnel EURAXESS Africa *</label>
                   <input
+                    id="auth-reset-email"
                     type="email"
                     required
                     value={resetEmail}

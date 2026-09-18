@@ -15,6 +15,7 @@ from app.config import GROQ_API_KEY, GROQ_MODEL
 from app.providers.base import (
     APIConnectionError,
     LLMProvider,
+    LLM_TIMEOUT_SECONDS,
     ProviderHTTPError,
     RateLimitError,
     ToolCall,
@@ -32,18 +33,16 @@ class GroqProvider(LLMProvider):
         self.model = model or GROQ_MODEL
         self._client = AsyncGroq(api_key=api_key or GROQ_API_KEY)
 
-    async def chat_with_tools(self, messages: list[dict], tools: list[dict], timeout: int = 15) -> ToolCallResponse:
+    async def chat_with_tools(self, messages: list[dict], tools: list[dict]) -> ToolCallResponse:
         try:
-            response = await asyncio.wait_for(
-                self._client.chat.completions.create(
+            async with asyncio.timeout(LLM_TIMEOUT_SECONDS):
+                response = await self._client.chat.completions.create(
                     model=self.model,
                     messages=strip_internal_fields(messages),
                     tools=tools,
                     tool_choice="auto",
                     temperature=0,
-                ),
-                timeout=timeout,
-            )
+                )
         except GroqRateLimitError as exc:
             raise RateLimitError(str(exc)) from exc
         except (GroqAPIConnectionError, GroqAPITimeoutError, TimeoutError) as exc:
@@ -68,7 +67,7 @@ class GroqProvider(LLMProvider):
 
         return ToolCallResponse(content=extract_text(message.content), tool_calls=tool_calls)
 
-    async def chat_final(self, messages: list[dict], timeout: int = 15) -> str:
+    async def chat_final(self, messages: list[dict]) -> str:
         """Phase finale: sortie JSON native (mode json_object), sans tools.
 
         Le modèle configuré (llama-3.3-70b-versatile) ne supporte PAS le mode
@@ -77,15 +76,13 @@ class GroqProvider(LLMProvider):
         requise par Groq pour le mode json_object.
         """
         try:
-            response = await asyncio.wait_for(
-                self._client.chat.completions.create(
+            async with asyncio.timeout(LLM_TIMEOUT_SECONDS):
+                response = await self._client.chat.completions.create(
                     model=self.model,
                     messages=strip_internal_fields(messages),
                     temperature=0,
                     response_format={"type": "json_object"},
-                ),
-                timeout=timeout,
-            )
+                )
         except GroqRateLimitError as exc:
             raise RateLimitError(str(exc)) from exc
         except (GroqAPIConnectionError, GroqAPITimeoutError, TimeoutError) as exc:

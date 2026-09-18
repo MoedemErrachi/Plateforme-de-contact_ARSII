@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef, createContext, useContext } from 'react';
+import React, { useState, useCallback, useMemo, useRef, useEffect, createContext, useContext } from 'react';
 import { CheckCircle2, XCircle, Info, X } from 'lucide-react';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -28,25 +28,33 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   // Dédoublonnage : un même message consécutif (ex. plusieurs appels simultanés
   // échouant faute de backend) n'affiche qu'un seul toast toutes les 2,5 s.
   const lastToastRef = useRef<{ message: string; type: ToastType; at: number } | null>(null);
+  const timersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  useEffect(() => {
+    const timers = timersRef.current;
+    return () => timers.forEach(clearTimeout);
+  }, []);
 
   const showToast = useCallback((message: string, type: ToastType = 'info') => {
     const now = Date.now();
     const last = lastToastRef.current;
-    if (last && last.message === message && last.type === type && now - last.at < 2500) {
+    if (last?.message === message && last?.type === type && now - (last?.at ?? 0) < 2500) {
       return;
     }
     lastToastRef.current = { message, type, at: now };
-    const id = `toast-${Date.now()}-${Math.random()}`;
+    const id = crypto.randomUUID();
     setToasts(prev => [...prev, { id, type, message }]);
-    setTimeout(() => {
+    timersRef.current.push(setTimeout(() => {
       setToasts(prev => prev.filter(t => t.id !== id));
-    }, 4500);
+    }, 4500));
   }, []);
 
   const dismiss = (id: string) => setToasts(prev => prev.filter(t => t.id !== id));
 
+  const toastValue = useMemo(() => ({ showToast }), [showToast]);
+
   return (
-    <ToastContext.Provider value={{ showToast }}>
+    <ToastContext.Provider value={toastValue}>
       {children}
       {/* Toast container */}
       <div className="fixed bottom-6 right-6 z-[9999] flex flex-col gap-2 pointer-events-none">

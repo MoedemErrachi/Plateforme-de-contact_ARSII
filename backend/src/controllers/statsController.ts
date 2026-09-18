@@ -11,8 +11,8 @@ const contactService = new ContactService();
  */
 export const getStatsAggregation = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const groupBy = String(req.query.group_by);
-    const stages = req.query.researchCareerStage != null ? req.query.researchCareerStage : req.query.careerStage;
+    const groupBy = typeof req.query.group_by === 'string' ? req.query.group_by : '';
+    const stages = req.query.researchCareerStage ?? req.query.careerStage;
 
     const aggregation = await contactService.getAggregation(groupBy, {
       search: req.query.search as string,

@@ -4,7 +4,7 @@ import { prisma } from '../config/prisma';
 import { authenticateJWT, setAuthCookie, clearAuthCookie, AuthenticatedRequest } from '../middleware/authenticateJWT';
 import { issueCsrfToken, isValidSignedCsrfToken } from '../middleware/security';
 import { sendPasswordResetEmail } from '../services/emailService';
-import crypto from 'crypto';
+import crypto from 'node:crypto';
 
 /**
  * @openapi
@@ -296,7 +296,7 @@ router.post('/login', async (req, res) => {
     return res.status(500).json({ error: 'Erreur lors de l\'authentification base de données.' });
   }
 
-  if (!user || !user.passwordHash) {
+  if (!user?.passwordHash) {
     return res.status(401).json({ error: 'Identifiants invalides (email ou mot de passe incorrect).' });
   }
 
@@ -440,7 +440,7 @@ router.put('/change-password', authenticateJWT, async (req: AuthenticatedRequest
     }
 
     const user = await prisma.user.findUnique({ where: { id: userId } });
-    if (!user || !user.passwordHash) {
+    if (!user?.passwordHash) {
       return res.status(404).json({ error: 'Utilisateur introuvable.' });
     }
 

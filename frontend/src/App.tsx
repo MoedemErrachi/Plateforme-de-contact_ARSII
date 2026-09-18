@@ -1,12 +1,12 @@
 import { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react';
 import { Routes, Route, Navigate, Outlet, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { Contact, Tag, Segment, FilterState, User, ContactSelection, SelectionMode } from './types';
-import { apiFetch, getAuthToken, clearStoredAuth, isServiceUnreachable, setGlobalApiErrorHandler } from './services/api';
+import { apiFetch, getAuthToken, clearStoredAuth, isServiceUnreachable, setGlobalApiErrorHandler, subscribeBackendConnectivity } from './services/api';
 import { csrfHeaders } from './utils/csrf';
 import { isTokenExpired } from './utils/jwt';
 import { mapContactFromApi } from './utils/mapContact';
 import { emptyFilterState } from './utils/contactQuery';
-import { canCreate, canEdit, canDelete } from './utils/privileges';
+import { canCreate, canEdit } from './utils/privileges';
 import { ShieldAlert } from 'lucide-react';
 import { useToast } from './components/Toast';
 import { Header } from './components/Header';
@@ -121,7 +121,7 @@ const PublicOnlyRoute: React.FC<{
   mode: 'login' | 'reset';
   isAuthenticated: boolean;
   user: User | null;
-  lastLoginAtRef: React.MutableRefObject<number>;
+  lastLoginAtRef: React.RefObject<number>;
   onForceSignOut: () => void;
   children: React.ReactNode;
 }> = ({ mode, isAuthenticated, user, lastLoginAtRef, onForceSignOut, children }) => {
@@ -159,6 +159,316 @@ const PublicOnlyRoute: React.FC<{
   return <AuthSplash />;
 };
 
+// --- Auth helpers (extracted to reduce cognitive complexity) ---
+function clearAuthSession(
+  setUser: React.Dispatch<React.SetStateAction<User | null>>,
+  setIsAuthenticated: React.Dispatch<React.SetStateAction<boolean>>,
+  setAuthToken: React.Dispatch<React.SetStateAction<string | null>>
+) {
+  setUser(null);
+  setIsAuthenticated(false);
+  setAuthToken(null);
+}
+
+async function restoreSession(
+  cancelled: boolean,
+  setUser: React.Dispatch<React.SetStateAction<User | null>>,
+  setIsAuthenticated: React.Dispatch<React.SetStateAction<boolean>>,
+  setAuthToken: React.Dispatch<React.SetStateAction<string | null>>,
+  navigate: ReturnType<typeof useNavigate>
+) {
+  const data = await apiFetch('/api/auth/me');
+  if (!cancelled && data?.authenticated && data?.user) {
+    setUser(data.user);
+    setIsAuthenticated(true);
+    setAuthToken(getAuthToken());
+    if (data.user.role === 'admin' && !window.location.pathname.startsWith('/admin')) {
+      navigate('/admin', { replace: true });
+    }
+  } else if (!cancelled) {
+    setAuthToken(null);
+  }
+}
+
+// --- Auth session restore hook ---
+function useAuthSession(deps: {
+  setUser: React.Dispatch<React.SetStateAction<User | null>>;
+  setIsAuthenticated: React.Dispatch<React.SetStateAction<boolean>>;
+  setAuthToken: React.Dispatch<React.SetStateAction<string | null>>;
+  setIsSessionReady: React.Dispatch<React.SetStateAction<boolean>>;
+  showToast: (msg: string, type: 'error' | 'success' | 'info') => void;
+  navigate: ReturnType<typeof useNavigate>;
+}) {
+  const { setUser, setIsAuthenticated, setAuthToken, setIsSessionReady, showToast, navigate } = deps;
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const stored = getAuthToken();
+
+      if (!stored) {
+        if (!cancelled) {
+          clearAuthSession(setUser, setIsAuthenticated, setAuthToken);
+          setIsSessionReady(true);
+        }
+        return;
+      }
+
+      if (isTokenExpired(stored)) {
+        if (!cancelled) {
+          clearAuthSession(setUser, setIsAuthenticated, setAuthToken);
+          clearStoredAuth();
+          setIsSessionReady(true);
+          showToast('Votre session a expiré. Veuillez vous reconnecter.', 'error');
+        }
+        return;
+      }
+
+      try {
+        await restoreSession(cancelled, setUser, setIsAuthenticated, setAuthToken, navigate);
+      } catch {
+        if (!cancelled) {
+          clearAuthSession(setUser, setIsAuthenticated, setAuthToken);
+          clearStoredAuth();
+        }
+      } finally {
+        if (!cancelled) setIsSessionReady(true);
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+}
+
+// --- Route components (extracted from App render) ---
+const PublicRoutes: React.FC<{
+  handleLoginSuccess: (u: User) => void;
+}> = ({ handleLoginSuccess }) => (
+  <Suspense fallback={<RouteFallback />}>
+    <Routes>
+      <Route path="/login" element={<AuthView onLoginSuccess={handleLoginSuccess} />} />
+      <Route path="/reset-password/:token" element={<ResetPasswordPage />} />
+      <Route path="/reset-password-expired" element={<ResetPasswordExpiredPage />} />
+      <Route path="*" element={<Navigate to="/login" replace />} />
+    </Routes>
+  </Suspense>
+);
+
+const AuthenticatedRoutes: React.FC<{
+  isAuthenticated: boolean;
+  user: User | null;
+  contacts: Contact[];
+  tags: Tag[];
+  segments: Segment[];
+  selection: ContactSelection;
+  selectionActions: { setSelection: React.Dispatch<React.SetStateAction<ContactSelection>>; setItemsPerPage: React.Dispatch<React.SetStateAction<number>> };
+  itemsPerPage: number;
+  activeSegmentId: string;
+  contactsRefreshKey: number;
+  isLoadingData: boolean;
+  isLoadingTaxonomy: boolean;
+  lastLoginAtRef: React.RefObject<number>;
+  handlers: Record<string, (...args: any[]) => any>;
+}> = ({
+  isAuthenticated, user, contacts, tags, segments, selection,
+  selectionActions, itemsPerPage, activeSegmentId, contactsRefreshKey,
+  isLoadingData, isLoadingTaxonomy, lastLoginAtRef, handlers
+}) => (
+  <Routes>
+    <Route path="/login" element={<PublicOnlyRoute mode="login" isAuthenticated={isAuthenticated} user={user} lastLoginAtRef={lastLoginAtRef} onForceSignOut={handlers.forceSignOutForAuthLink}><AuthView onLoginSuccess={handlers.handleLoginSuccess} /></PublicOnlyRoute>} />
+    <Route path="/reset-password/:token" element={<PublicOnlyRoute mode="reset" isAuthenticated={isAuthenticated} user={user} lastLoginAtRef={lastLoginAtRef} onForceSignOut={handlers.forceSignOutForAuthLink}><ResetPasswordPage /></PublicOnlyRoute>} />
+    <Route path="/reset-password-expired" element={<ResetPasswordExpiredPage />} />
+    <Route path="/" element={<HomeRedirect role={user?.role} />} />
+    <Route path="/profile" element={<ProfileView user={user} onUserUpdate={handlers.handleUserUpdate} onLogout={handlers.handleLogout} />} />
+    <Route element={<RequireUser role={user?.role} />}>
+      <Route path="/dashboard" element={<DashboardView contacts={contacts} tags={tags} onExportAll={handlers.handleExportAll} isLoading={isLoadingData} user={user} />} />
+      <Route path="/contacts" element={<ContactsView segments={segments} tags={tags} activeSegmentId={activeSegmentId} onSelectSegment={handlers.handleSelectSegment} onSaveCurrentAsSegment={handlers.handleSaveCurrentAsSegment} onSelectContact={handlers.handleSelectContact} onDeleteContact={handlers.requestDeleteContact} onDeleteContacts={handlers.requestBulkDeleteContacts} refreshKey={contactsRefreshKey} itemsPerPage={itemsPerPage} onItemsPerPageChange={selectionActions.setItemsPerPage} selection={selection} onSelectionChange={selectionActions.setSelection} user={user} />} />
+      <Route path="/contacts/new" element={<RequirePrivilege user={user} need="create"><NewContactView onAddContact={handlers.handleAddContact} onUpdateContact={handlers.handleUpdateContact} existingContacts={contacts} tags={tags} /></RequirePrivilege>} />
+      <Route path="/contacts/:id/edit" element={<RequirePrivilege user={user} need="edit"><NewContactView onAddContact={handlers.handleAddContact} onUpdateContact={handlers.handleUpdateContact} existingContacts={contacts} tags={tags} /></RequirePrivilege>} />
+      <Route path="/contacts/:id" element={<ContactDetailView contacts={contacts} user={user} />} />
+      <Route path="/import" element={<RequirePrivilege user={user} need="create"><ImportWizardView onImportContacts={handlers.handleImportContacts} existingContacts={contacts} /></RequirePrivilege>} />
+      <Route path="/export" element={<ExportView selection={selection} tags={tags} />} />
+      <Route path="/segments" element={<SegmentationView contacts={contacts} tags={tags} segments={segments} isLoading={isLoadingTaxonomy} onApplySegment={handlers.handleApplySegmentFromManagement} onCreateSegment={handlers.handleCreateSegment} onUpdateSegment={handlers.handleUpdateSegment} onDeleteSegment={handlers.handleDeleteSegment} onCreateTag={handlers.handleCreateTag} onUpdateTag={handlers.handleUpdateTag} onDeleteTag={handlers.handleDeleteTag} onSaveTagContacts={handlers.handleSaveTagContacts} user={user} />} />
+    </Route>
+    <Route path="/admin/dashboard" element={<Navigate to="/admin" replace />} />
+    <Route path="/admin" element={<RequireAdmin role={user?.role}><AdminView /></RequireAdmin>} />
+    <Route path="*" element={<HomeRedirect role={user?.role} />} />
+  </Routes>
+);
+
+// --- Selection restore helpers (extracted to reduce cognitive complexity) ---
+function resolveSelectionMode(rawMode: string, ids: string[]): SelectionMode {
+  const validModes: string[] = ['none', 'page', 'partial', 'all-filtered'];
+  let mode: SelectionMode;
+  if (validModes.includes(rawMode)) {
+    mode = rawMode as SelectionMode;
+  } else {
+    mode = ids.length ? 'partial' : 'none';
+  }
+  if (mode === 'page' || mode === 'all-filtered') {
+    return ids.length ? 'partial' : 'none';
+  }
+  return mode;
+}
+
+function restoreLegacySelection(parsed: any[]): ContactSelection {
+  const ids = parsed.filter((id: any) => typeof id === 'string');
+  return { mode: ids.length ? 'partial' : 'none', ids, filters: emptyFilterState(), totalCount: ids.length };
+}
+
+function restorePersistedSelection(parsed: Record<string, any>): ContactSelection {
+  const ids = parsed.ids.filter((id: any) => typeof id === 'string');
+  return {
+    mode: resolveSelectionMode(parsed.mode, ids),
+    ids,
+    filters: parsed.filters && typeof parsed.filters === 'object' ? { ...emptyFilterState(), ...parsed.filters } : emptyFilterState(),
+    totalCount: Number(parsed.totalCount) || 0
+  };
+}
+
+function restoreSelectionFromStorage(): ContactSelection {
+  try {
+    const saved = localStorage.getItem('euraxess_contacts_selected_ids');
+    if (!saved) return { mode: 'none', ids: [], filters: emptyFilterState(), totalCount: 0 };
+    const parsed = JSON.parse(saved);
+    if (Array.isArray(parsed)) return restoreLegacySelection(parsed);
+    if (parsed && typeof parsed === 'object' && Array.isArray(parsed.ids)) return restorePersistedSelection(parsed);
+  } catch {
+    // ignore corrupted storage
+  }
+  return { mode: 'none', ids: [], filters: emptyFilterState(), totalCount: 0 };
+}
+
+// --- Import helper (extracted from handleImportContacts) ---
+function collectMissingTagNames(
+  newContacts: Contact[],
+  updatedContacts: Contact[],
+  existingTags: Tag[]
+): Set<string> {
+  const allTagNames = new Set<string>();
+  for (const c of [...newContacts, ...updatedContacts]) {
+    for (const name of (c.tags || [])) {
+      if (name && !existingTags.some(t => t.name.toLowerCase() === name.toLowerCase())) {
+        allTagNames.add(name);
+      }
+    }
+  }
+  return allTagNames;
+}
+
+async function createMissingTags(
+  allTagNames: Set<string>,
+  existingTags: Tag[]
+): Promise<Tag[]> {
+  let localTags = [...existingTags];
+  for (const name of allTagNames) {
+    try {
+      const res = await apiFetch('/api/segments/tags', {
+        suppressGlobalError: true,
+        method: 'POST',
+        body: JSON.stringify({ name, color: null })
+      });
+      const created = res?.data?.tag;
+      if (created) {
+        localTags = [...localTags, created];
+      }
+    } catch {
+      // Tag creation failed — will be silently skipped in tag resolution below
+    }
+  }
+  return localTags;
+}
+
+function buildImportContactPayload(c: Contact, resolveTagIds: (tagNames: string[]) => (string | undefined)[]) {
+  return {
+    firstName: c.firstName,
+    lastName: c.lastName,
+    email: c.email,
+    gender: c.gender,
+    countryOfOrigin: c.countryOfOrigin,
+    city: c.city,
+    phone: c.phone,
+    affiliation: c.affiliation,
+    function: c.function,
+    experience: c.experience,
+    facultyDepartment: c.facultyDepartment,
+    researchCareerStage: c.researchCareerStage,
+    avatarUrl: c.avatarUrl || null,
+    tagIds: resolveTagIds(c.tags)
+  };
+}
+
+async function importContactsViaApi(
+  newContacts: Contact[],
+  updatedContacts: Contact[],
+  tags: Tag[],
+  showToast: (msg: string, type: 'error' | 'success' | 'info') => void,
+  loadContacts: () => Promise<void>,
+  bumpContactsRefresh: () => void,
+  setTags: React.Dispatch<React.SetStateAction<Tag[]>>
+) {
+  try {
+    // ── Auto-create missing tags before bulk save ──
+    const allTagNames = collectMissingTagNames(newContacts, updatedContacts, tags);
+    let localTags = tags;
+    if (allTagNames.size > 0) {
+      localTags = await createMissingTags(allTagNames, tags);
+      setTags(localTags);
+    }
+
+    const resolveTagIds = (tagNames: string[]) =>
+      (tagNames || [])
+        .map(name => localTags.find(t => t.name.toLowerCase() === name.toLowerCase())?.id)
+        .filter(Boolean);
+
+    const body = await apiFetch('/api/contacts/bulk', {
+      suppressGlobalError: true,
+      timeoutMs: 120000,
+      method: 'POST',
+      body: JSON.stringify({
+        format: 'CSV',
+        fileName: 'import_contacts.csv',
+        newContacts: newContacts.map(c => buildImportContactPayload(c, resolveTagIds)),
+        updatedContacts: updatedContacts.map(c => ({
+          id: c.id,
+          ...buildImportContactPayload(c, resolveTagIds)
+        }))
+      })
+    });
+
+    if (body?.status !== 'SUCCESS') {
+      const errorMessage = body?.errorMessage || body?.message || body?.error || 'Erreur serveur';
+      showToast(`Échec de l'importation : ${errorMessage}`, 'error');
+      return { ok: false, httpStatus: 200, status: body?.status || 'FAILED', errorMessage, data: null };
+    }
+
+    const createdCount = body.data?.createdCount || 0;
+    const updatedCount = body.data?.updatedCount || 0;
+    const errors = body.data?.errors || [];
+
+    if (errors.length > 0) {
+      const firstErrors = errors.slice(0, 3).map((e: { row: number; message: string }) => `L${e.row}: ${e.message}`).join(' | ');
+      const more = errors.length > 3 ? ` (+${errors.length - 3} autres)` : '';
+      showToast(
+        `Importation partielle : ${createdCount} créés, ${updatedCount} mis à jour, ${errors.length} erreur(s). ${firstErrors}${more}`,
+        'info'
+      );
+    } else if (createdCount === 0 && updatedCount > 0) {
+      showToast(`Importation réussie : ${updatedCount} contacts mis à jour.`, 'success');
+    } else {
+      showToast(`Importation réussie : ${createdCount} créés, ${updatedCount} mis à jour.`, 'success');
+    }
+    await loadContacts();
+    bumpContactsRefresh();
+    return { ok: true, httpStatus: 200, status: body.status, errorMessage: '', data: body.data };
+  } catch (err: any) {
+    const httpStatus = err?.status || 0;
+    // err.message est déjà normalisé et en français par la couche API.
+    showToast(`Échec de l'importation : ${err.message}`, 'error');
+    return { ok: false, httpStatus, status: err?.data?.status || 'FAILED', errorMessage: err.message, data: null };
+  }
+}
+
 // --- API helper ---
 export default function App() {
   const { showToast } = useToast();
@@ -173,41 +483,28 @@ export default function App() {
     return () => setGlobalApiErrorHandler(null);
   }, [showToast]);
 
+  // Connectivité backend : bannière persistante tant que le service est
+  // injoignable (indépendante des toasts — affichée même si un appel a
+  // supprimé son erreur globale avec { suppressGlobalError }).
+  const [backendOffline, setBackendOffline] = useState(false);
+
+  useEffect(() => {
+    return subscribeBackendConnectivity((online) => setBackendOffline(!online));
+  }, []);
+
+  const retryBackend = useCallback(async () => {
+    try {
+      await apiFetch('/api/health', { suppressGlobalError: true, timeoutMs: 8000 });
+    } catch {
+      // Le bus de connectivité basculera online dès qu'une sonde réussit.
+    }
+  }, []);
+
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [isLoadingData, setIsLoadingData] = useState<boolean>(true);
 
   // Selection (4 modes) in directory for bulk actions & export
-  const [selection, setSelection] = useState<ContactSelection>(() => {
-    try {
-      const saved = localStorage.getItem('euraxess_contacts_selected_ids');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        // Migration de l'ancien format (simple tableau d'ids) → partial
-        if (Array.isArray(parsed)) {
-          const ids = parsed.filter((id: any) => typeof id === 'string');
-          return { mode: ids.length ? 'partial' : 'none', ids, filters: emptyFilterState(), totalCount: ids.length };
-        }
-        if (parsed && typeof parsed === 'object' && Array.isArray(parsed.ids)) {
-          const ids = parsed.ids.filter((id: any) => typeof id === 'string');
-          const validModes = ['none', 'page', 'partial', 'all-filtered'];
-          let mode: SelectionMode = validModes.includes(parsed.mode) ? parsed.mode : ids.length ? 'partial' : 'none';
-          // Après un rechargement, page / all-filtered perdent leur validité (filtres non rejoués)
-          if (mode === 'page' || mode === 'all-filtered') {
-            mode = ids.length ? 'partial' : 'none';
-          }
-          return {
-            mode,
-            ids,
-            filters: parsed.filters && typeof parsed.filters === 'object' ? { ...emptyFilterState(), ...parsed.filters } : emptyFilterState(),
-            totalCount: Number(parsed.totalCount) || 0
-          };
-        }
-      }
-    } catch {
-      // ignore corrupted storage
-    }
-    return { mode: 'none', ids: [], filters: emptyFilterState(), totalCount: 0 };
-  });
+  const [selection, setSelection] = useState<ContactSelection>(() => restoreSelectionFromStorage());
 
   // Persist selection across page refreshes (survives reload of /export)
   useEffect(() => {
@@ -226,7 +523,7 @@ export default function App() {
   const [itemsPerPage, setItemsPerPage] = useState<number>(() => {
     try {
       const saved = localStorage.getItem('euraxess_contacts_items_per_page');
-      const n = saved ? Number(saved) : NaN;
+      const n = saved ? Number(saved) : Number.NaN;
       return [10, 20, 50, 100].includes(n) ? n : 10;
     } catch {
       return 10;
@@ -263,6 +560,10 @@ export default function App() {
   // montre aucun toast (la déconnexion est attendue et gérée par PublicOnlyRoute).
   const suppressAuthExpiredToast = useRef(false);
 
+  // Minuteur de fin du chargement initial : nettoyé au démontage pour éviter
+  // tout setState après unmount (ou après teardown jsdom dans les tests).
+  const loadingDoneTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   // Compteur de rafraîchissement : incrémenté après chaque mutation de contact
   // (création, import, suppression simple ou en lot) pour que ContactsView
   // recharge sa liste depuis la base — source de vérité unique.
@@ -289,7 +590,7 @@ export default function App() {
       console.error('Error loading contacts:', err);
       showToast('Erreur lors du chargement des contacts.', 'error');
     } finally {
-      setTimeout(() => setIsLoadingData(false), 300);
+      loadingDoneTimer.current = setTimeout(() => setIsLoadingData(false), 300);
     }
   }, []);
 
@@ -316,6 +617,7 @@ export default function App() {
         }
       }
     } catch (err) {
+      console.warn('Échec du chargement des segments.', err);
       showToast('Erreur lors du chargement des segments.', 'error');
     } finally {
       setIsLoadingTaxonomy(false);
@@ -328,83 +630,30 @@ export default function App() {
     if (!isAuthenticated) return;
     loadContacts();
     loadTagsAndSegments();
+    return () => {
+      if (loadingDoneTimer.current) {
+        clearTimeout(loadingDoneTimer.current);
+        loadingDoneTimer.current = null;
+      }
+    };
   }, [isAuthenticated, loadContacts, loadTagsAndSegments]);
 
   // Restore active session on mount (real DB-backed user)
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const stored = getAuthToken();
-
-      // Aucun jeton stocké → session inexistante : on bascule directement sur
-      // le formulaire de login SANS appel réseau (ni /api/auth/me, ni données).
-      if (!stored) {
-        if (!cancelled) {
-          setUser(null);
-          setIsAuthenticated(false);
-          setAuthToken(null);
-          setIsSessionReady(true);
-        }
-        return;
-      }
-
-      // Contrôle proactif : si un jeton stocké est déjà expiré, on déconnecte
-      // immédiatement SANS appel réseau (pas de 401/500 inutiles, pas de flash).
-      if (isTokenExpired(stored)) {
-        if (!cancelled) {
-          clearStoredAuth();
-          setUser(null);
-          setIsAuthenticated(false);
-          setAuthToken(null);
-          setIsSessionReady(true);
-          showToast('Votre session a expiré. Veuillez vous reconnecter.', 'error');
-        }
-        return;
-      }
-
-      try {
-        const data = await apiFetch('/api/auth/me');
-        if (!cancelled && data?.authenticated && data?.user) {
-          setUser(data.user);
-          setIsAuthenticated(true);
-          setAuthToken(getAuthToken());
-          // Aucune écriture de jeton ici : /me ne ré-émet plus de token, et
-          // réécrire écraserait la sémantique localStorage (remember-me) vs
-          // sessionStorage (session simple) choisie au login.
-          // RBAC : un admin est toujours ramené vers son espace dédié.
-          if (data.user.role === 'admin' && !window.location.pathname.startsWith('/admin')) {
-            navigate('/admin', { replace: true });
-          }
-        } else if (!cancelled) {
-          setAuthToken(null);
-        }
-      } catch {
-        // Vérification silencieuse : purge locale sans toast ni log bruyant.
-        if (!cancelled) {
-          setUser(null);
-          setIsAuthenticated(false);
-          setAuthToken(null);
-          try {
-            localStorage.removeItem('euraxess_token');
-          } catch {
-            // ignore storage failures
-          }
-        }
-      } finally {
-        if (!cancelled) {
-          setIsSessionReady(true);
-        }
-      }
-    })();
-    return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  useAuthSession({ setUser, setIsAuthenticated, setAuthToken, setIsSessionReady, showToast, navigate });
 
   // Déconnexion client instantanée : purge l'état et redirige dès qu'une
   // session morte est détectée (401 serveur ou expiration locale), sans
   // attendre ni déclencher d'autres appels API.
   useEffect(() => {
     const onAuthExpired = () => {
+      // Anti-course post-login : dans la fenêtre AUTH_LINK_SUPPRESSION_MS qui
+      // suit un login réussi, une requête partie avec un jeton STALE (cookie
+      // HttpOnly obsolète, /me lancée avant la connexion…) peut encore recevoir
+      // un 401. Cette réponse parasite ne doit pas déconnecter la session qui
+      // vient d'être établie — on l'ignore, comme le fait PublicOnlyRoute.
+      if (Date.now() - lastLoginAtRef.current < AUTH_LINK_SUPPRESSION_MS) {
+        return;
+      }
       setUser(null);
       setIsAuthenticated(false);
       setAuthToken(null);
@@ -420,24 +669,38 @@ export default function App() {
     };
     window.addEventListener('auth:expired', onAuthExpired);
     return () => window.removeEventListener('auth:expired', onAuthExpired);
-  }, [navigate, showToast]);
+  }, [navigate, showToast, lastLoginAtRef]);
 
   // ──────────────────────────────────────────────
   // AUTH
   // ──────────────────────────────────────────────
-  const handleLoginSuccess = (userData: User) => {
+  const handleLoginSuccess = async (userData: User) => {
     // Horodatage utilisé par PublicOnlyRoute pour ignorer les rendus
     // transitoires sur un lien d'authentification juste après un login.
     lastLoginAtRef.current = Date.now();
     setUser(userData);
-    setIsAuthenticated(true);
     setAuthToken(getAuthToken());
     setIsSessionReady(true);
     // Première connexion : invite de changement du mot de passe temporaire
     // (fermable via « Passer »).
     setShowFirstLoginModal(Boolean(userData.isFirstLogin));
+
+    const target = userData.role === 'admin' ? '/admin' : '/dashboard';
+    // Anti-scintillement première connexion : le chunk de la page de destination
+    // (AdminView / DashboardView) est chargé AVANT d'activer la session et de
+    // naviguer. Sans cela, la première connexion traverse la frontière Suspense
+    // le temps du téléchargement du chunk (page paraissant vide) ; en cas
+    // d'échec réseau, la navigation se poursuit quand même (fallback Suspense).
+    try {
+      await (userData.role === 'admin'
+        ? import('./components/AdminView')
+        : import('./components/DashboardView'));
+    } catch {
+      // chunk indisponible : on navigue ; le fallback Suspense s'affiche brièvement.
+    }
+    setIsAuthenticated(true);
     // RBAC : les administrateurs atterrissent dans leur console dédiée.
-    navigate(userData.role === 'admin' ? '/admin' : '/dashboard');
+    navigate(target);
   };
 
   // Déconnexion silencieuse sans navigation : utilisée quand un utilisateur
@@ -600,116 +863,7 @@ export default function App() {
   // IMPORT
   // ──────────────────────────────────────────────
   const handleImportContacts = async (newContacts: Contact[], updatedContacts: Contact[] = []) => {
-    try {
-      // ── Auto-create missing tags before bulk save ──
-      const allTagNames = new Set<string>();
-      for (const c of [...newContacts, ...updatedContacts]) {
-        for (const name of (c.tags || [])) {
-          if (name && !tags.find(t => t.name.toLowerCase() === name.toLowerCase())) {
-            allTagNames.add(name);
-          }
-        }
-      }
-
-      let localTags = [...tags];
-      for (const name of allTagNames) {
-        try {
-          const res = await apiFetch('/api/segments/tags', {
-            suppressGlobalError: true,
-            method: 'POST',
-            body: JSON.stringify({ name, color: null })
-          });
-          const created = res?.data?.tag;
-          if (created) {
-            localTags = [...localTags, created];
-          }
-        } catch {
-          // Tag creation failed — will be silently skipped in tag resolution below
-        }
-      }
-      if (allTagNames.size > 0) {
-        setTags(localTags);
-      }
-
-      const resolveTagIds = (tagNames: string[]) =>
-        (tagNames || [])
-          .map(name => localTags.find(t => t.name.toLowerCase() === name.toLowerCase())?.id)
-          .filter(Boolean);
-
-      const body = await apiFetch('/api/contacts/bulk', {
-        suppressGlobalError: true,
-        timeoutMs: 120000,
-        method: 'POST',
-        body: JSON.stringify({
-          format: 'CSV',
-          fileName: 'import_contacts.csv',
-          newContacts: newContacts.map(c => ({
-            firstName: c.firstName,
-            lastName: c.lastName,
-            email: c.email,
-            gender: c.gender,
-            countryOfOrigin: c.countryOfOrigin,
-            city: c.city,
-            phone: c.phone,
-            affiliation: c.affiliation,
-            function: c.function,
-            experience: c.experience,
-            facultyDepartment: c.facultyDepartment,
-            researchCareerStage: c.researchCareerStage,
-            avatarUrl: c.avatarUrl || null,
-            tagIds: resolveTagIds(c.tags)
-          })),
-          updatedContacts: updatedContacts.map(c => ({
-            id: c.id,
-            firstName: c.firstName,
-            lastName: c.lastName,
-            email: c.email,
-            gender: c.gender,
-            countryOfOrigin: c.countryOfOrigin,
-            city: c.city,
-            phone: c.phone,
-            affiliation: c.affiliation,
-            function: c.function,
-            experience: c.experience,
-            facultyDepartment: c.facultyDepartment,
-            researchCareerStage: c.researchCareerStage,
-            avatarUrl: c.avatarUrl || null,
-            tagIds: resolveTagIds(c.tags)
-          }))
-        })
-      });
-
-      if (body?.status !== 'SUCCESS') {
-        const errorMessage = body?.errorMessage || body?.message || body?.error || 'Erreur serveur';
-        showToast(`Échec de l'importation : ${errorMessage}`, 'error');
-        return { ok: false, httpStatus: 200, status: body?.status || 'FAILED', errorMessage, data: null };
-      }
-
-      const createdCount = body.data?.createdCount || 0;
-      const updatedCount = body.data?.updatedCount || 0;
-      const errors = body.data?.errors || [];
-
-      if (errors.length > 0) {
-        const firstErrors = errors.slice(0, 3).map((e: { row: number; message: string }) => `L${e.row}: ${e.message}`).join(' | ');
-        const more = errors.length > 3 ? ` (+${errors.length - 3} autres)` : '';
-        showToast(
-          `Importation partielle : ${createdCount} créés, ${updatedCount} mis à jour, ${errors.length} erreur(s). ${firstErrors}${more}`,
-          'info'
-        );
-      } else if (createdCount === 0 && updatedCount > 0) {
-        showToast(`Importation réussie : ${updatedCount} contacts mis à jour.`, 'success');
-      } else {
-        showToast(`Importation réussie : ${createdCount} créés, ${updatedCount} mis à jour.`, 'success');
-      }
-      await loadContacts();
-      bumpContactsRefresh();
-      return { ok: true, httpStatus: 200, status: body.status, errorMessage: '', data: body.data };
-    } catch (err: any) {
-      const httpStatus = err?.status || 0;
-      // err.message est déjà normalisé et en français par la couche API.
-      showToast(`Échec de l'importation : ${err.message}`, 'error');
-      return { ok: false, httpStatus, status: err?.data?.status || 'FAILED', errorMessage: err.message, data: null };
-    }
+    return importContactsViaApi(newContacts, updatedContacts, tags, showToast, loadContacts, bumpContactsRefresh, setTags);
   };
 
   // ──────────────────────────────────────────────
@@ -801,7 +955,7 @@ export default function App() {
           description: newTag.description
         })
       });
-      setTags(prev => [...prev, res.data.tag ?? newTag]);
+      setTags(prev => [...prev, res.data?.tag ?? newTag]);
     } catch (err: any) {
       console.error('Error creating tag:', err.message);
       if (!isServiceUnreachable(err)) showToast(`Erreur lors de la création du tag : ${err.message}`, 'error');
@@ -851,7 +1005,11 @@ export default function App() {
         method: 'PUT',
         body: JSON.stringify({ contactIds })
       });
-      const savedTag = res.data.tag;
+      const savedTag = res.data?.tag;
+      if (!savedTag) {
+        showToast("Réponse serveur invalide : tag non retourné.", 'error');
+        return;
+      }
       const savedContactIds = new Set((savedTag.contacts || []).map((rel: any) => rel.contactId));
       setContacts(prev => prev.map(c => {
         const currentTags = c.tags || [];
@@ -924,31 +1082,46 @@ export default function App() {
   // ──────────────────────────────────────────────
   // RENDER
   // ──────────────────────────────────────────────
-  // Tant que la session n'est pas réhydratée (/api/auth/me en vol), on affiche
-  // un écran de chargement plein écran : ni flash du formulaire de login, ni
-  // redirection prématurée — l'utilisateur reste sur son URL active.
   if (!isSessionReady) {
     return <AuthSplash />;
   }
 
   if (!isAuthenticated) {
-    return (
-      <Suspense fallback={<RouteFallback />}>
-        <Routes>
-          <Route path="/login" element={<AuthView onLoginSuccess={handleLoginSuccess} />} />
-          <Route path="/reset-password/:token" element={<ResetPasswordPage />} />
-          <Route path="/reset-password-expired" element={<ResetPasswordExpiredPage />} />
-          <Route path="*" element={<Navigate to="/login" replace />} />
-        </Routes>
-      </Suspense>
-    );
+    return <PublicRoutes handleLoginSuccess={handleLoginSuccess} />;
   }
 
-  // Session active : les routes publiques restent atteignables, mais sans
-  // jamais fermer la session passivement (panneau « déjà connecté » sur
-  // /login, consentement explicite pour traiter un lien e-mail).
+  const appHandlers = {
+    handleLoginSuccess, handleUserUpdate, handleLogout, handleExportAll,
+    handleSelectSegment, handleSaveCurrentAsSegment, handleSelectContact,
+    requestDeleteContact, requestBulkDeleteContacts, handleAddContact,
+    handleUpdateContact, handleImportContacts, handleApplySegmentFromManagement,
+    handleCreateSegment, handleUpdateSegment, handleDeleteSegment,
+    handleCreateTag, handleUpdateTag, handleDeleteTag, handleSaveTagContacts,
+    forceSignOutForAuthLink
+  };
+
   return (
     <div className="min-h-screen flex flex-col bg-[#F4F6F8] text-[#1C2529] font-sans selection:bg-[#005596] selection:text-white w-full max-w-full overflow-x-hidden">
+      {backendOffline && (
+        <div
+          role="alert"
+          className="z-50 w-full bg-[#7A1E0F]/[0.06] border-b border-[#7A1E0F]/[0.2] backdrop-blur-sm"
+        >
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 py-2.5 flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
+            <p className="text-xs font-semibold text-[#7A1E0F] flex items-center gap-2">
+              <span className="inline-block w-2 h-2 rounded-full bg-[#B8167C] animate-pulse" aria-hidden="true" />
+              {'Service injoignable — le serveur ne répond pas. Vos données peuvent être temporairement indisponibles.'}
+            </p>
+            <button
+              type="button"
+              onClick={retryBackend}
+              className="text-xs font-bold text-white bg-[#7A1E0F] hover:bg-[#5f170c] px-3 py-1.5 rounded-lg transition-colors cursor-pointer"
+            >
+              Réessayer
+            </button>
+          </div>
+        </div>
+      )}
       <Header
         isAuthenticated={isAuthenticated}
         user={user}
@@ -959,156 +1132,22 @@ export default function App() {
 
       <main className="flex-1 pt-16 w-full max-w-full overflow-x-hidden flex flex-col">
       <Suspense fallback={<RouteFallback />}>
-      <Routes>
-        <Route path="/login" element={<PublicOnlyRoute mode="login" isAuthenticated={isAuthenticated} user={user} lastLoginAtRef={lastLoginAtRef} onForceSignOut={forceSignOutForAuthLink}><AuthView onLoginSuccess={handleLoginSuccess} /></PublicOnlyRoute>} />
-        <Route path="/reset-password/:token" element={<PublicOnlyRoute mode="reset" isAuthenticated={isAuthenticated} user={user} lastLoginAtRef={lastLoginAtRef} onForceSignOut={forceSignOutForAuthLink}><ResetPasswordPage /></PublicOnlyRoute>} />
-        <Route path="/reset-password-expired" element={<ResetPasswordExpiredPage />} />
-
-        <Route path="/" element={<HomeRedirect role={user?.role} />} />
-
-        {/* Profil accessible à TOUS les rôles (y compris l'admin depuis le
-            menu « Mon profil ») : volontairement hors du groupe RequireUser. */}
-        <Route
-          path="/profile"
-          element={
-            <ProfileView
-              user={user}
-              onUserUpdate={handleUserUpdate}
-              onLogout={handleLogout}
-            />
-          }
-        />
-
-        {/* Espace métier : interdit au rôle admin (redirigé vers /admin) */}
-        <Route element={<RequireUser role={user?.role} />}>
-        <Route
-          path="/dashboard"
-          element={
-            <DashboardView
-              contacts={contacts}
-              tags={tags}
-              onExportAll={handleExportAll}
-              isLoading={isLoadingData}
-              user={user}
-            />
-          }
-        />
-
-        <Route
-          path="/contacts"
-          element={
-            <ContactsView
-              segments={segments}
-              tags={tags}
-              activeSegmentId={activeSegmentId}
-              onSelectSegment={handleSelectSegment}
-              onSaveCurrentAsSegment={handleSaveCurrentAsSegment}
-              onSelectContact={handleSelectContact}
-              onDeleteContact={requestDeleteContact}
-              onDeleteContacts={requestBulkDeleteContacts}
-              refreshKey={contactsRefreshKey}
-              itemsPerPage={itemsPerPage}
-              onItemsPerPageChange={setItemsPerPage}
-              selection={selection}
-              onSelectionChange={setSelection}
-              user={user}
-            />
-          }
-        />
-
-        <Route
-          path="/contacts/new"
-          element={
-            <RequirePrivilege user={user} need="create">
-              <NewContactView
-                onAddContact={handleAddContact}
-                onUpdateContact={handleUpdateContact}
-                existingContacts={contacts}
-                tags={tags}
-              />
-            </RequirePrivilege>
-          }
-        />
-
-        <Route
-          path="/contacts/:id/edit"
-          element={
-            <RequirePrivilege user={user} need="edit">
-              <NewContactView
-                onAddContact={handleAddContact}
-                onUpdateContact={handleUpdateContact}
-                existingContacts={contacts}
-                tags={tags}
-              />
-            </RequirePrivilege>
-          }
-        />
-
-        <Route
-          path="/contacts/:id"
-          element={
-            <ContactDetailView
-              contacts={contacts}
-              user={user}
-            />
-          }
-        />
-
-        <Route
-          path="/import"
-          element={
-            <RequirePrivilege user={user} need="create">
-              <ImportWizardView
-                onImportContacts={handleImportContacts}
-                existingContacts={contacts}
-              />
-            </RequirePrivilege>
-          }
-        />
-
-        <Route
-          path="/export"
-          element={
-            <ExportView
-              selection={selection}
-              tags={tags}
-            />
-          }
-        />
-
-        <Route path="/segments" element={
-            <SegmentationView
-              contacts={contacts}
-              tags={tags}
-              segments={segments}
-              isLoading={isLoadingTaxonomy}
-              onApplySegment={handleApplySegmentFromManagement}
-              onCreateSegment={handleCreateSegment}
-              onUpdateSegment={handleUpdateSegment}
-              onDeleteSegment={handleDeleteSegment}
-              onCreateTag={handleCreateTag}
-              onUpdateTag={handleUpdateTag}
-              onDeleteTag={handleDeleteTag}
-              onSaveTagContacts={handleSaveTagContacts}
-              user={user}
-            />
-          }
-        />
-        </Route>
-
-        <Route path="/admin/dashboard" element={<Navigate to="/admin" replace />} />
-
-        <Route
-          path="/admin"
-          element={
-            <RequireAdmin role={user?.role}>
-              <AdminView />
-            </RequireAdmin>
-          }
-        />
-
-        <Route path="*" element={<HomeRedirect role={user?.role} />} />
-      </Routes>
+      <AuthenticatedRoutes
+        isAuthenticated={isAuthenticated}
+        user={user}
+        contacts={contacts}
+        tags={tags}
+        segments={segments}
+        selection={selection}
+        selectionActions={{ setSelection, setItemsPerPage }}
+        itemsPerPage={itemsPerPage}
+        activeSegmentId={activeSegmentId}
+        contactsRefreshKey={contactsRefreshKey}
+        isLoadingData={isLoadingData}
+        isLoadingTaxonomy={isLoadingTaxonomy}
+        lastLoginAtRef={lastLoginAtRef}
+        handlers={appHandlers}
+      />
       </Suspense>
       </main>
 

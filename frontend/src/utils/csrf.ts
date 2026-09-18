@@ -2,7 +2,8 @@ const CSRF_COOKIE_NAME = 'XSRF-TOKEN';
 
 export function getCsrfToken(): string | null {
   try {
-    const match = document.cookie.match(new RegExp(`(?:^|;\\s*)${CSRF_COOKIE_NAME}=([^;]*)`));
+    const re = new RegExp(String.raw`(?:^|;\s*)${CSRF_COOKIE_NAME}=([^;]*)`);
+    const match = re.exec(document.cookie);
     return match ? decodeURIComponent(match[1]) : null;
   } catch {
     return null;

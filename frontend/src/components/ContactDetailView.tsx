@@ -161,8 +161,8 @@ export const ContactDetailView: React.FC<ContactDetailViewProps> = ({
               )}
 
               <div className="flex flex-wrap gap-2">
-                {contact.tags.slice(0, 4).map((tName, idx) => (
-                  <span key={idx} className="bg-[#E8F1F8] text-[#005596] px-3 py-1 rounded-lg text-xs font-bold">
+                {contact.tags.slice(0, 4).map((tName) => (
+                  <span key={tName} className="bg-[#E8F1F8] text-[#005596] px-3 py-1 rounded-lg text-xs font-bold">
                     {tName}
                   </span>
                 ))}
@@ -280,8 +280,8 @@ export const ContactDetailView: React.FC<ContactDetailViewProps> = ({
               <p className="text-[11px] font-bold text-[#55636B] uppercase tracking-wider mb-2">Étiquettes / Tags</p>
               <div className="flex flex-wrap gap-1.5">
                 {contact.tags.length > 0 ? (
-                  contact.tags.map((tName, idx) => (
-                    <span key={idx} className="bg-[#E8F1F8] text-[#004275] px-2.5 py-1 rounded-full font-bold text-[11px]">
+                  contact.tags.map((tName) => (
+                    <span key={tName} className="bg-[#E8F1F8] text-[#004275] px-2.5 py-1 rounded-full font-bold text-[11px]">
                       {tName}
                     </span>
                   ))

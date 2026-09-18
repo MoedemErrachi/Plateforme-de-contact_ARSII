@@ -20,7 +20,7 @@ export const ResetPasswordPage: React.FC = () => {
     }
   }, [token, navigate]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
 
@@ -117,12 +117,13 @@ export const ResetPasswordPage: React.FC = () => {
 
         <form onSubmit={handleSubmit} className="w-full flex flex-col gap-4">
           <div className="flex flex-col gap-1.5">
-            <label className="text-[11px] font-extrabold text-[#55636B] uppercase tracking-wider">
+            <label htmlFor="reset-new-password" className="text-[11px] font-extrabold text-[#55636B] uppercase tracking-wider">
               Nouveau mot de passe
             </label>
             <div className="relative group">
               <Lock className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-[#8A98A1] group-focus-within:text-[#005596] transition-colors" />
               <input
+                id="reset-new-password"
                 type={showPassword ? 'text' : 'password'}
                 value={newPassword}
                 onChange={e => setNewPassword(e.target.value)}
@@ -140,12 +141,13 @@ export const ResetPasswordPage: React.FC = () => {
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <label className="text-[11px] font-extrabold text-[#55636B] uppercase tracking-wider">
+            <label htmlFor="reset-confirm-password" className="text-[11px] font-extrabold text-[#55636B] uppercase tracking-wider">
               Confirmer le mot de passe
             </label>
             <div className="relative group">
               <Lock className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-[#8A98A1] group-focus-within:text-[#005596] transition-colors" />
               <input
+                id="reset-confirm-password"
                 type={showPassword ? 'text' : 'password'}
                 value={confirmPassword}
                 onChange={e => setConfirmPassword(e.target.value)}

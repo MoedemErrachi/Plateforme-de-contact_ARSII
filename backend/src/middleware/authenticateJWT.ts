@@ -21,9 +21,12 @@ export interface AuthenticatedRequest extends Request {
 }
 
 export function authenticateJWT(req: AuthenticatedRequest, res: Response, next: NextFunction) {
-  const token = req.cookies?.accessToken ||
-                req.cookies?.token ||
-                req.headers.authorization?.split(' ')[1];
+  // L'en-tête Authorization (jeton fraîchement émis et synchronisé avec le
+  // stockage client par login/change-password) prime sur un cookie HttpOnly
+  // éventuellement obsolète (tokenVersion entre-temps incrémentée côté base).
+  const token = req.headers.authorization?.split(' ')[1] ||
+                req.cookies?.accessToken ||
+                req.cookies?.token;
 
   if (!token) {
     return res.status(401).json({
@@ -80,7 +83,7 @@ export function authenticateJWT(req: AuthenticatedRequest, res: Response, next: 
           code: 'SERVICE_UNAVAILABLE'
         });
       });
-  } catch (err) {
+  } catch {
     return res.status(403).json({
       error: 'Jeton invalide ou expiré.',
       code: 'INVALID_TOKEN'

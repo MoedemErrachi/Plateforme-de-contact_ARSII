@@ -2,23 +2,22 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
-    include: ['src/**/*.test.ts'],
+    include: ['tests/**/*.test.ts'],
     environment: 'node',
+    setupFiles: ['tests/test/setup.ts'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'lcov'],
       reportsDirectory: 'coverage',
       include: [
-        'src/utils/**',
-        'src/validators/contactValidator.ts',
-        'src/middleware/authorizeRole.ts',
+        'src/**',
       ],
       exclude: [
-        'src/**/*.test.ts',
+        'tests/**',
         'src/docs/**',
         'src/config/**',
-        'src/routes/**',
-        'src/controllers/**',
+        'src/server.ts',
+        'src/app.ts',
         'node_modules/**',
       ],
     },

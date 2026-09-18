@@ -41,16 +41,19 @@ class ProviderHTTPError(ProviderError):
         super().__init__(message)
 
 
+LLM_TIMEOUT_SECONDS = 15
+
+
 class LLMProvider(ABC):
     name: str = "base"
     model: str = ""
 
     @abstractmethod
-    async def chat_with_tools(self, messages: list[dict], tools: list[dict], timeout: int = 15) -> ToolCallResponse:
+    async def chat_with_tools(self, messages: list[dict], tools: list[dict]) -> ToolCallResponse:  # pragma: no cover
         raise NotImplementedError
 
     @abstractmethod
-    async def chat_final(self, messages: list[dict], timeout: int = 15) -> str:
+    async def chat_final(self, messages: list[dict]) -> str:  # pragma: no cover
         """Produit la réponse finale structurée (sortie JSON native, sans tools)."""
         raise NotImplementedError
 

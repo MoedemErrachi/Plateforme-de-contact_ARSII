@@ -9,9 +9,9 @@ try:
 
     try:
         from google.genai import errors as genai_errors
-    except ImportError:
+    except ImportError:  # pragma: no cover
         genai_errors = None
-except ImportError:
+except ImportError:  # pragma: no cover
     genai = None
     types = None
     genai_errors = None
@@ -20,6 +20,7 @@ from app.config import GEMINI_API_KEY, GEMINI_MODEL
 from app.ocr.extraction import EXTRACTION_PROMPT, parse_extraction_response
 from app.ocr.models import ExtractedContactInfo
 from app.ocr.providers.base import (
+    VISION_TIMEOUT_SECONDS,
     VisionProvider,
     VisionRateLimitError,
     VisionTimeoutError,
@@ -45,9 +46,11 @@ class GeminiVisionProvider(VisionProvider):
         if isinstance(exc, TimeoutError):
             raise VisionTimeoutError(str(exc)) from exc
         if genai_errors is not None:
-            if isinstance(exc, getattr(genai_errors, "ServerError", ())):
+            server_cls = getattr(genai_errors, "ServerError", None)
+            if server_cls is not None and isinstance(exc, server_cls):
                 raise VisionTransportError(str(exc)) from exc
-            if isinstance(exc, getattr(genai_errors, "ClientError", ())):
+            client_cls = getattr(genai_errors, "ClientError", None)
+            if client_cls is not None and isinstance(exc, client_cls):
                 code = getattr(exc, "code", None)
                 if code == 429:
                     raise VisionRateLimitError(str(exc)) from exc
@@ -57,19 +60,17 @@ class GeminiVisionProvider(VisionProvider):
             raise VisionTimeoutError(str(exc)) from exc
         raise VisionTransportError(str(exc)) from exc
 
-    async def extract_contact_info(self, image_bytes: bytes, timeout: int = 20) -> ExtractedContactInfo:
+    async def extract_contact_info(self, image_bytes: bytes) -> ExtractedContactInfo:
         contents = [
             types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg"),
             EXTRACTION_PROMPT,
         ]
         try:
-            response = await asyncio.wait_for(
-                self._client.aio.models.generate_content(
+            async with asyncio.timeout(VISION_TIMEOUT_SECONDS):
+                response = await self._client.aio.models.generate_content(
                     model=self.model,
                     contents=contents,
-                ),
-                timeout=timeout,
-            )
+                )
         except Exception as exc:
             self._map_exception(exc)
 

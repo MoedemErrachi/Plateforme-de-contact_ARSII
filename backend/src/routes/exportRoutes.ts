@@ -98,7 +98,8 @@ router.post('/log', authenticateJWT, async (req: AuthenticatedRequest, res: Resp
 // GET /api/export/log?period=month|week|day (outil get_import_audit du chatbot)
 router.get('/log', authenticateJWT, async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const period = ['month', 'week', 'day'].includes(String(req.query.period)) ? String(req.query.period) : 'month';
+    const periodQuery = req.query.period;
+    const period = typeof periodQuery === 'string' && ['month', 'week', 'day'].includes(periodQuery) ? periodQuery : 'month';
     const now = new Date();
     const start = new Date(now);
     if (period === 'week') {

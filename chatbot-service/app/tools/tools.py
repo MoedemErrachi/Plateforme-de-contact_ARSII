@@ -279,7 +279,7 @@ class ToolRunner:
         self.base_url = base_url
         self._client: httpx.AsyncClient | None = None
 
-    async def start(self) -> None:
+    def start(self) -> None:
         if self._client is None:
             self._client = httpx.AsyncClient(
                 base_url=self.base_url,
@@ -302,6 +302,6 @@ class ToolRunner:
             payload = {"error": True, "error_type": "validation_error", "message": "Arguments d'outil invalides.", "details": exc.errors()}
             return json.dumps(payload, ensure_ascii=False, default=str)
         if self._client is None:
-            await self.start()
+            self.start()
         result = await spec.handler(self._client, token, args)
         return json.dumps(result, ensure_ascii=False, default=str)

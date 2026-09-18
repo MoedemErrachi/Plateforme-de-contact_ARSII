@@ -67,6 +67,37 @@ async function timed(label, fn) {
   }
 }
 
+function diagnoseConnectionUrl() {
+  const raw = process.env.DATABASE_URL || '';
+  let parsed;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    return console.log('WARN | DATABASE_URL illisible (format de connexion invalide)');
+  }
+
+  const host = parsed.hostname || '(inconnu)';
+  const port = parsed.port || (parsed.protocol === 'postgresql:' ? '5432' : '—');
+  const user = parsed.username ? decodeURIComponent(parsed.username) : '(postgres par défaut)';
+  const database = parsed.pathname.replace(/^\//, '') || '(vide)';
+  const password = parsed.password ? `***** (${parsed.password.length} caractères)` : '(aucun)';
+  console.log(`INFO | DATABASE_URL → hôte : ${host}:${port} · utilisateur : ${user} · base : ${database} · mot de passe : ${password}`);
+
+  // Contrôle d'appartenance : si DATABASE_URL pointe vers un hôte direct
+  // « db.<réf>.supabase.co », il doit correspondre au projet de SUPABASE_URL.
+  let supabaseRef = null;
+  try {
+    supabaseRef = new URL(process.env.SUPABASE_URL || '').hostname?.split('.')[0] || null;
+  } catch {
+    /* ignoré */
+  }
+  const directMatch = /^db\./.test(host);
+  const urlRef = directMatch ? host.split('.')[1] : null;
+  if (supabaseRef && urlRef && urlRef !== supabaseRef) {
+    console.log(`WARN | DATABASE_URL cible un autre projet Supabase (${urlRef}) que SUPABASE_URL (${supabaseRef}) — vérifier les variables Render.`);
+  }
+}
+
 async function main() {
   console.log('=== ARSII Backend — Test de connectivité base de données ===\n');
   auditEnv();
@@ -75,6 +106,8 @@ async function main() {
     console.log('\nRESULT: ÉCHEC — DATABASE_URL absente, tests base impossible.');
     process.exit(1);
   }
+
+  diagnoseConnectionUrl();
 
   // Miroir exact de src/config/prisma.ts (driver adapter + SSL Supabase)
   const adapter = new PrismaPg({

@@ -20,8 +20,8 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    await tool_runner.start()
-    await session_store.start_cleanup(interval_seconds=300)
+    tool_runner.start()
+    session_store.start_cleanup(interval_seconds=300)
     providers = [provider.name for provider in get_llm_router().providers]
     logger.info("Chatbot CRM service started. Configured providers: %s", providers or "NONE")
     yield

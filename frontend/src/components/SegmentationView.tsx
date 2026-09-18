@@ -61,6 +61,7 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
   const [isSegmentModalOpen, setIsSegmentModalOpen] = useState(false);
   const [editingSegment, setEditingSegment] = useState<Segment | null>(null);
   const [segmentSearchQuery, setSegmentSearchQuery] = useState('');
+  const [tagSearchQuery, setTagSearchQuery] = useState('');
 
   // Segment Form state
   const [segName, setSegName] = useState('');
@@ -105,7 +106,7 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
   const countries = useMemo(() => {
     const set = new Set<string>();
     contacts.forEach(c => { if (c.countryOfOrigin && c.countryOfOrigin.trim() !== 'N/A') set.add(c.countryOfOrigin.trim()); });
-    return Array.from(set).sort();
+    return Array.from(set).sort((a, b) => a.localeCompare(b, 'fr'));
   }, [contacts]);
 
   // Helper to count contacts in segment
@@ -162,7 +163,7 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
     setIsSegmentModalOpen(true);
   };
 
-  const handleSaveSegment = (e: React.FormEvent) => {
+  const handleSaveSegment = (e: React.SubmitEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!segName.trim()) return;
 
@@ -200,7 +201,7 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
     setIsTagModalOpen(true);
   };
 
-  const handleSaveTag = (e: React.FormEvent) => {
+  const handleSaveTag = (e: React.SubmitEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!tagNameInput.trim()) return;
 
@@ -224,7 +225,12 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
 
   const filteredSegments = segments.filter(s => 
     s.name.toLowerCase().includes(segmentSearchQuery.toLowerCase()) ||
-    (s.description && s.description.toLowerCase().includes(segmentSearchQuery.toLowerCase()))
+    (s.description?.toLowerCase().includes(segmentSearchQuery.toLowerCase()))
+  );
+
+  const filteredTags = tags.filter(t =>
+    t.name.toLowerCase().includes(tagSearchQuery.toLowerCase()) ||
+    (t.description?.toLowerCase().includes(tagSearchQuery.toLowerCase()))
   );
 
   return (
@@ -282,8 +288,19 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
                 value={segmentSearchQuery}
                 onChange={(e) => setSegmentSearchQuery(e.target.value)}
                 placeholder="Rechercher un segment..."
-                className="w-full pl-9 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-[#005596]"
+                className="w-full pl-9 pr-9 py-2 bg-white border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-[#005596]"
               />
+              {segmentSearchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSegmentSearchQuery('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 rounded-full text-slate-500 hover:text-white hover:bg-slate-400 transition-colors cursor-pointer"
+                  title="Effacer la recherche"
+                  aria-label="Effacer la recherche"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
             </div>
 
             {showCreate && (
@@ -389,22 +406,22 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
                           <span className="px-2 py-0.5 bg-slate-100 text-slate-600 rounded text-[11px]">Tous les filtres réinitialisés</span>
                         ) : (
                           <>
-                            {f.countries && f.countries.map(country => (
+                            {f.countries?.map(country => (
                               <span key={country} className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded font-medium flex items-center gap-1">
                                 <Globe className="w-3 h-3" /> {country}
                               </span>
                             ))}
-                            {f.genders && f.genders.map(g => (
+                            {f.genders?.map(g => (
                               <span key={g} className="px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded font-medium flex items-center gap-1">
                                 <Users className="w-3 h-3" /> {GENDER_LABELS[g]}
                               </span>
                             ))}
-                            {f.careerStages && f.careerStages.map(s => (
+                            {f.careerStages?.map(s => (
                               <span key={s} className="px-2 py-0.5 bg-amber-50 text-amber-700 rounded font-medium flex items-center gap-1">
                                 <Bookmark className="w-3 h-3" /> {CAREER_STAGE_SHORT_LABELS[s]}
                               </span>
                             ))}
-                            {f.tags && f.tags.map(t => (
+                            {f.tags?.map(t => (
                               <span key={t} className="px-2 py-0.5 bg-rose-50 text-rose-700 rounded font-medium flex items-center gap-1">
                                 <TagIcon className="w-3 h-3" /> Tag: {t}
                               </span>
@@ -436,10 +453,34 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
         <div className="space-y-8">
           
           {/* Top Bar for Tags */}
-          <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
-            <div>
-              <h2 className="text-lg font-bold text-[#1C2529]">Étiquettes & Catégories R&I</h2>
-              <p className="text-xs text-[#55636B]">Créez des badges de couleur pour qualifier rapidement vos experts.</p>
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+            <div className="space-y-3 w-full sm:w-auto">
+              <div>
+                <h2 className="text-lg font-bold text-[#1C2529]">Étiquettes & Catégories R&I</h2>
+                <p className="text-xs text-[#55636B]">Créez des badges de couleur pour qualifier rapidement vos experts.</p>
+              </div>
+
+              <div className="relative w-full sm:w-80">
+                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  value={tagSearchQuery}
+                  onChange={(e) => setTagSearchQuery(e.target.value)}
+                  placeholder="Rechercher un tag..."
+                  className="w-full pl-9 pr-9 py-2 bg-white border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-[#005596]"
+                />
+                {tagSearchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setTagSearchQuery('')}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 rounded-full text-slate-500 hover:text-white hover:bg-slate-400 transition-colors cursor-pointer"
+                    title="Effacer la recherche"
+                    aria-label="Effacer la recherche"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
             </div>
 
             {showCreate && (
@@ -455,16 +496,20 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
 
           {/* Tags Grid */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {tags.length === 0 && (
+            {filteredTags.length === 0 && (
               <div className="sm:col-span-2 lg:col-span-3 xl:col-span-4 bg-white rounded-2xl p-10 border border-dashed border-[#C9D4DE] text-center">
                 <TagIcon className="w-10 h-10 text-slate-300 mx-auto mb-3" />
-                <p className="font-bold text-sm text-slate-700">Aucun tag pour le moment</p>
+                <p className="font-bold text-sm text-slate-700">
+                  {tagSearchQuery.trim() ? 'Aucun tag ne correspond à cette recherche' : 'Aucun tag pour le moment'}
+                </p>
                 <p className="text-xs text-[#55636B] mt-1">
-                  Cliquez sur « Créer un Nouveau Tag » pour catégoriser vos contacts par expertise.
+                  {tagSearchQuery.trim()
+                    ? 'Essayez un autre mot-clé.'
+                    : 'Cliquez sur « Créer un Nouveau Tag » pour catégoriser vos contacts par expertise.'}
                 </p>
               </div>
             )}
-            {tags.map(tag => {
+            {filteredTags.map(tag => {
               // Comptage exact depuis la base (tag._count.contacts renvoyé par /api/segments)
               const count = typeof tag._count?.contacts === 'number' ? tag._count.contacts : getTagContactCount(tag.name);
 
@@ -566,8 +611,19 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
                         value={contactSearchInTagModal}
                         onChange={(e) => setContactSearchInTagModal(e.target.value)}
                         placeholder="Chercher un contact..."
-                        className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-[#005596]"
+                        className="w-full pl-9 pr-9 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-[#005596]"
                       />
+                      {contactSearchInTagModal && (
+                        <button
+                          type="button"
+                          onClick={() => setContactSearchInTagModal('')}
+                          className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 rounded-full text-slate-500 hover:text-white hover:bg-slate-400 transition-colors cursor-pointer"
+                          title="Effacer la recherche"
+                          aria-label="Effacer la recherche"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                     </div>
                   </div>
 
@@ -585,6 +641,8 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
                         return (
                           <label
                             key={contact.id}
+                            aria-label={`Sélectionner ${contact.name}`}
+                            htmlFor={`tag-contact-${contact.id}`}
                             className="py-3 flex items-center justify-between hover:bg-slate-50 px-2 rounded-lg cursor-pointer transition-colors"
                           >
                             <div className="flex items-center gap-3">
@@ -598,6 +656,7 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
                             </div>
 
                             <input
+                              id={`tag-contact-${contact.id}`}
                               type="checkbox"
                               checked={hasTag}
                               onChange={() => setTagContactSelection(prev =>
@@ -675,8 +734,9 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
 
             <form onSubmit={handleSaveSegment} className="space-y-4 text-xs">
               <div>
-                <label className="font-bold text-slate-700 block mb-1">Nom du segment *</label>
+                <label htmlFor="seg-name" className="font-bold text-slate-700 block mb-1">Nom du segment *</label>
                 <input
+                  id="seg-name"
                   type="text"
                   required
                   value={segName}
@@ -687,8 +747,9 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
               </div>
 
               <div>
-                <label className="font-bold text-slate-700 block mb-1">Description</label>
+                <label htmlFor="seg-desc" className="font-bold text-slate-700 block mb-1">Description</label>
                 <textarea
+                  id="seg-desc"
                   rows={2}
                   value={segDesc}
                   onChange={(e) => setSegDesc(e.target.value)}
@@ -704,8 +765,8 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
                 </span>
 
                 {/* Country of origin */}
-                <div>
-                  <label className="font-semibold text-slate-700 block mb-1">Pays d'origine</label>
+                <fieldset>
+                  <legend className="font-semibold text-slate-700 block mb-1">Pays d'origine</legend>
                   <div className="flex flex-wrap gap-2">
                     {countries.map(country => {
                       const active = segFilters.countries.includes(country);
@@ -730,11 +791,11 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
                       );
                     })}
                   </div>
-                </div>
+                </fieldset>
 
                 {/* Genders */}
-                <div>
-                  <label className="font-semibold text-slate-700 block mb-1">Genres inclus</label>
+                <fieldset>
+                  <legend className="font-semibold text-slate-700 block mb-1">Genres inclus</legend>
                   <div className="flex flex-wrap gap-2">
                     {allGenders.map(g => {
                       const active = segFilters.genders.includes(g);
@@ -759,11 +820,11 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
                       );
                     })}
                   </div>
-                </div>
+                </fieldset>
 
                 {/* Career stages */}
-                <div>
-                  <label className="font-semibold text-slate-700 block mb-1">Stades de carrière</label>
+                <fieldset>
+                  <legend className="font-semibold text-slate-700 block mb-1">Stades de carrière</legend>
                   <div className="flex flex-wrap gap-2">
                     {allCareerStages.map(s => {
                       const active = segFilters.careerStages.includes(s);
@@ -788,12 +849,13 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
                       );
                     })}
                   </div>
-                </div>
+                </fieldset>
 
                 {/* Search keyword */}
                 <div>
-                  <label className="font-semibold text-slate-700 block mb-1">Recherche (nom, e-mail, affiliation, pays…)</label>
+                  <label htmlFor="seg-search" className="font-semibold text-slate-700 block mb-1">Recherche (nom, e-mail, affiliation, pays…)</label>
                   <input
+                    id="seg-search"
                     type="text"
                     value={segFilters.search}
                     onChange={(e) => setSegFilters({ ...segFilters, search: e.target.value })}
@@ -804,7 +866,7 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
 
                 {/* Tags filter */}
                 <div>
-                  <label className="font-semibold text-slate-700 block mb-1">Tags requis</label>
+                  <div className="font-semibold text-slate-700 block mb-1">Tags requis</div>
                   <div className="flex flex-wrap gap-2">
                     {tags.map(tag => {
                       const active = segFilters.tags.includes(tag.name);
@@ -871,8 +933,9 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
 
             <form onSubmit={handleSaveTag} className="p-4 space-y-3 text-xs">
               <div>
-                <label className="font-bold text-slate-700 block mb-1">Nom du Tag *</label>
+                <label htmlFor="tag-name" className="font-bold text-slate-700 block mb-1">Nom du Tag *</label>
                 <input
+                  id="tag-name"
                   type="text"
                   required
                   value={tagNameInput}
@@ -883,12 +946,12 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
               </div>
 
               <div>
-                <label className="font-bold text-slate-700 block mb-1">Palette de couleur</label>
+                <div className="font-bold text-slate-700 block mb-1">Palette de couleur</div>
                 <div className="grid grid-cols-2 gap-2">
-                  {colorPresets.map((preset, idx) => (
+                  {colorPresets.map(preset => (
                     <button
                       type="button"
-                      key={idx}
+                      key={preset.class}
                       onClick={() => setTagColorInput(preset.class)}
                       className={`p-2 rounded-xl text-left text-xs font-semibold border flex items-center justify-between ${
                         preset.class
@@ -902,8 +965,9 @@ export const SegmentationView: React.FC<SegmentationViewProps> = ({
               </div>
 
               <div>
-                <label className="font-bold text-slate-700 block mb-1">Description (optionnelle)</label>
+                <label htmlFor="tag-desc" className="font-bold text-slate-700 block mb-1">Description (optionnelle)</label>
                 <input
+                  id="tag-desc"
                   type="text"
                   value={tagDescInput}
                   onChange={(e) => setTagDescInput(e.target.value)}

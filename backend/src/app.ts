@@ -5,6 +5,7 @@ import apiRouter from './routes';
 import { errorHandler } from './middleware/errorHandler';
 import { authenticateJWT } from './middleware/authenticateJWT';
 import { setupSwagger } from './docs/setupSwagger';
+import { assertProductionEnv } from './config/validateProductionEnv';
 import {
   helmetMiddleware,
   globalApiRateLimiter,
@@ -14,6 +15,11 @@ import {
 } from './middleware/security';
 
 export function createApp() {
+  // En production, FRONTEND_URL et CORS_ORIGINS sont obligatoires :
+  // sans elles, les liens de réinitialisation de mot de passe et le CORS
+  // retomberaient silencieusement sur http://localhost:3000.
+  assertProductionEnv();
+
   const app = express();
 
   // Enable trust proxy for Cloud Run and Nginx reverse proxies
